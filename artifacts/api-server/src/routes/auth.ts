@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
+import { ReplitConnectors } from "@replit/connectors-sdk";
 import {
-  GetGoogleAuthUrlResponse,
   LoginAccountBody,
   LoginAccountResponse,
   LogoutAccountResponse,
@@ -11,29 +11,25 @@ import {
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
-
-function getSupabaseConfig() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_PUBLISHABLE_KEY;
-  if (!url || !key) {
-    throw new Error("Supabase authentication is not configured.");
-  }
-  return { url: url.replace(/\/$/, ""), key };
-}
+const connectors = new ReplitConnectors();
+const authUnavailableMessage = "خدمة المصادقة غير متاحة مؤقتًا. حاول مرة أخرى بعد قليل.";
 
 async function supabaseRequest(
   path: string,
   body?: Record<string, unknown>,
 ): Promise<{ response: Response; data: Record<string, unknown> }> {
-  const { url, key } = getSupabaseConfig();
-  const response = await fetch(`${url}/auth/v1/${path}`, {
-    method: "POST",
-    headers: {
-      apikey: key,
-      "Content-Type": "application/json",
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let response: Response;
+  try {
+    response = await connectors.proxy("supabase", `/auth/v1/${path}`, {
+      method: "POST",
+      body,
+    });
+  } catch {
+    response = new Response(JSON.stringify({ message: authUnavailableMessage }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 
   const data = (await response.json().catch(() => ({}))) as Record<
     string,
@@ -167,14 +163,8 @@ router.post("/auth/forgot-password", async (req, res): Promise<void> => {
   );
 });
 
-router.get("/auth/google", (req, res) => {
-  const { url, key } = getSupabaseConfig();
-  const redirectTo = `${req.protocol}://${req.get("host")}/auth/callback`;
-  const authUrl = new URL(`${url}/auth/v1/authorize`);
-  authUrl.searchParams.set("provider", "google");
-  authUrl.searchParams.set("redirect_to", redirectTo);
-  authUrl.searchParams.set("apikey", key);
-  res.json(GetGoogleAuthUrlResponse.parse({ url: authUrl.toString() }));
+router.get("/auth/google", (_req, res) => {
+  res.status(503).json({ error: "تسجيل الدخول باستخدام Google غير مفعّل حاليًا." });
 });
 
 router.post("/auth/logout", (_req, res) => {
