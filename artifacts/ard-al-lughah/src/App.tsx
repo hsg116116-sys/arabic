@@ -214,13 +214,13 @@ function Home() {
     <div className="min-h-[100dvh] overflow-hidden bg-background">
       <PublicHeader />
       <main>
-        <section className="relative mx-auto max-w-7xl px-5 pb-16 pt-8 lg:px-8 lg:pb-24 lg:pt-14">
+         <section className="surface-grid relative mx-auto max-w-7xl px-5 pb-20 pt-10 lg:px-8 lg:pb-28 lg:pt-16">
           <div className="pointer-events-none absolute -left-48 top-10 h-[34rem] w-[34rem] rounded-full bg-accent/20 blur-3xl" />
           <div className="relative grid items-center gap-10 lg:grid-cols-[1.03fr_.97fr]">
             <div className="order-2 animate-rise lg:order-1">
-              <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-accent/50 bg-accent/20 px-3 py-1.5 text-xs font-bold text-primary"><Sparkles size={14} /> منصة عربية من قلب فلسطين</div>
-              <h1 className="max-w-2xl text-balance font-display text-5xl font-bold leading-[1.18] tracking-tight text-primary sm:text-6xl lg:text-7xl">أرض اللغة<br /><span className="text-accent-foreground">تفتح لك باب العربية.</span></h1>
-              <p className="mt-6 max-w-xl text-lg leading-8 text-muted-foreground">{platform?.tagline ?? 'منهج واضح، كتب أصيلة، ومتابعة إنسانية تساعدك أن تتعلم العربية بثقة وتحب كل خطوة.'}</p>
+               <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-accent/45 bg-card/75 px-3.5 py-2 text-xs font-bold text-primary shadow-sm"><Sparkles size={14} className="text-accent-foreground" /> منصة عربية للتعلّم من قلب فلسطين</div>
+               <h1 className="max-w-2xl text-balance font-display text-[2.75rem] font-bold leading-[1.45] text-primary sm:text-5xl lg:text-[4.35rem]">أرض اللغة<br /><span className="text-accent-foreground">تقرّبك من العربية.</span></h1>
+               <p className="mt-6 max-w-xl text-base leading-8 text-muted-foreground sm:text-lg">{platform?.tagline ?? 'تعلّم العربية بثقة، خطوة بعد خطوة، مع منهج واضح ومتابعة إنسانية.'}</p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <Link href="/register" className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3.5 font-semibold text-primary-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md" data-testid="link-hero-register">ابدأ رحلتك <ArrowLeft size={18} /></Link>
                 <a href="#books" className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-5 py-3.5 font-semibold text-primary transition-colors hover:bg-secondary" data-testid="link-hero-books">تصفح الكتب <BookOpen size={18} /></a>
@@ -233,16 +233,16 @@ function Home() {
               </div>
             </div>
             <div className="relative order-1 animate-rise [animation-delay:120ms] lg:order-2">
-              <div className="relative overflow-hidden rounded-[2rem] border border-primary/10 bg-primary p-3 shadow-[0_24px_70px_hsl(var(--primary)/.2)] sm:p-4">
-                <div className="relative overflow-hidden rounded-[1.5rem] bg-white">
-                  <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between bg-primary/90 px-5 py-3 text-xs font-bold text-primary-foreground backdrop-blur-md">
+               <div className="relative overflow-hidden rounded-[1.75rem] border border-primary/10 bg-primary p-2.5 shadow-[0_24px_70px_hsl(var(--primary)/.2)] sm:p-3">
+                 <div className="relative overflow-hidden rounded-[1.25rem] bg-[#fffdf9]">
+                   <div className="flex items-center justify-between bg-primary px-5 py-3 text-xs font-bold text-primary-foreground">
                     <span>منهجك يبدأ من الكتاب</span>
                     <span className="flex items-center gap-1.5 text-accent"><span className="h-1.5 w-1.5 rounded-full bg-accent" /> أرض اللغة</span>
                   </div>
-                  <img src={platformLogoUrl} alt="شعار أرض اللغة: اللغة العربية والمعلم أحمد يحيى الأسطل" className="h-[24rem] w-full object-contain p-5 pt-14 sm:h-[31rem] sm:p-8 sm:pt-16" data-testid="img-platform-logo" />
-                  <div className="absolute inset-x-5 bottom-5 flex items-center gap-3 rounded-2xl border border-primary-foreground/15 bg-primary/90 p-3 text-primary-foreground shadow-lg backdrop-blur-md sm:inset-x-8 sm:bottom-8">
-                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground"><BookOpen size={19} /></span>
-                    <div><p className="text-xs text-primary-foreground/65">الأستاذ أحمد يحيى الأسطل</p><p className="mt-1 text-sm font-bold">لغة تنمو بك، وبك تنمو</p></div>
+                   <img src={platformLogoUrl} alt="شعار أرض اللغة: اللغة العربية والمعلم أحمد يحيى الأسطل" className="h-[21rem] w-full object-contain px-5 py-5 sm:h-[27rem] sm:px-8 sm:py-7" data-testid="img-platform-logo" />
+                   <div className="flex items-center gap-3 border-t border-primary/10 bg-primary/[.04] px-5 py-4 sm:px-7">
+                     <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground"><BookOpen size={19} /></span>
+                     <div><p className="text-xs text-muted-foreground">الأستاذ أحمد يحيى الأسطل</p><p className="mt-1 text-sm font-bold text-primary">لغة تنمو بك، وبك تنمو</p></div>
                   </div>
                 </div>
               </div>
@@ -256,9 +256,9 @@ function Home() {
         <section id="books" className="border-y border-border bg-card/60 py-16 lg:py-24">
           <div className="mx-auto grid max-w-7xl gap-12 px-5 lg:grid-cols-[.72fr_1.28fr] lg:items-center lg:px-8">
             <div>
-              <p className="text-sm font-bold text-accent-foreground">الكتب التي ترافقك</p>
-              <h2 className="mt-3 font-display text-4xl font-bold leading-tight text-primary">كتب قوية، واضحة،<br />ومصممة لتُفتح كل يوم.</h2>
-              <p className="mt-5 max-w-md text-base leading-8 text-muted-foreground">تعلّم من سلسلة اللغة العربية للمسار الأكاديمي، مع محتوى بصري يربط اللغة بالثقافة والهوية.</p>
+               <p className="text-sm font-bold text-accent-foreground">كتب ترافقك في كل خطوة</p>
+               <h2 className="mt-3 font-display text-3xl font-bold leading-[1.55] text-primary sm:text-4xl">كتب واضحة،<br />تستحق أن تُفتح كل يوم.</h2>
+               <p className="mt-5 max-w-md text-base leading-8 text-muted-foreground">سلسلة اللغة العربية للصفين التاسع والعاشر، مرتبة لتقرأ وتفهم وتطبّق بثقة.</p>
               <Link href="/register" className="mt-7 inline-flex items-center gap-2 font-semibold text-primary hover:text-accent-foreground" data-testid="link-books-register">ابدأ مع كتبك <ArrowLeft size={17} /></Link>
             </div>
             <div className="grid gap-5 sm:grid-cols-2">

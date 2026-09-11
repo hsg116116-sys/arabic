@@ -225,7 +225,7 @@ export const teacherDashboard: TeacherDashboard = {
 export const platformOverview: PlatformOverview = {
   platformName: platformSettings.platformName,
   teacherName: platformSettings.teacherName,
-  tagline: "نتعلّم العربية لنفهم العالم ونعبّر عن أنفسنا.",
+  tagline: "تعلّم العربية بثقة، خطوة بعد خطوة، مع منهج واضح ومتابعة إنسانية.",
   description:
     "بيئة تعليمية رقمية تجمع الدروس، الشروحات، التكليفات، الاختبارات، التقييمات والشهادات في مكان واحد.",
   stats: {
