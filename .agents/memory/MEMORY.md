@@ -1,0 +1,1 @@
+- [Generated client TypeScript](api-client-typescript.md) — the shared client compiler needs `dom.iterable` when generated fetch code uses `Headers.entries()`.
