@@ -1,1 +1,0 @@
-- [Generated client TypeScript libs](generated-client-tsconfig.md) — Orval output using `Headers.entries()` requires `dom.iterable` in the client library compiler libs.
