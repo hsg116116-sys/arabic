@@ -61,7 +61,7 @@ import NotFound from '@/pages/not-found';
 
 const queryClient = new QueryClient();
 const teacherImageUrl = '/teacher-ahmed.jpg';
-const platformLogoUrl = '/ard-al-lughah-logo.png';
+const platformLogoUrl = '/ard-al-lughah-logo-transparent.png';
 const platformBannerUrl = '/ard-al-lughah-banner-transparent.png';
 const bookNineUrl = '/arab-9.jpg';
 const bookTenUrl = '/arab-10.jpg';
@@ -82,11 +82,8 @@ const navTeacher = [
 
 function Logo({ compact = false }: { compact?: boolean }) {
   return (
-    <Link href="/" className="flex items-center gap-3" data-testid="link-brand">
-      <span className="relative grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl border border-primary/10 bg-white shadow-sm">
-        <img src={platformLogoUrl} alt="شعار أرض اللغة" className="h-full w-full object-contain p-0.5" />
-      </span>
-      {!compact && <span className="font-display text-xl font-bold tracking-tight">أرض اللغة</span>}
+    <Link href="/" className="inline-flex shrink-0 items-center" data-testid="link-brand">
+      <img src={platformLogoUrl} alt="شعار أرض اللغة" className={compact ? 'h-16 w-16 object-contain' : 'h-[4.5rem] w-[4.5rem] object-contain'} />
     </Link>
   );
 }
