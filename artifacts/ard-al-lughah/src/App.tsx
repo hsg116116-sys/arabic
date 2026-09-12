@@ -83,7 +83,7 @@ const navTeacher = [
 function Logo({ compact = false }: { compact?: boolean }) {
   return (
     <Link href="/" className="inline-flex shrink-0 items-center" data-testid="link-brand">
-      <img src={platformLogoUrl} alt="شعار أرض اللغة" className={compact ? 'h-16 w-16 object-contain' : 'h-[4.5rem] w-[4.5rem] object-contain'} />
+      <img src={platformLogoUrl} alt="شعار أرض اللغة" className={compact ? 'h-14 w-14 object-contain' : 'h-16 w-16 object-contain'} />
     </Link>
   );
 }
