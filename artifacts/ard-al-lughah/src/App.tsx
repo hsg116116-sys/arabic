@@ -83,7 +83,7 @@ const navTeacher = [
 function Logo({ compact = false }: { compact?: boolean }) {
   return (
     <Link href="/" className="inline-flex shrink-0 items-center" data-testid="link-brand">
-      <img src={platformLogoUrl} alt="شعار أرض اللغة" className={compact ? 'h-14 w-14 object-contain' : 'h-16 w-16 object-contain'} />
+      <img src={platformLogoUrl} alt="شعار أرض اللغة" className={compact ? 'h-14 w-14 object-contain' : 'h-14 w-14 object-contain'} />
     </Link>
   );
 }
@@ -189,7 +189,7 @@ function Avatar({ name = 'أ', src, size = 'md' }: { name?: string; src?: string
 
 function PublicHeader() {
   return (
-    <header className="mx-auto flex max-w-7xl items-center justify-between px-5 py-5 lg:px-8">
+    <header className="mx-auto flex max-w-7xl items-center justify-between px-5 py-2.5 lg:px-8">
       <Logo />
       <nav className="hidden items-center gap-8 text-sm font-semibold text-muted-foreground md:flex">
         <a href="#books" className="transition-colors hover:text-primary" data-testid="link-journey">الكتب التعليمية</a>
