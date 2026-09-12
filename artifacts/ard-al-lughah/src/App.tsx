@@ -62,6 +62,7 @@ import NotFound from '@/pages/not-found';
 const queryClient = new QueryClient();
 const teacherImageUrl = '/teacher-ahmed.jpg';
 const platformLogoUrl = '/ard-al-lughah-logo.png';
+const platformBannerUrl = '/ard-al-lughah-banner.jpeg';
 const bookNineUrl = '/arab-9.jpg';
 const bookTenUrl = '/arab-10.jpg';
 
@@ -232,25 +233,13 @@ function Home() {
                 <span className="flex items-center gap-1.5 font-semibold text-primary"><CheckCircle2 size={16} className="text-accent-foreground" /> تعلّم بثقة</span>
               </div>
             </div>
-            <div className="relative order-1 animate-rise [animation-delay:120ms] lg:order-2">
+             <div className="relative order-1 animate-rise [animation-delay:120ms] lg:order-2">
                <div className="relative overflow-hidden rounded-[1.75rem] border border-primary/10 bg-primary p-2.5 shadow-[0_24px_70px_hsl(var(--primary)/.2)] sm:p-3">
-                 <div className="relative overflow-hidden rounded-[1.25rem] bg-[#fffdf9]">
-                   <div className="flex items-center justify-between bg-primary px-5 py-3 text-xs font-bold text-primary-foreground">
-                    <span>منهجك يبدأ من الكتاب</span>
-                    <span className="flex items-center gap-1.5 text-accent"><span className="h-1.5 w-1.5 rounded-full bg-accent" /> أرض اللغة</span>
-                  </div>
-                   <img src={platformLogoUrl} alt="شعار أرض اللغة: اللغة العربية والمعلم أحمد يحيى الأسطل" className="h-[21rem] w-full object-contain px-5 py-5 sm:h-[27rem] sm:px-8 sm:py-7" data-testid="img-platform-logo" />
-                   <div className="flex items-center gap-3 border-t border-primary/10 bg-primary/[.04] px-5 py-4 sm:px-7">
-                     <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground"><BookOpen size={19} /></span>
-                     <div><p className="text-xs text-muted-foreground">الأستاذ أحمد يحيى الأسطل</p><p className="mt-1 text-sm font-bold text-primary">لغة تنمو بك، وبك تنمو</p></div>
-                  </div>
-                </div>
-              </div>
-              <div className="absolute -bottom-5 -left-3 hidden rounded-2xl border border-border bg-card p-3 shadow-md sm:flex sm:items-center sm:gap-3">
-                <ProgressRing value={68} size={55} />
-                <div><p className="text-[11px] text-muted-foreground">تقدم المتعلم</p><p className="mt-1 text-sm font-bold text-primary">أنت على الطريق</p></div>
-              </div>
-            </div>
+                 <div className="overflow-hidden rounded-[1.25rem] bg-[#fffdf9]">
+                   <img src={platformBannerUrl} alt="بانر أرض اللغة مع كتاب اللغة العربية والمعلم أحمد يحيى الأسطل" className="block aspect-[15/11] w-full object-cover" data-testid="img-platform-banner" />
+                 </div>
+               </div>
+             </div>
           </div>
         </section>
         <section id="books" className="border-y border-border bg-card/60 py-16 lg:py-24">
