@@ -62,7 +62,7 @@ import NotFound from '@/pages/not-found';
 const queryClient = new QueryClient();
 const teacherImageUrl = '/teacher-ahmed.jpg';
 const platformLogoUrl = '/ard-al-lughah-logo.png';
-const platformBannerUrl = '/ard-al-lughah-banner.jpeg';
+const platformBannerUrl = '/ard-al-lughah-banner-transparent.png';
 const bookNineUrl = '/arab-9.jpg';
 const bookTenUrl = '/arab-10.jpg';
 
@@ -234,10 +234,8 @@ function Home() {
               </div>
             </div>
              <div className="relative order-1 animate-rise [animation-delay:120ms] lg:order-2">
-               <div className="relative overflow-hidden rounded-[1.75rem] border border-primary/10 bg-primary p-2.5 shadow-[0_24px_70px_hsl(var(--primary)/.2)] sm:p-3">
-                 <div className="overflow-hidden rounded-[1.25rem] bg-[#fffdf9]">
-                   <img src={platformBannerUrl} alt="بانر أرض اللغة مع كتاب اللغة العربية والمعلم أحمد يحيى الأسطل" className="block aspect-[15/11] w-full object-cover" data-testid="img-platform-banner" />
-                 </div>
+               <div className="relative flex aspect-[2/1] items-center justify-center overflow-hidden">
+                 <img src={platformBannerUrl} alt="بانر أرض اللغة مع كتاب اللغة العربية والمعلم أحمد يحيى الأسطل" className="absolute -top-[20%] block w-full max-w-none" data-testid="img-platform-banner" />
                </div>
              </div>
           </div>
