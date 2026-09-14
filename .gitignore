@@ -47,3 +47,16 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# environment & secrets — never commit these
+.env
+.env.*
+!.env.example
+*.pem
+
+# local raw scans (not part of the deployed site)
+/الفصل الأول/
+/الفصل الثاني/
+
+# dev-only helpers
+_verify.mjs

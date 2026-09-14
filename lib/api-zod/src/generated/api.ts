@@ -18,6 +18,19 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * A school textbook available on the platform (grade × semester)
+ */
+export const BookM = zod.object({
+  "id": zod.string(),
+  "grade": zod.string(),
+  "term": zod.string(),
+  "title": zod.string(),
+  "coverUrl": zod.string(),
+  "pdfUrl": zod.string()
+})
+
+
+/**
  * @summary Get public platform overview
  */
 export const GetPlatformOverviewResponse = zod.object({
@@ -25,6 +38,8 @@ export const GetPlatformOverviewResponse = zod.object({
   "teacherName": zod.string(),
   "tagline": zod.string(),
   "description": zod.string(),
+  "semester": zod.string(),
+  "books": zod.array(BookM),
   "stats": zod.object({
   "students": zod.number().int(),
   "units": zod.number().int(),
@@ -58,7 +73,8 @@ export const GetStudentDashboardResponse = zod.object({
   "gender": zod.string(),
   "progress": zod.number().int(),
   "status": zod.string(),
-  "avatarUrl": zod.string()
+  "avatarUrl": zod.string(),
+  "book": zod.nullable(BookM)
 }),
   "progress": zod.number().int(),
   "completedLessons": zod.number().int(),
@@ -195,7 +211,8 @@ export const GetTeacherSettingsResponse = zod.object({
   "teacherBio": zod.string(),
   "teacherImageUrl": zod.string(),
   "signatureUrl": zod.string(),
-  "accentColor": zod.string()
+  "accentColor": zod.string(),
+  "semester": zod.string()
 })
 
 
@@ -208,7 +225,8 @@ export const UpdateTeacherSettingsBody = zod.object({
   "teacherBio": zod.string().optional(),
   "teacherImageUrl": zod.string().optional(),
   "signatureUrl": zod.string().optional(),
-  "accentColor": zod.string().optional()
+  "accentColor": zod.string().optional(),
+  "semester": zod.string().optional()
 })
 
 export const UpdateTeacherSettingsResponse = zod.object({
@@ -217,7 +235,8 @@ export const UpdateTeacherSettingsResponse = zod.object({
   "teacherBio": zod.string(),
   "teacherImageUrl": zod.string(),
   "signatureUrl": zod.string(),
-  "accentColor": zod.string()
+  "accentColor": zod.string(),
+  "semester": zod.string()
 })
 
 
