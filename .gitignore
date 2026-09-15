@@ -60,6 +60,3 @@ Thumbs.db
 
 # dev-only helpers
 _verify.mjs
-
-# Vercel serverless entry (generated at build time)
-/api/index.mjs
