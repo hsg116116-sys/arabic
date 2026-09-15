@@ -10,16 +10,13 @@ globalThis.require = createRequire(import.meta.url);
 
 const artifactDir = path.dirname(fileURLToPath(import.meta.url));
 
-async function buildAll() {
-  const distDir = path.resolve(artifactDir, "dist");
-  await rm(distDir, { recursive: true, force: true });
-
-  await esbuild({
-    entryPoints: [path.resolve(artifactDir, "src/index.ts")],
+function esbuildOptions(entryFile) {
+  return {
+    entryPoints: [entryFile],
     platform: "node",
     bundle: true,
     format: "esm",
-    outdir: distDir,
+    outdir: path.resolve(artifactDir, "dist"),
     outExtension: { ".js": ".mjs" },
     logLevel: "info",
     // Some packages may not be bundleable, so we externalize them, we can add more here as needed.
@@ -117,7 +114,15 @@ globalThis.__filename = __bannerUrl.fileURLToPath(import.meta.url);
 globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     `,
     },
-  });
+  };
+}
+
+async function buildAll() {
+  const distDir = path.resolve(artifactDir, "dist");
+  await rm(distDir, { recursive: true, force: true });
+
+  await esbuild(esbuildOptions(path.resolve(artifactDir, "src/index.ts")));
+  await esbuild(esbuildOptions(path.resolve(artifactDir, "src/vercel.ts")));
 }
 
 buildAll().catch((err) => {

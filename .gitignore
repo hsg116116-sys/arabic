@@ -55,8 +55,11 @@ Thumbs.db
 *.pem
 
 # local raw scans (not part of the deployed site)
-/الفصل الأول/
+/الفصل الاول/
 /الفصل الثاني/
 
 # dev-only helpers
 _verify.mjs
+
+# Vercel serverless entry (generated at build time)
+/api/index.mjs
