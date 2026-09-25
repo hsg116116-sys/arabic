@@ -24,6 +24,8 @@ export interface PlatformSettings {
   teacherImageUrl: string;
   signatureUrl: string;
   accentColor: string;
+  semester?: string;
+  genderSplit?: boolean;
 }
 
 export interface PlatformOverview {
@@ -42,6 +44,8 @@ export interface PlatformSettingsUpdate {
   teacherImageUrl?: string;
   signatureUrl?: string;
   accentColor?: string;
+  semester?: string;
+  genderSplit?: boolean;
 }
 
 export interface Student {
@@ -110,6 +114,8 @@ export interface Assignment {
   dueDate: string;
   status: string;
   points: number;
+  grade?: string;
+  section?: string;
 }
 
 export interface TeacherDashboard {

@@ -14,4 +14,6 @@ export interface Assignment {
   dueDate: string;
   status: string;
   points: number;
+  grade?: string;
+  section?: string;
 }

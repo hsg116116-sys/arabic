@@ -13,6 +13,7 @@ import {
   UpdateTeacherSettingsResponse,
 } from "@workspace/api-zod";
 import { supabaseQuery, getSupabaseUser } from "../lib/supabase";
+import { requireAuth, requireAdmin, type AuthedRequest } from "../middlewares/auth";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -39,14 +40,22 @@ async function resolveProfileFromSession(accessToken?: string): Promise<any | nu
   }
 }
 
-/** الطالب النشط الحالي: الطالب المسجل بالجلسة إن وُجد، وإلا أول ملف طالب معتمد */
+/** الطالب النشط الحالي: صاحب الجلسة فقط — بلا أي بديل تجريبي (وضع الإنتاج) */
 async function getActiveStudent(req?: any): Promise<any | null> {
+  // مسار الجلسة عبر الوسيط (إن وُجد)
+  const authUserId = (req as AuthedRequest)?.auth?.userId;
+  if (authUserId) {
+    try {
+      const { data } = await supabaseQuery<any[]>(
+        `profiles?id=eq.${encodeURIComponent(authUserId)}&select=*&limit=1`,
+      );
+      if (data?.[0]) return data[0];
+    } catch { /* تجاهل */ }
+  }
   const sessionProfile = await resolveProfileFromSession(
     req?.cookies?.supabase_access_token,
   );
-  if (sessionProfile) return sessionProfile;
-  const { data } = await supabaseQuery<any[]>("profiles?role=eq.student&order=created_at.asc&limit=1");
-  return data?.[0] || null;
+  return sessionProfile || null;
 }
 
 /** تحويل سجل الملف الشخصي إلى الشكل المطلوب في واجهات المنصة */
@@ -147,11 +156,14 @@ async function getAssessmentQuestions(assessmentId: string): Promise<any[]> {
   }));
 }
 
-/** تحديد الطالب الفعلي من الطلب أو من الطالب النشط (الجلسة أولاً ثم أول طالب معتمد) */
+/** تحديد الطالب الفعلي: الجلسة أولاً ولا شيء غيرها (وضع الإنتاج — لا انتحال هوية) */
 async function resolveStudentId(requestedUserId?: string, req?: any): Promise<string | null> {
-  if (requestedUserId) return requestedUserId;
+  const authUserId = (req as AuthedRequest)?.auth?.userId;
+  if (authUserId) return authUserId;
   const active = await getActiveStudent(req);
-  return active?.id || null;
+  // السماح بالمعرف الصريح فقط عند غياب الجلسة لمسارات عامة قديمة — الكتابة تتطلب جلسة
+  if (active?.id) return active.id;
+  return requestedUserId || null;
 }
 
 /** تطبيع النصوص العربية لأغراض المقارنة (توحيد الهمزات والمسافات) */
@@ -234,7 +246,7 @@ router.get("/platform/overview", async (_req, res) => {
 });
 
 // 2. Student Dashboard
-router.get("/student/dashboard", async (req, res) => {
+router.get("/student/dashboard", requireAuth, async (req, res) => {
   try {
     const activeStudent = await getActiveStudent(req);
     if (!activeStudent) {
@@ -303,7 +315,7 @@ router.get("/student/dashboard", async (req, res) => {
 });
 
 // 3. Teacher Dashboard
-router.get("/teacher/dashboard", async (_req, res) => {
+router.get("/teacher/dashboard", requireAdmin, async (_req, res) => {
   try {
     const [{ count: studentsCount }, { count: activeStudents }, { count: unitsCount }, { count: assignmentsCount }, { count: assessmentsCount }, { count: certificatesCount }, { data: recentStudentsData }, { data: assignmentsData }, { data: attemptsData }, { data: schoolsData }, weeklyActivity] =
       await Promise.all([
@@ -419,7 +431,7 @@ router.get("/courses/:id/lessons", async (req, res) => {
 });
 
 // 4.2 Complete a lesson
-router.post("/lessons/:id/complete", async (req, res) => {
+router.post("/lessons/:id/complete", requireAuth, async (req, res) => {
   try {
     const lessonId = req.params.id;
     const userId = await resolveStudentId(req.body?.userId, req);
@@ -461,7 +473,7 @@ router.get("/assignments", async (req, res) => {
       statusMap[sub.assignment_id] = sub.score != null ? "تم التسليم" : "قيد المراجعة";
     }
 
-    const parsed = (data || []).map((a) => ({
+    let parsed = (data || []).map((a) => ({
       id: a.id,
       title: a.title,
       description: a.description || "",
@@ -469,7 +481,21 @@ router.get("/assignments", async (req, res) => {
       dueDate: a.due_date || "",
       status: statusMap[a.id] || "لم يبدأ",
       points: a.points || 0,
+      grade: a.grade || "الجميع",
+      section: a.section || "الجميع",
     }));
+
+    // فلترة الأقسام للواجبات — التقسيم لكل صف لحاله (صف الطالب النشط)
+    if (activeStudent) {
+      const { getStudentProfile, getSplitMap, itemVisible } = await import("./curriculum");
+      const [profile, splitMap] = await Promise.all([
+        getStudentProfile(activeStudent.id),
+        getSplitMap(),
+      ]);
+      if (profile) {
+        parsed = parsed.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap));
+      }
+    }
 
     res.json(ListAssignmentsResponse.parse(parsed));
   } catch (err: any) {
@@ -479,7 +505,7 @@ router.get("/assignments", async (req, res) => {
 });
 
 // 5.1 Submit Assignment
-router.post("/assignments/:id/submit", async (req, res) => {
+router.post("/assignments/:id/submit", requireAuth, async (req, res) => {
   try {
     const assignmentId = req.params.id;
     const { answer, userId } = req.body;
@@ -562,9 +588,9 @@ router.get("/assessments/:id/questions", async (req, res) => {
 });
 
 // 6.2 Submit assessment attempt
-router.post("/assessments/:id/attempt", async (req, res) => {
+router.post("/assessments/:id/attempt", requireAuth, async (req, res) => {
   try {
-    const assessmentId = req.params.id;
+    const assessmentId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const { answers, userId } = req.body;
     const studentId = await resolveStudentId(userId, req);
     if (!studentId) {
@@ -644,7 +670,7 @@ router.get("/announcements", async (_req, res) => {
 });
 
 // 8. Teacher Settings
-router.get("/teacher/settings", async (_req, res) => {
+router.get("/teacher/settings", requireAdmin, async (_req, res) => {
   try {
     const { data } = await supabaseQuery<any[]>("platform_settings?select=*&limit=1");
     const s = data?.[0] || {};
@@ -656,6 +682,7 @@ router.get("/teacher/settings", async (_req, res) => {
       signatureUrl: s.signature_url || "",
       accentColor: s.accent_color || "#d7b65e",
       semester: s.semester || "الفصل الأول",
+      genderSplit: s.gender_split === true,
     };
 
     res.json(GetTeacherSettingsResponse.parse(settings));
@@ -665,7 +692,7 @@ router.get("/teacher/settings", async (_req, res) => {
   }
 });
 
-router.patch("/teacher/settings", async (req, res) => {
+router.patch("/teacher/settings", requireAdmin, async (req, res) => {
   const parsed = UpdateTeacherSettingsBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -681,6 +708,7 @@ router.patch("/teacher/settings", async (req, res) => {
     if (parsed.data.signatureUrl !== undefined) updatePayload.signature_url = parsed.data.signatureUrl;
     if (parsed.data.accentColor !== undefined) updatePayload.accent_color = parsed.data.accentColor;
     if (parsed.data.semester !== undefined) updatePayload.semester = parsed.data.semester;
+    if ((parsed.data as any).genderSplit !== undefined) updatePayload.gender_split = !!(parsed.data as any).genderSplit;
 
     try {
       await supabaseQuery("platform_settings?id=eq.true", {
@@ -688,10 +716,10 @@ router.patch("/teacher/settings", async (req, res) => {
         body: updatePayload,
       });
     } catch (patchErr) {
-      // إذا كان عمود الفصل (semester) غير موجود بعد في القاعدة، نعيد المحاولة بدونه حتى لا تفشل عملية الحفظ.
-      if (updatePayload.semester !== undefined) {
-        logger.warn({ err: patchErr }, "semester column missing, retrying without it");
-        const { semester, ...rest } = updatePayload;
+      // إذا كان عمود جديد غير موجود بعد في القاعدة، نعيد المحاولة بدونه حتى لا تفشل عملية الحفظ.
+      if (updatePayload.semester !== undefined || updatePayload.gender_split !== undefined) {
+        logger.warn({ err: patchErr }, "new settings column missing, retrying without it");
+        const { semester, gender_split, ...rest } = updatePayload;
         await supabaseQuery("platform_settings?id=eq.true", { method: "PATCH", body: rest });
       } else {
         throw patchErr;
@@ -709,6 +737,7 @@ router.patch("/teacher/settings", async (req, res) => {
       signatureUrl: s.signature_url || parsed.data.signatureUrl || "",
       accentColor: s.accent_color || parsed.data.accentColor || "#d7b65e",
       semester: s.semester || parsed.data.semester || "الفصل الأول",
+      genderSplit: s.gender_split === true || (parsed.data as any).genderSplit === true,
     };
 
     res.json(UpdateTeacherSettingsResponse.parse(response));
@@ -719,7 +748,7 @@ router.patch("/teacher/settings", async (req, res) => {
 });
 
 // 9. Teacher Students
-router.get("/teacher/students", async (_req, res) => {
+router.get("/teacher/students", requireAdmin, async (_req, res) => {
   try {
     const [{ data }, progressAvg] = await Promise.all([
       supabaseQuery<any[]>("profiles?order=created_at.desc"),
@@ -737,7 +766,7 @@ router.get("/teacher/students", async (_req, res) => {
 });
 
 // 9.1 Add Student
-router.post("/teacher/students", async (req, res) => {
+router.post("/teacher/students", requireAdmin, async (req, res) => {
   try {
     const { name, email, school, grade, section, gender, phone } = req.body;
     if (!name) {
@@ -770,7 +799,7 @@ router.post("/teacher/students", async (req, res) => {
 });
 
 // 10. Teacher Content Creation
-router.post("/teacher/courses", async (req, res) => {
+router.post("/teacher/courses", requireAdmin, async (req, res) => {
   try {
     const { title, description, lessons, duration, color } = req.body;
     await supabaseQuery("courses", {
@@ -793,22 +822,26 @@ router.post("/teacher/courses", async (req, res) => {
   }
 });
 
-router.post("/teacher/assignments", async (req, res) => {
+router.post("/teacher/assignments", requireAdmin, async (req, res) => {
   try {
-    const { title, description, unit, dueDate, points } = req.body;
-    await supabaseQuery("assignments", {
-      method: "POST",
-      body: [
-        {
-          title: title || "واجب جديد",
-          description: description || "",
-          unit: unit || "الوحدة الأولى",
-          due_date: dueDate || new Date(Date.now() + 86400000 * 7).toISOString().split("T")[0],
-          points: parseInt(points, 10) || 20,
-          published: true,
-        },
-      ],
-    });
+    const { title, description, unit, dueDate, points, grade, section } = req.body;
+    const full = {
+      title: title || "واجب جديد",
+      description: description || "",
+      unit: unit || "الوحدة الأولى",
+      due_date: dueDate || new Date(Date.now() + 86400000 * 7).toISOString().split("T")[0],
+      points: parseInt(points, 10) || 20,
+      published: true,
+      grade: grade || "الجميع",
+      section: section || "الجميع",
+    };
+    let r = await supabaseQuery("assignments", { method: "POST", body: [full] });
+    if (r.error && /column|schema cache|Could not find/i.test(String(r.error))) {
+      // القاعدة قبل v5 — نعيد المحاولة بالحقول الأساسية
+      const { grade: _g, section: _s, ...base } = full;
+      r = await supabaseQuery("assignments", { method: "POST", body: [base] });
+    }
+    if (r.error) throw new Error(String(r.error));
     res.json({ success: true, message: "تمت إضافة الواجب بنجاح!" });
   } catch (err: any) {
     logger.error({ err }, "Error in POST /teacher/assignments");
@@ -816,7 +849,7 @@ router.post("/teacher/assignments", async (req, res) => {
   }
 });
 
-router.post("/teacher/assessments", async (req, res) => {
+router.post("/teacher/assessments", requireAdmin, async (req, res) => {
   try {
     const { title, questions, duration, date } = req.body;
     await supabaseQuery("assessments", {
@@ -839,7 +872,7 @@ router.post("/teacher/assessments", async (req, res) => {
 });
 
 // 11. Student Profile Update
-router.patch("/student/profile", async (req, res) => {
+router.patch("/student/profile", requireAuth, async (req, res) => {
   try {
     const { id, name, school, branch, grade, section, phone } = req.body;
     const targetId = await resolveStudentId(id, req);

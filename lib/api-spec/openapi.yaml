@@ -289,6 +289,10 @@ components:
         teacherImageUrl: { type: string }
         signatureUrl: { type: string }
         accentColor: { type: string }
+        semester: { type: string }
+        genderSplit:
+          type: boolean
+          description: تقسيم المحتوى بين الطلاب والطالبات عند تفعيله
     PlatformSettingsUpdate:
       type: object
       properties:
@@ -298,6 +302,8 @@ components:
         teacherImageUrl: { type: string }
         signatureUrl: { type: string }
         accentColor: { type: string }
+        semester: { type: string }
+        genderSplit: { type: boolean }
     StudentDashboard:
       type: object
       required: [student, progress, completedLessons, nextUp, announcements]
@@ -388,6 +394,10 @@ components:
         dueDate: { type: string }
         status: { type: string }
         points: { type: integer }
+        grade: { type: string }
+        section:
+          type: string
+          description: القسم المستهدف (الجميع/طالب/طالبة) عند تقسيم الصف
     Assessment:
       type: object
       required: [id, title, questions, duration, score, status, date]

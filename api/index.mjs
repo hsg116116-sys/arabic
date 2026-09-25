@@ -18,12 +18,24 @@ var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require
   if (typeof require !== "undefined") return require.apply(this, arguments);
   throw Error('Dynamic require of "' + x + '" is not supported');
 });
+var __esm = (fn, res, err) => function __init() {
+  if (err) throw err[0];
+  try {
+    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+  } catch (e) {
+    throw err = [e], e;
+  }
+};
 var __commonJS = (cb, mod) => function __require2() {
   try {
     return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
   } catch (e) {
     throw mod = 0, e;
   }
+};
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
 };
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
@@ -5156,9 +5168,9 @@ var require_lib = __commonJS({
       var trail = decoder.end();
       return trail ? res + trail : res;
     };
-    module.exports.encodingExists = function encodingExists(enc) {
+    module.exports.encodingExists = function encodingExists(enc3) {
       try {
-        module.exports.getCodec(enc);
+        module.exports.getCodec(enc3);
         return true;
       } catch (e) {
         return false;
@@ -5173,36 +5185,36 @@ var require_lib = __commonJS({
         module.exports.encodings = { __proto__: null };
         mergeModules(module.exports.encodings, raw);
       }
-      var enc = module.exports._canonicalizeEncoding(encoding);
+      var enc3 = module.exports._canonicalizeEncoding(encoding);
       var codecOptions = {};
       while (true) {
-        var codec = module.exports._codecDataCache[enc];
+        var codec = module.exports._codecDataCache[enc3];
         if (codec) {
           return codec;
         }
-        var codecDef = module.exports.encodings[enc];
+        var codecDef = module.exports.encodings[enc3];
         switch (typeof codecDef) {
           case "string":
-            enc = codecDef;
+            enc3 = codecDef;
             break;
           case "object":
             for (var key in codecDef) {
               codecOptions[key] = codecDef[key];
             }
             if (!codecOptions.encodingName) {
-              codecOptions.encodingName = enc;
+              codecOptions.encodingName = enc3;
             }
-            enc = codecDef.type;
+            enc3 = codecDef.type;
             break;
           case "function":
             if (!codecOptions.encodingName) {
-              codecOptions.encodingName = enc;
+              codecOptions.encodingName = enc3;
             }
             codec = new codecDef(codecOptions, module.exports);
             module.exports._codecDataCache[codecOptions.encodingName] = codec;
             return codec;
           default:
-            throw new Error("Encoding not recognized: '" + encoding + "' (searched as: '" + enc + "')");
+            throw new Error("Encoding not recognized: '" + encoding + "' (searched as: '" + enc3 + "')");
         }
       }
     };
@@ -5348,10 +5360,10 @@ var require_raw_body = __commonJS({
       if (done) {
         return readStream(stream, encoding, length, limit, wrap(done));
       }
-      return new Promise(function executor(resolve, reject) {
+      return new Promise(function executor(resolve2, reject) {
         readStream(stream, encoding, length, limit, function onRead(err, buf) {
           if (err) return reject(err);
-          resolve(buf);
+          resolve2(buf);
         });
       });
     }
@@ -18798,7 +18810,7 @@ var require_view = __commonJS({
     var basename = path.basename;
     var extname = path.extname;
     var join = path.join;
-    var resolve = path.resolve;
+    var resolve2 = path.resolve;
     module.exports = View;
     function View(name, options) {
       var opts = options || {};
@@ -18832,7 +18844,7 @@ var require_view = __commonJS({
       debug('lookup "%s"', name);
       for (var i = 0; i < roots.length && !path2; i++) {
         var root = roots[i];
-        var loc = resolve(root, name);
+        var loc = resolve2(root, name);
         var dir = dirname(loc);
         var file = basename(loc);
         path2 = this.resolve(dir, file);
@@ -18857,7 +18869,7 @@ var require_view = __commonJS({
       });
       sync = false;
     };
-    View.prototype.resolve = function resolve2(dir, file) {
+    View.prototype.resolve = function resolve3(dir, file) {
       var ext = this.ext;
       var path2 = join(dir, file);
       var stat = tryStat(path2);
@@ -20720,27 +20732,27 @@ var require_router = __commonJS({
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router5;
+    module.exports = Router8;
     module.exports.Route = Route;
-    function Router5(options) {
-      if (!(this instanceof Router5)) {
-        return new Router5(options);
+    function Router8(options) {
+      if (!(this instanceof Router8)) {
+        return new Router8(options);
       }
       const opts = options || {};
-      function router5(req, res, next) {
-        router5.handle(req, res, next);
+      function router8(req, res, next) {
+        router8.handle(req, res, next);
       }
-      Object.setPrototypeOf(router5, this);
-      router5.caseSensitive = opts.caseSensitive;
-      router5.mergeParams = opts.mergeParams;
-      router5.params = {};
-      router5.strict = opts.strict;
-      router5.stack = [];
-      return router5;
+      Object.setPrototypeOf(router8, this);
+      router8.caseSensitive = opts.caseSensitive;
+      router8.mergeParams = opts.mergeParams;
+      router8.params = {};
+      router8.strict = opts.strict;
+      router8.stack = [];
+      return router8;
     }
-    Router5.prototype = function() {
+    Router8.prototype = function() {
     };
-    Router5.prototype.param = function param(name, fn) {
+    Router8.prototype.param = function param(name, fn) {
       if (!name) {
         throw new TypeError("argument name is required");
       }
@@ -20760,7 +20772,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router5.prototype.handle = function handle(req, res, callback) {
+    Router8.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20887,7 +20899,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router5.prototype.use = function use(handler) {
+    Router8.prototype.use = function use(handler) {
       let offset = 0;
       let path = "/";
       if (typeof handler !== "function") {
@@ -20920,7 +20932,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router5.prototype.route = function route(path) {
+    Router8.prototype.route = function route(path) {
       const route2 = new Route(path);
       const layer = new Layer(path, {
         sensitive: this.caseSensitive,
@@ -20935,7 +20947,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router5.prototype[method] = function(path) {
+      Router8.prototype[method] = function(path) {
         const route = this.route(path);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
@@ -21116,15 +21128,15 @@ var require_application = __commonJS({
     var compileETag = require_utils3().compileETag;
     var compileQueryParser = require_utils3().compileQueryParser;
     var compileTrust = require_utils3().compileTrust;
-    var resolve = __require("node:path").resolve;
+    var resolve2 = __require("node:path").resolve;
     var once = require_once();
-    var Router5 = require_router();
+    var Router8 = require_router();
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
     var trustProxyDefaultSymbol = "@@symbol:trust_proxy_default";
     app2.init = function init() {
-      var router5 = null;
+      var router8 = null;
       this.cache = /* @__PURE__ */ Object.create(null);
       this.engines = /* @__PURE__ */ Object.create(null);
       this.settings = /* @__PURE__ */ Object.create(null);
@@ -21133,13 +21145,13 @@ var require_application = __commonJS({
         configurable: true,
         enumerable: true,
         get: function getrouter() {
-          if (router5 === null) {
-            router5 = new Router5({
+          if (router8 === null) {
+            router8 = new Router8({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
           }
-          return router5;
+          return router8;
         }
       });
     };
@@ -21170,7 +21182,7 @@ var require_application = __commonJS({
       this.mountpath = "/";
       this.locals.settings = this.settings;
       this.set("view", View);
-      this.set("views", resolve("views"));
+      this.set("views", resolve2("views"));
       this.set("jsonp callback name", "callback");
       if (env === "production") {
         this.enable("view cache");
@@ -21210,15 +21222,15 @@ var require_application = __commonJS({
       if (fns.length === 0) {
         throw new TypeError("app.use() requires a middleware function");
       }
-      var router5 = this.router;
+      var router8 = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router5.use(path, fn2);
+          return router8.use(path, fn2);
         }
         debug(".use app under %s", path);
         fn2.mountpath = path;
         fn2.parent = this;
-        router5.use(path, function mounted_app(req, res, next) {
+        router8.use(path, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -22488,14 +22500,14 @@ var require_cookie = __commonJS({
       return min;
     }
     function serialize(name, val, opt) {
-      var enc = opt && opt.encode || encodeURIComponent;
-      if (typeof enc !== "function") {
+      var enc3 = opt && opt.encode || encodeURIComponent;
+      if (typeof enc3 !== "function") {
         throw new TypeError("option encode is invalid");
       }
       if (!cookieNameRegExp.test(name)) {
         throw new TypeError("argument name is invalid");
       }
-      var value = enc(val);
+      var value = enc3(val);
       if (!cookieValueRegExp.test(value)) {
         throw new TypeError("argument val is invalid");
       }
@@ -22611,7 +22623,7 @@ var require_send = __commonJS({
     var extname = path.extname;
     var join = path.join;
     var normalize = path.normalize;
-    var resolve = path.resolve;
+    var resolve2 = path.resolve;
     var sep = path.sep;
     var BYTES_RANGE_REGEXP = /^ *bytes=/;
     var MAX_MAXAGE = 60 * 60 * 24 * 365 * 1e3;
@@ -22640,7 +22652,7 @@ var require_send = __commonJS({
       this._maxage = opts.maxAge || opts.maxage;
       this._maxage = typeof this._maxage === "string" ? ms(this._maxage) : Number(this._maxage);
       this._maxage = !isNaN(this._maxage) ? Math.min(Math.max(0, this._maxage), MAX_MAXAGE) : 0;
-      this._root = opts.root ? resolve(opts.root) : null;
+      this._root = opts.root ? resolve2(opts.root) : null;
     }
     util2.inherits(SendStream, Stream);
     SendStream.prototype.error = function error(status, err) {
@@ -22789,7 +22801,7 @@ var require_send = __commonJS({
           return res;
         }
         parts = normalize(path2).split(sep);
-        path2 = resolve(path2);
+        path2 = resolve2(path2);
       }
       if (containsDotFile(parts)) {
         debug('%s dotfile "%s"', this._dotfiles, path2);
@@ -23167,7 +23179,7 @@ var require_response = __commonJS({
     var cookie = require_cookie();
     var send = require_send();
     var extname = path.extname;
-    var resolve = path.resolve;
+    var resolve2 = path.resolve;
     var vary = require_vary();
     var { Buffer: Buffer2 } = __require("node:buffer");
     var res = Object.create(http.ServerResponse.prototype);
@@ -23373,7 +23385,7 @@ var require_response = __commonJS({
       }
       opts = Object.create(opts);
       opts.headers = headers;
-      var fullPath = !opts.root ? resolve(path2) : path2;
+      var fullPath = !opts.root ? resolve2(path2) : path2;
       return this.sendFile(fullPath, opts, done);
     };
     res.contentType = res.type = function contentType(type) {
@@ -23622,7 +23634,7 @@ var require_serve_static = __commonJS({
     var encodeUrl = require_encodeurl();
     var escapeHtml = require_escape_html();
     var parseUrl = require_parseurl();
-    var resolve = __require("path").resolve;
+    var resolve2 = __require("path").resolve;
     var send = require_send();
     var url = __require("url");
     module.exports = serveStatic;
@@ -23641,7 +23653,7 @@ var require_serve_static = __commonJS({
         throw new TypeError("option setHeaders must be function");
       }
       opts.maxage = opts.maxage || opts.maxAge || 0;
-      opts.root = resolve(root);
+      opts.root = resolve2(root);
       var onDirectory = redirect ? createRedirectDirectoryListener() : createNotFoundDirectoryListener();
       return function serveStatic2(req, res, next) {
         if (req.method !== "GET" && req.method !== "HEAD") {
@@ -23727,7 +23739,7 @@ var require_express = __commonJS({
     var EventEmitter = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router5 = require_router();
+    var Router8 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23749,8 +23761,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router5.Route;
-    exports.Router = Router5;
+    exports.Route = Router8.Route;
+    exports.Router = Router8;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -28259,7 +28271,7 @@ var require_pino = __commonJS({
     function pinoBundlerAbsolutePath(p) {
       try {
         const path = __require("path");
-        const outputDir = "C:\\Users\\HSG\\Downloads\\rD-llG-ltaalymy (1)\\rD-llG-ltaalymy\\artifacts\\api-server\\dist";
+        const outputDir = "C:\\Users\\HSG\\Downloads\\arabic-main\\arabic-main\\artifacts\\api-server\\dist";
         return path.resolve(outputDir, p.replace(/^\.\//, ""));
       } catch (e) {
         const f = new Function("p", "return new URL(p, import.meta.url).pathname");
@@ -28721,14 +28733,1477 @@ var require_logger = __commonJS({
   }
 });
 
+// src/lib/logger.ts
+var import_pino, isProduction, logger;
+var init_logger = __esm({
+  "src/lib/logger.ts"() {
+    "use strict";
+    import_pino = __toESM(require_pino(), 1);
+    isProduction = process.env.NODE_ENV === "production";
+    logger = (0, import_pino.default)({
+      level: process.env.LOG_LEVEL ?? "info",
+      redact: [
+        "req.headers.authorization",
+        "req.headers.cookie",
+        "res.headers['set-cookie']"
+      ],
+      ...isProduction ? {} : {
+        transport: {
+          target: "pino-pretty",
+          options: { colorize: true }
+        }
+      }
+    });
+  }
+});
+
+// src/lib/supabase.ts
+async function getSupabaseUser(accessToken) {
+  if (!accessToken) return null;
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/user`,
+      {
+        headers: {
+          apikey: SERVICE_ROLE,
+          Authorization: `Bearer ${accessToken}`
+        }
+      }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data && typeof data === "object" ? data : null;
+  } catch (err) {
+    logger.error({ err }, "getSupabaseUser failed");
+    return null;
+  }
+}
+async function supabaseQuery(endpoint, options = {}) {
+  try {
+    const url = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/${endpoint.replace(/^\/+/, "")}`;
+    const fetchHeaders = {
+      ...baseHeaders,
+      ...options.headers
+    };
+    const res = await fetch(url, {
+      method: options.method || "GET",
+      headers: fetchHeaders,
+      body: options.body ? JSON.stringify(options.body) : void 0
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      logger.error({ endpoint, status: res.status, errText }, "Supabase query error");
+      return { data: null, error: errText || `Status ${res.status}` };
+    }
+    const contentRange = res.headers.get("content-range");
+    let count = null;
+    if (contentRange) {
+      const parts = contentRange.split("/");
+      if (parts[1] && parts[1] !== "*") {
+        count = parseInt(parts[1], 10);
+      }
+    }
+    if (res.status === 204) {
+      return { data: null, error: null };
+    }
+    const data = await res.json().catch(() => null);
+    return { data, error: null, count };
+  } catch (err) {
+    logger.error({ err, endpoint }, "Supabase fetch threw exception");
+    return { data: null, error: err.message };
+  }
+}
+var SUPABASE_URL, SERVICE_ROLE, baseHeaders;
+var init_supabase = __esm({
+  "src/lib/supabase.ts"() {
+    "use strict";
+    init_logger();
+    SUPABASE_URL = process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co";
+    SERVICE_ROLE = process.env.service_role || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || "sb_publishable_kPG7zfG0FFZpRTkNnHhO1Q_oXoOq8fg";
+    baseHeaders = {
+      "Content-Type": "application/json",
+      apikey: SERVICE_ROLE,
+      Authorization: `Bearer ${SERVICE_ROLE}`
+    };
+  }
+});
+
+// src/middlewares/auth.ts
+async function resolveAuth(req) {
+  try {
+    const token = req?.cookies?.supabase_access_token;
+    if (!token) return null;
+    const user = await getSupabaseUser(token);
+    const userId = String(user?.id || "");
+    if (!userId) return null;
+    const { data } = await supabaseQuery(
+      `profiles?id=eq.${encodeURIComponent(userId)}&select=id,email,role,grade,gender&limit=1`
+    );
+    const profile = data?.[0];
+    if (!profile) return null;
+    const gender = profile.gender === "\u0637\u0627\u0644\u0628" || profile.gender === "\u0637\u0627\u0644\u0628\u0629" ? profile.gender : null;
+    return {
+      userId: profile.id,
+      email: profile.email || "",
+      role: profile.role || "student",
+      grade: profile.grade || "",
+      gender
+    };
+  } catch (err) {
+    logger.warn({ err }, "resolveAuth failed");
+    return null;
+  }
+}
+var requireAuth, requireAdmin;
+var init_auth = __esm({
+  "src/middlewares/auth.ts"() {
+    "use strict";
+    init_supabase();
+    init_logger();
+    requireAuth = async (req, res, next) => {
+      const auth = await resolveAuth(req);
+      if (!auth) {
+        res.status(401).json({ error: "\u0633\u062C\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0623\u0648\u0644\u0627\u064B \u0644\u0644\u0645\u062A\u0627\u0628\u0639\u0629." });
+        return;
+      }
+      req.auth = auth;
+      next();
+    };
+    requireAdmin = async (req, res, next) => {
+      const auth = await resolveAuth(req);
+      if (!auth) {
+        res.status(401).json({ error: "\u0633\u062C\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0623\u0648\u0644\u0627\u064B \u0644\u0644\u0645\u062A\u0627\u0628\u0639\u0629." });
+        return;
+      }
+      if (auth.role !== "admin") {
+        res.status(403).json({ error: "\u0647\u0630\u0647 \u0627\u0644\u0635\u0644\u0627\u062D\u064A\u0629 \u0644\u0644\u0625\u062F\u0627\u0631\u0629 \u0641\u0642\u0637." });
+        return;
+      }
+      req.auth = auth;
+      next();
+    };
+  }
+});
+
+// src/lib/imagekit.ts
+import { readFileSync, existsSync } from "node:fs";
+import { resolve } from "node:path";
+function loadLocalEnvOnce() {
+  if (process.env.IMAGEKIT_1_PRIVATE_KEY) return;
+  const candidates = [
+    resolve(process.cwd(), ".env"),
+    resolve(process.cwd(), "..", "..", ".env"),
+    resolve(process.cwd(), "..", ".env")
+  ];
+  for (const p of candidates) {
+    try {
+      if (!existsSync(p)) continue;
+      const text = readFileSync(p, "utf8");
+      for (const line of text.split("\n")) {
+        const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+        if (!m) continue;
+        const [, key, raw] = m;
+        if (process.env[key] !== void 0) continue;
+        process.env[key] = raw.replace(/^["']|["']$/g, "");
+      }
+      if (process.env.IMAGEKIT_1_PRIVATE_KEY) return;
+    } catch {
+    }
+  }
+}
+function getImageKitAccounts() {
+  loadLocalEnvOnce();
+  const accounts = [];
+  for (let i = 1; i <= 8; i++) {
+    const id = process.env[`IMAGEKIT_${i}_ID`];
+    const privateKey = process.env[`IMAGEKIT_${i}_PRIVATE_KEY`];
+    if (!id || !privateKey) continue;
+    accounts.push({
+      id,
+      endpoint: (process.env[`IMAGEKIT_${i}_ENDPOINT`] || `https://ik.imagekit.io/${id}`).replace(/\/+$/, ""),
+      publicKey: process.env[`IMAGEKIT_${i}_PUBLIC_KEY`] || "",
+      privateKey
+    });
+  }
+  return accounts;
+}
+function basicAuth(privateKey) {
+  return "Basic " + Buffer.from(`${privateKey}:`).toString("base64");
+}
+function dataUrlToBuffer(dataUrl) {
+  const m = dataUrl.match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
+  if (!m) {
+    return { buffer: Buffer.from(dataUrl, "base64"), mime: "application/octet-stream" };
+  }
+  return { buffer: Buffer.from(m[3], "base64"), mime: m[1] || "application/octet-stream" };
+}
+async function uploadToAccount(account, buffer, fileName, mime, folder) {
+  const form = new FormData();
+  form.append("file", new Blob([new Uint8Array(buffer)], { type: mime }), fileName);
+  form.append("fileName", fileName);
+  form.append("folder", folder.startsWith("/") ? folder : `/${folder}`);
+  form.append("useUniqueFileName", "true");
+  form.append("tags", "ard-al-lughah");
+  const res = await fetch("https://upload.imagekit.io/api/v1/files/upload", {
+    method: "POST",
+    headers: { Authorization: basicAuth(account.privateKey) },
+    body: form
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data?.message || `ImageKit upload failed (${res.status})`);
+  }
+  return {
+    url: data.url,
+    thumbnailUrl: data.thumbnailUrl || data.url,
+    fileId: data.fileId,
+    name: data.name,
+    filePath: data.filePath,
+    size: data.size || buffer.length,
+    accountId: account.id,
+    endpoint: account.endpoint
+  };
+}
+async function uploadFile(dataUrlOrBase64, fileName, folder = "/ard-al-lughah", preferredAccountId) {
+  const accounts = getImageKitAccounts();
+  if (!accounts.length) {
+    throw new Error("\u0627\u0644\u062A\u062E\u0632\u064A\u0646 \u0627\u0644\u0633\u062D\u0627\u0628\u064A \u063A\u064A\u0631 \u0645\u0647\u064A\u0623 \u2014 \u0623\u0636\u0641 \u0645\u0641\u0627\u062A\u064A\u062D IMAGEKIT_* \u0625\u0644\u0649 .env");
+  }
+  const { buffer, mime } = dataUrlToBuffer(dataUrlOrBase64);
+  const MAX = 20 * 1024 * 1024;
+  if (buffer.length > MAX) {
+    throw new Error("\u062D\u062C\u0645 \u0627\u0644\u0645\u0644\u0641 \u064A\u062A\u062C\u0627\u0648\u0632 20MB \u2014 \u0635\u063A\u0651\u0631 \u0627\u0644\u0635\u0648\u0631\u0629 \u0648\u062D\u0627\u0648\u0644 \u0645\u062C\u062F\u062F\u0627\u064B");
+  }
+  const safeName = (fileName || `file-${Date.now()}`).replace(/[^\w.\-()\[\] ]+/g, "_").slice(0, 120);
+  let start = activeIndex % accounts.length;
+  if (preferredAccountId) {
+    const idx = accounts.findIndex((a) => a.id === preferredAccountId);
+    if (idx >= 0) start = idx;
+  }
+  const errors = [];
+  for (let step = 0; step < accounts.length; step++) {
+    const idx = (start + step) % accounts.length;
+    try {
+      const result = await uploadToAccount(accounts[idx], buffer, safeName, mime, folder);
+      activeIndex = idx;
+      return result;
+    } catch (err) {
+      errors.push(`${accounts[idx].id}: ${err?.message || err}`);
+      logger.warn({ account: accounts[idx].id, err }, "ImageKit upload failed, rotating");
+    }
+  }
+  throw new Error("\u062A\u0639\u0630\u0631 \u0627\u0644\u0631\u0641\u0639 \u0639\u0644\u0649 \u0643\u0644 \u062D\u0633\u0627\u0628\u0627\u062A \u0627\u0644\u062A\u062E\u0632\u064A\u0646: " + errors.join(" | "));
+}
+async function deleteFileById(fileId, accountId) {
+  const accounts = getImageKitAccounts();
+  const targets = accountId ? accounts.filter((a) => a.id === accountId) : accounts;
+  if (!targets.length) throw new Error("\u0644\u0627 \u062A\u0648\u062C\u062F \u062D\u0633\u0627\u0628\u0627\u062A \u062A\u062E\u0632\u064A\u0646 \u0645\u0647\u064A\u0623\u0629");
+  const errors = [];
+  for (const acc of targets) {
+    const res = await fetch(`https://api.imagekit.io/v1/files/${encodeURIComponent(fileId)}`, {
+      method: "DELETE",
+      headers: { Authorization: basicAuth(acc.privateKey) }
+    });
+    if (res.ok || res.status === 404) return;
+    const t = await res.text().catch(() => "");
+    errors.push(`${acc.id}: ${t.slice(0, 120)}`);
+  }
+  throw new Error("\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0645\u0644\u0641: " + errors.join(" | "));
+}
+async function deleteFileByUrl(url) {
+  const accounts = getImageKitAccounts();
+  const acc = accounts.find((a) => url.startsWith(a.endpoint + "/"));
+  if (!acc) throw new Error("\u0627\u0644\u0631\u0627\u0628\u0637 \u0644\u064A\u0633 \u0645\u0646 \u062D\u0633\u0627\u0628\u0627\u062A \u0627\u0644\u062A\u062E\u0632\u064A\u0646 \u0627\u0644\u0645\u0639\u0631\u0648\u0641\u0629");
+  const filePath = "/" + url.slice(acc.endpoint.length + 1).split("?")[0];
+  const res = await fetch(
+    `https://api.imagekit.io/v1/files?limit=1000&searchQuery=${encodeURIComponent(`path:"${filePath}"`)}`,
+    { headers: { Authorization: basicAuth(acc.privateKey) } }
+  );
+  if (!res.ok) throw new Error("\u062A\u0639\u0630\u0631 \u0627\u0644\u0628\u062D\u062B \u0639\u0646 \u0627\u0644\u0645\u0644\u0641 \u0641\u064A \u0627\u0644\u062A\u062E\u0632\u064A\u0646");
+  const list = await res.json().catch(() => []);
+  const hit = Array.isArray(list) ? list.find((f) => f.filePath === filePath) || list[0] : null;
+  if (!hit?.fileId) throw new Error("\u0627\u0644\u0645\u0644\u0641 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F \u0641\u064A \u0627\u0644\u062A\u062E\u0632\u064A\u0646");
+  await deleteFileById(hit.fileId, acc.id);
+}
+function getStorageStatus() {
+  const accounts = getImageKitAccounts();
+  return {
+    configured: accounts.length,
+    accounts: accounts.map((a, i) => ({
+      id: a.id,
+      endpoint: a.endpoint,
+      active: i === activeIndex % Math.max(accounts.length, 1)
+    })),
+    activeAccountId: accounts.length ? accounts[activeIndex % accounts.length].id : null,
+    maxFileMB: 20
+  };
+}
+var activeIndex;
+var init_imagekit = __esm({
+  "src/lib/imagekit.ts"() {
+    "use strict";
+    init_logger();
+    activeIndex = 0;
+  }
+});
+
+// src/lib/ai.ts
+var ai_exports = {};
+__export(ai_exports, {
+  PRESET_DURATIONS: () => PRESET_DURATIONS,
+  generateQuestions: () => generateQuestions,
+  suggestExamMeta: () => suggestExamMeta
+});
+function buildPrompt(opts) {
+  const ctx = [
+    opts.grade ? `\u0627\u0644\u0635\u0641: ${opts.grade}` : "",
+    opts.unitTitle ? `\u0627\u0644\u0648\u062D\u062F\u0629: ${opts.unitTitle}` : "",
+    opts.lessonTitle ? `\u0627\u0644\u062F\u0631\u0633: ${opts.lessonTitle}` : ""
+  ].filter(Boolean).join(" \u2014 ");
+  const countLine = opts.count ? `\u0639\u062F\u062F \u0627\u0644\u0623\u0633\u0626\u0644\u0629: ${opts.count}` : `\u0639\u062F\u062F \u0627\u0644\u0623\u0633\u0626\u0644\u0629: \u0627\u062E\u062A\u0631 \u0623\u0646\u062A \u0627\u0644\u0639\u062F\u062F \u0627\u0644\u0645\u0646\u0627\u0633\u0628 \u0644\u062A\u063A\u0637\u064A\u0629 \u0627\u0644\u0645\u0648\u0636\u0648\u0639 (\u0628\u064A\u0646 5 \u0648 8 \u0623\u0633\u0626\u0644\u0629)`;
+  return `\u0623\u0646\u062A \u062E\u0628\u064A\u0631 \u0641\u064A \u0627\u0644\u0645\u0646\u0647\u0627\u062C \u0627\u0644\u0641\u0644\u0633\u0637\u064A\u0646\u064A \u0644\u0644\u063A\u0629 \u0627\u0644\u0639\u0631\u0628\u064A\u0629. \u0623\u0646\u0634\u0626 \u0627\u062E\u062A\u0628\u0627\u0631 \u0627\u062E\u062A\u064A\u0627\u0631 \u0645\u0646 \u0645\u062A\u0639\u062F\u062F.
+${ctx ? `\u0627\u0644\u0633\u064A\u0627\u0642: ${ctx}.
+` : ""}\u0645\u0648\u0636\u0648\u0639 \u0627\u0644\u0627\u062E\u062A\u0628\u0627\u0631: ${opts.prompt}
+${countLine} \u2014 \u0627\u0644\u0645\u0633\u062A\u0648\u0649: ${opts.level}.
+
+\u0634\u0631\u0648\u0637 \u0635\u0627\u0631\u0645\u0629:
+- \u0643\u0644 \u0633\u0624\u0627\u0644 \u0644\u0647 4 \u062E\u064A\u0627\u0631\u0627\u062A \u0628\u0627\u0644\u0636\u0628\u0637\u060C \u062E\u064A\u0627\u0631 \u0648\u0627\u062D\u062F \u0635\u062D\u064A\u062D \u0641\u0642\u0637.
+- correctAnswer \u0647\u0648 \u0631\u0642\u0645 \u0627\u0644\u062E\u064A\u0627\u0631 \u0627\u0644\u0635\u062D\u064A\u062D (0-3).
+- explanation \u0634\u0631\u062D \u0645\u062E\u062A\u0635\u0631 \u0644\u0644\u0625\u062C\u0627\u0628\u0629 \u0627\u0644\u0635\u062D\u064A\u062D\u0629.
+- \u0627\u0644\u0644\u063A\u0629: \u0639\u0631\u0628\u064A\u0629 \u0641\u0635\u064A\u062D\u0629 \u0633\u0644\u064A\u0645\u0629\u060C \u0648\u0627\u0644\u0634\u0648\u0627\u0647\u062F \u0645\u0646 \u0627\u0644\u0645\u0646\u0647\u0627\u062C \u0627\u0644\u0641\u0644\u0633\u0637\u064A\u0646\u064A.
+- \u0623\u0639\u062F \u0643\u0627\u0626\u0646 JSON \u062E\u0627\u0645 \u0641\u0642\u0637 (\u0628\u062F\u0648\u0646 markdown) \u0628\u0647\u0630\u0627 \u0627\u0644\u0634\u0643\u0644 \u0628\u0627\u0644\u0636\u0628\u0637:
+{"description":"\u0633\u0637\u0631 \u0623\u0648 \u0633\u0637\u0631\u0627\u0646 \u064A\u0635\u0641\u0627\u0646 \u0627\u0644\u0627\u062E\u062A\u0628\u0627\u0631 \u0644\u0644\u0637\u0627\u0644\u0628 \u0628\u0623\u0633\u0644\u0648\u0628 \u0645\u062D\u0641\u0632","durationMinutes":20,"questions":[{"question":"...","options":["...","...","...","..."],"correctAnswer":0,"explanation":"..."}]}
+- \u0627\u062E\u062A\u0631 durationMinutes \u0645\u0646 [10,15,20,30,45,60] \u0628\u0645\u0627 \u064A\u0646\u0627\u0633\u0628 \u0639\u062F\u062F \u0627\u0644\u0623\u0633\u0626\u0644\u0629 \u0648\u0645\u0633\u062A\u0648\u0627\u0647\u0627 (\u0646\u062D\u0648 \u062F\u0642\u064A\u0642\u062A\u064A\u0646 \u0644\u0644\u0633\u0624\u0627\u0644).`;
+}
+function tryParseQuestions(json) {
+  try {
+    const parsed = JSON.parse(json);
+    if (!Array.isArray(parsed) || !parsed.length) return null;
+    const valid = parsed.filter(
+      (q) => q && typeof q.question === "string" && q.question.trim() && Array.isArray(q.options) && q.options.length >= 2
+    );
+    if (!valid.length) return null;
+    return valid.map((q) => ({
+      question: String(q.question).slice(0, 500),
+      options: q.options.slice(0, 4).map((o) => String(o).slice(0, 200)),
+      correctAnswer: Math.min(Math.max(Number(q.correctAnswer) || 0, 0), 3),
+      explanation: String(q.explanation || "").slice(0, 500)
+    }));
+  } catch {
+    return null;
+  }
+}
+function tryPayload(s) {
+  try {
+    const p = JSON.parse(s);
+    if (Array.isArray(p)) {
+      const questions = tryParseQuestions(JSON.stringify(p));
+      return questions ? { questions, description: "", durationMinutes: null } : null;
+    }
+    if (p && Array.isArray(p.questions)) {
+      const questions = tryParseQuestions(JSON.stringify(p.questions));
+      if (!questions) return null;
+      return {
+        questions,
+        description: String(p.description || "").slice(0, 300),
+        durationMinutes: Number(p.durationMinutes) || null
+      };
+    }
+  } catch {
+  }
+  return null;
+}
+function extractQuestions(text) {
+  const candidates = [];
+  for (const m of text.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/g)) {
+    candidates.push(m[1]);
+  }
+  candidates.push(text);
+  const spans = [];
+  for (const re of [/\{[\s\S]*\}/g, /\[[\s\S]*\]/g]) {
+    let m;
+    while ((m = re.exec(text)) !== null) spans.push(m[0]);
+  }
+  spans.sort((a, b) => b.length - a.length);
+  candidates.push(...spans.slice(0, 6));
+  for (const c of candidates) {
+    const t = c.trim();
+    const direct = tryPayload(t);
+    if (direct) return direct;
+    const bs = t.indexOf("[");
+    const be = t.lastIndexOf("]");
+    if (bs >= 0 && be > bs) {
+      const arr = tryPayload(t.slice(bs, be + 1));
+      if (arr) return arr;
+    }
+    const os = t.indexOf("{");
+    const oe = t.lastIndexOf("}");
+    if (os >= 0 && oe > os) {
+      const obj = tryPayload(t.slice(os, oe + 1));
+      if (obj) return obj;
+    }
+  }
+  throw new Error("bad shape");
+}
+function groqKeys() {
+  const list = [];
+  const push = (k) => {
+    const t = (k || "").trim();
+    if (t && !list.includes(t)) list.push(t);
+  };
+  push(process.env.GROQ_API_KEY);
+  for (let i = 1; i <= 5; i++) push(process.env[`GROQ_API_KEY_${i}`]);
+  const csv = process.env.GROQ_API_KEYS;
+  if (csv) for (const k of csv.split(",")) push(k);
+  return list;
+}
+async function chatComplete(url, key, model, prompt) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: "\u0623\u0646\u062A \u0645\u0648\u0644\u0651\u062F \u0627\u062E\u062A\u0628\u0627\u0631\u0627\u062A \u0639\u0631\u0628\u064A\u0629. \u0623\u0639\u062F JSON \u062E\u0627\u0645 \u0641\u0642\u0637." },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.7
+    })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error?.message || `AI error ${res.status}`);
+  const text = data?.choices?.[0]?.message?.content;
+  if (!text) throw new Error("empty AI response");
+  return text;
+}
+function groqModels() {
+  const list = [
+    process.env.GROQ_MODEL,
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "qwen/qwen3.8-27b",
+    "allam-2-7b"
+  ].filter(Boolean);
+  return [...new Set(list)];
+}
+async function viaGroq(prompt, key) {
+  let lastErr = null;
+  for (const model of groqModels()) {
+    try {
+      return await chatComplete("https://api.groq.com/openai/v1/chat/completions", key, model, prompt);
+    } catch (err) {
+      const msg = String(err?.message || err);
+      if (/401|invalid_api_key|unauthorized/i.test(msg)) throw err;
+      logger.warn({ model, err: msg.slice(0, 160) }, "GROQ model failed, trying next model");
+      lastErr = err;
+    }
+  }
+  throw lastErr || new Error("GROQ failed");
+}
+async function viaOpenAICompatible(prompt) {
+  const key = process.env.AI_API_KEY;
+  const base = (process.env.AI_API_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
+  const model = process.env.AI_MODEL || "gpt-4o-mini";
+  return chatComplete(`${base}/chat/completions`, key, model, prompt);
+}
+async function viaPollinations(prompt) {
+  const res = await fetch("https://text.pollinations.ai/openai", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "openai",
+      messages: [
+        { role: "system", content: "\u0623\u0646\u062A \u0645\u0648\u0644\u0651\u062F \u0627\u062E\u062A\u0628\u0627\u0631\u0627\u062A \u0639\u0631\u0628\u064A\u0629. \u0623\u0639\u062F JSON \u062E\u0627\u0645 \u0641\u0642\u0637." },
+        { role: "user", content: prompt }
+      ]
+    })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`Pollinations error ${res.status}`);
+  const text = data?.choices?.[0]?.message?.content;
+  if (!text) throw new Error("empty AI response");
+  return text;
+}
+function suggestExamMeta(opts) {
+  const clean = (s) => (s || "").replace(/^(المطالعة|الشعر|القواعد|البلاغة|العروض|الإملاء|التعبير|التقويم)\s*:\s*/, "").trim();
+  const lesson = clean(opts.lessonTitle);
+  const unit = clean(opts.unitTitle);
+  const suggestedTitle = lesson ? `\u0627\u062E\u062A\u0628\u0627\u0631 \u062F\u0631\u0633 ${lesson}` : unit ? `\u0627\u062E\u062A\u0628\u0627\u0631 ${unit}` : `\u0627\u062E\u062A\u0628\u0627\u0631: ${opts.prompt.slice(0, 45)}`;
+  const n = opts.questionsCount;
+  const suggestedDuration = n <= 3 ? PRESET_DURATIONS[0] : n <= 5 ? PRESET_DURATIONS[1] : n <= 8 ? PRESET_DURATIONS[2] : n <= 10 ? PRESET_DURATIONS[3] : PRESET_DURATIONS[4];
+  return { suggestedTitle, suggestedDuration };
+}
+async function generateQuestions(opts) {
+  const auto = !opts.count || Number(opts.count) <= 0;
+  const count = auto ? 10 : Math.min(Math.max(Number(opts.count), 1), 15);
+  const full = buildPrompt({ ...opts, count: auto ? void 0 : count });
+  const finish = (payload, provider) => ({
+    questions: payload.questions.slice(0, count),
+    description: payload.description,
+    durationMinutes: payload.durationMinutes,
+    provider
+  });
+  const keys = groqKeys();
+  for (let i = 0; i < keys.length; i++) {
+    try {
+      return finish(extractQuestions(await viaGroq(full, keys[i])), `GROQ #${i + 1}`);
+    } catch (err) {
+      logger.warn({ keyIndex: i + 1, err: err?.message }, "GROQ key failed, rotating to next");
+    }
+  }
+  if (process.env.AI_API_KEY) {
+    try {
+      return finish(extractQuestions(await viaOpenAICompatible(full)), "custom");
+    } catch (err) {
+      logger.warn({ err }, "custom AI failed, falling back to free provider");
+    }
+  }
+  try {
+    return finish(extractQuestions(await viaPollinations(full)), "free");
+  } catch (err) {
+    logger.error({ err }, "AI generation failed on all providers");
+    throw new Error("\u062A\u0639\u0630\u0631 \u062A\u0648\u0644\u064A\u062F \u0627\u0644\u0623\u0633\u0626\u0644\u0629 \u0627\u0644\u0622\u0646 \u0639\u0644\u0649 \u0643\u0644 \u0627\u0644\u0645\u0632\u0648\u062F\u064A\u0646 \u2014 \u062A\u062D\u0642\u0642 \u0645\u0646 \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0648\u0627\u0644\u0645\u0641\u0627\u062A\u064A\u062D \u0648\u062D\u0627\u0648\u0644 \u0645\u062C\u062F\u062F\u0627\u064B (\u064A\u0645\u0643\u0646\u0643 \u062F\u0627\u0626\u0645\u0627\u064B \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0623\u0633\u0626\u0644\u0629 \u064A\u062F\u0648\u064A\u0627\u064B).");
+  }
+}
+var PRESET_DURATIONS;
+var init_ai = __esm({
+  "src/lib/ai.ts"() {
+    "use strict";
+    init_logger();
+    init_imagekit();
+    loadLocalEnvOnce();
+    PRESET_DURATIONS = ["10 \u062F\u0642\u0627\u0626\u0642", "15 \u062F\u0642\u064A\u0642\u0629", "20 \u062F\u0642\u064A\u0642\u0629", "30 \u062F\u0642\u064A\u0642\u0629", "45 \u062F\u0642\u064A\u0642\u0629", "60 \u062F\u0642\u064A\u0642\u0629"];
+  }
+});
+
+// src/routes/curriculum.ts
+var curriculum_exports = {};
+__export(curriculum_exports, {
+  default: () => curriculum_default,
+  getSplitMap: () => getSplitMap,
+  getStudentGender: () => getStudentGender,
+  getStudentProfile: () => getStudentProfile,
+  isSplitEnabled: () => isSplitEnabled,
+  itemVisible: () => itemVisible,
+  sectionVisible: () => sectionVisible
+});
+async function getGate(grade, term) {
+  try {
+    const { data } = await supabaseQuery(
+      `grade_gates?grade=eq.${enc(grade)}&term=eq.${enc(term)}&limit=1`
+    );
+    const g = data?.[0];
+    if (!g) return { ...DEFAULT_GATE, grade, term };
+    return {
+      grade: g.grade,
+      term: g.term,
+      unlocked_course_id: g.unlocked_course_id || null,
+      unlocked_lesson_id: g.unlocked_lesson_id || null,
+      unlocked_unit_order: typeof g.unlocked_unit_order === "number" ? g.unlocked_unit_order : 99,
+      note: g.note || ""
+    };
+  } catch {
+    return { ...DEFAULT_GATE, grade, term };
+  }
+}
+async function getStudentGender(userId) {
+  if (!userId) return null;
+  try {
+    const { data } = await supabaseQuery(`profiles?id=eq.${enc(userId)}&select=gender&limit=1`);
+    const g = data?.[0]?.gender;
+    return g === "\u0637\u0627\u0644\u0628" || g === "\u0637\u0627\u0644\u0628\u0629" ? g : null;
+  } catch {
+    return null;
+  }
+}
+async function isSplitEnabled() {
+  try {
+    const { data } = await supabaseQuery("platform_settings?select=gender_split&limit=1");
+    return data?.[0]?.gender_split === true;
+  } catch {
+    return false;
+  }
+}
+function sectionVisible(section, gender, split) {
+  if (!split || !gender) return true;
+  const s = section || "\u0627\u0644\u062C\u0645\u064A\u0639";
+  return s === "\u0627\u0644\u062C\u0645\u064A\u0639" || s === gender;
+}
+async function getSplitMap() {
+  try {
+    const { data } = await supabaseQuery("grade_settings?select=grade,gender_split&limit=20");
+    const map = {};
+    for (const g of data || []) {
+      if (g.grade) map[g.grade] = g.gender_split === true;
+    }
+    return map;
+  } catch {
+    return {};
+  }
+}
+async function getStudentProfile(userId) {
+  if (!userId) return null;
+  try {
+    const { data } = await supabaseQuery(`profiles?id=eq.${enc(userId)}&select=grade,gender&limit=1`);
+    const p = data?.[0];
+    if (!p) return null;
+    return {
+      grade: p.grade || "",
+      gender: p.gender === "\u0637\u0627\u0644\u0628" || p.gender === "\u0637\u0627\u0644\u0628\u0629" ? p.gender : null
+    };
+  } catch {
+    return null;
+  }
+}
+function itemVisible(itemGrade, itemSection, studentGrade, studentGender, splitMap) {
+  const section = itemSection || "\u0627\u0644\u062C\u0645\u064A\u0639";
+  if (section === "\u0627\u0644\u062C\u0645\u064A\u0639") return true;
+  const relevant = itemGrade && itemGrade !== "\u0627\u0644\u062C\u0645\u064A\u0639" ? itemGrade : studentGrade;
+  if (splitMap[relevant] !== true) return true;
+  if (!studentGender) return true;
+  return section === studentGender;
+}
+function courseToJson(c) {
+  return {
+    id: c.id,
+    title: c.title,
+    description: c.description || "",
+    lessons: c.lessons_count ?? 0,
+    duration: c.duration || "",
+    color: c.color || "#2e7d32",
+    icon: c.icon || "book-open",
+    sort_order: c.sort_order ?? 1,
+    published: c.published !== false,
+    grade: c.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
+    term: c.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
+    coverUrl: c.cover_url || "",
+    avatarUrl: c.avatar_url || "",
+    status: c.status || "published",
+    isLocked: !!c.is_locked,
+    isVisible: c.is_visible !== false,
+    section: c.section || "\u0627\u0644\u062C\u0645\u064A\u0639"
+  };
+}
+function lessonToJson(l) {
+  let images = [];
+  try {
+    images = Array.isArray(l.images) ? l.images : JSON.parse(l.images || "[]");
+  } catch {
+    images = [];
+  }
+  return {
+    id: l.id,
+    course_id: l.course_id,
+    title: l.title,
+    description: l.description || "",
+    position: l.position ?? 1,
+    content: l.content || {},
+    published: l.published !== false,
+    lessonType: l.lesson_type || "\u0645\u0637\u0627\u0644\u0639\u0629",
+    coverUrl: l.cover_url || "",
+    images,
+    htmlContent: l.html_content || "",
+    htmlFileUrl: l.html_file_url || "",
+    status: l.status || "published",
+    isLocked: !!l.is_locked,
+    isVisible: l.is_visible !== false,
+    grade: l.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
+    term: l.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644"
+  };
+}
+async function tolerantWrite(table, method, query, full, baseKeys) {
+  const attempt = await supabaseQuery(query || table, {
+    method,
+    body: method === "POST" ? [full] : full
+  });
+  if (!attempt.error) return attempt;
+  const msg = String(attempt.error || "");
+  const missingColumn = msg.includes("column") || msg.includes("schema cache") || msg.includes("Could not find");
+  if (!missingColumn) return attempt;
+  const base = {};
+  for (const k of baseKeys) if (full[k] !== void 0) base[k] = full[k];
+  logger.warn({ table, msg }, "tolerantWrite fallback to base columns");
+  return supabaseQuery(query || table, {
+    method,
+    body: method === "POST" ? [base] : base
+  });
+}
+function announcementToJson(a) {
+  return {
+    id: a.id,
+    title: a.title,
+    body: a.body,
+    date: new Date(a.published_at || a.created_at || Date.now()).toLocaleDateString("ar-EG", { month: "short", day: "numeric" }),
+    type: a.announcement_type || "\u0625\u0631\u0634\u0627\u062F",
+    audience: a.audience || "\u0627\u0644\u062C\u0645\u064A\u0639",
+    grade: a.grade || "\u0627\u0644\u062C\u0645\u064A\u0639",
+    section: a.section || "\u0627\u0644\u062C\u0645\u064A\u0639",
+    published: a.published !== false
+  };
+}
+function assignmentToJson(a) {
+  return {
+    id: a.id,
+    title: a.title,
+    description: a.description || "",
+    unit: a.unit || "",
+    dueDate: a.due_date || "",
+    points: a.points ?? 0,
+    published: a.published !== false,
+    grade: a.grade || "\u0627\u0644\u062C\u0645\u064A\u0639",
+    section: a.section || "\u0627\u0644\u062C\u0645\u064A\u0639"
+  };
+}
+var import_express2, router2, enc, DEFAULT_GATE, COURSE_BASE, LESSON_BASE, ASSESSMENT_BASE, curriculum_default;
+var init_curriculum = __esm({
+  "src/routes/curriculum.ts"() {
+    "use strict";
+    import_express2 = __toESM(require_express2(), 1);
+    init_supabase();
+    init_auth();
+    init_logger();
+    router2 = (0, import_express2.Router)();
+    enc = (v) => encodeURIComponent(Array.isArray(v) ? v[0] ?? "" : v ?? "");
+    DEFAULT_GATE = {
+      grade: "",
+      term: "",
+      unlocked_course_id: null,
+      unlocked_lesson_id: null,
+      unlocked_unit_order: 99,
+      note: ""
+    };
+    COURSE_BASE = ["title", "description", "lessons_count", "duration", "color", "icon", "sort_order", "published"];
+    LESSON_BASE = ["course_id", "title", "description", "position", "content", "published"];
+    ASSESSMENT_BASE = ["course_id", "title", "questions_count", "duration", "available_date", "published"];
+    router2.get("/curriculum/grade-settings", async (_req, res) => {
+      try {
+        const { data } = await supabaseQuery("grade_settings?order=grade.asc&limit=20");
+        res.json(
+          (data || []).map((g) => ({ grade: g.grade, genderSplit: g.gender_split === true }))
+        );
+      } catch (err) {
+        logger.error({ err }, "GET /curriculum/grade-settings failed");
+        res.json([]);
+      }
+    });
+    router2.patch("/teacher/grade-settings", requireAdmin, async (req, res) => {
+      try {
+        const { grade, genderSplit } = req.body || {};
+        if (!grade) {
+          res.status(400).json({ error: "\u0627\u0644\u0635\u0641 \u0645\u0637\u0644\u0648\u0628" });
+          return;
+        }
+        const payload = { grade, gender_split: !!genderSplit, updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+        const existing = await supabaseQuery(`grade_settings?grade=eq.${enc(grade)}&limit=1`);
+        if (existing.data?.[0]) {
+          const r = await supabaseQuery(`grade_settings?grade=eq.${enc(grade)}`, { method: "PATCH", body: payload });
+          if (r.error) throw new Error(String(r.error));
+        } else {
+          const r = await supabaseQuery("grade_settings", { method: "POST", body: [payload] });
+          if (r.error) throw new Error(String(r.error));
+        }
+        res.json({ success: true, message: `\u062A\u0645 ${payload.gender_split ? "\u062A\u0641\u0639\u064A\u0644" : "\u0625\u064A\u0642\u0627\u0641"} \u0627\u0644\u062A\u0642\u0633\u064A\u0645 \u0644${grade}!` });
+      } catch (err) {
+        logger.error({ err }, "PATCH /teacher/grade-settings failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0627\u0644\u062D\u0641\u0638 \u2014 \u0646\u0641\u0651\u0630 \u0645\u0644\u0641 sql_curriculum_v5.sql \u0623\u0648\u0644\u0627\u064B" });
+      }
+    });
+    router2.get("/curriculum/grades", async (_req, res) => {
+      try {
+        const { data } = await supabaseQuery("grade_levels?order=sort_order.asc");
+        if (data && data.length) {
+          res.json(data.map((g) => ({ id: g.id, name: g.name, sortOrder: g.sort_order ?? 1 })));
+          return;
+        }
+      } catch (err) {
+        logger.warn({ err }, "grade_levels missing, using defaults");
+      }
+      res.json([
+        { id: "grade-8", name: "\u0627\u0644\u0635\u0641 \u0627\u0644\u062B\u0627\u0645\u0646", sortOrder: 1 },
+        { id: "grade-9", name: "\u0627\u0644\u0635\u0641 \u0627\u0644\u062A\u0627\u0633\u0639", sortOrder: 2 },
+        { id: "grade-10", name: "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631", sortOrder: 3 }
+      ]);
+    });
+    router2.get("/curriculum/gates", async (req, res) => {
+      try {
+        const { grade, term } = req.query;
+        let endpoint = "grade_gates?order=grade.asc";
+        if (grade) endpoint += `&grade=eq.${enc(grade)}`;
+        if (term) endpoint += `&term=eq.${enc(term)}`;
+        const { data } = await supabaseQuery(endpoint);
+        res.json(
+          (data || []).map((g) => ({
+            grade: g.grade,
+            term: g.term,
+            unlockedCourseId: g.unlocked_course_id || null,
+            unlockedLessonId: g.unlocked_lesson_id || null,
+            unlockedUnitOrder: g.unlocked_unit_order ?? 99,
+            note: g.note || "",
+            updatedAt: g.updated_at || null
+          }))
+        );
+      } catch (err) {
+        logger.error({ err }, "GET /curriculum/gates failed");
+        res.json([]);
+      }
+    });
+    router2.patch("/teacher/gates", requireAdmin, async (req, res) => {
+      try {
+        const { grade, term, unlockedCourseId, unlockedLessonId, unlockedUnitOrder, note } = req.body || {};
+        if (!grade || !term) {
+          res.status(400).json({ error: "\u0627\u0644\u0635\u0641 \u0648\u0627\u0644\u0641\u0635\u0644 \u0645\u0637\u0644\u0648\u0628\u0627\u0646" });
+          return;
+        }
+        const payload = { grade, term, updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+        if (unlockedCourseId !== void 0) payload.unlocked_course_id = unlockedCourseId || null;
+        if (unlockedLessonId !== void 0) payload.unlocked_lesson_id = unlockedLessonId || null;
+        if (unlockedUnitOrder !== void 0) payload.unlocked_unit_order = Number(unlockedUnitOrder) || 0;
+        if (note !== void 0) payload.note = note;
+        const existing = await supabaseQuery(
+          `grade_gates?grade=eq.${enc(grade)}&term=eq.${enc(term)}&limit=1`
+        );
+        if (existing.data?.[0]) {
+          const r = await supabaseQuery(`grade_gates?grade=eq.${enc(grade)}&term=eq.${enc(term)}`, {
+            method: "PATCH",
+            body: payload
+          });
+          if (r.error) throw new Error(String(r.error));
+        } else {
+          const r = await supabaseQuery("grade_gates", { method: "POST", body: [payload] });
+          if (r.error) throw new Error(String(r.error));
+        }
+        res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0646\u0642\u0637\u0629 \u0627\u0644\u0648\u0635\u0648\u0644 \u0644\u0637\u0644\u0627\u0628 \u0647\u0630\u0627 \u0627\u0644\u0635\u0641 \u0628\u0646\u062C\u0627\u062D!" });
+      } catch (err) {
+        logger.error({ err }, "PATCH /teacher/gates failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0628\u0648\u0627\u0628\u0629 \u2014 \u0646\u0641\u0651\u0630 \u0645\u0644\u0641 sql_curriculum_v2.sql \u0623\u0648\u0644\u0627\u064B" });
+      }
+    });
+    router2.get("/curriculum/courses", async (req, res) => {
+      try {
+        const { grade, term, student, progress } = req.query;
+        let endpoint = "courses?order=sort_order.asc&limit=200";
+        if (grade) endpoint += `&grade=eq.${enc(grade)}`;
+        if (term) endpoint += `&term=eq.${enc(term)}`;
+        const { data } = await supabaseQuery(endpoint);
+        let courses = (data || []).map(courseToJson);
+        if (student === "1" && progress) {
+          const [profile, splitMap] = await Promise.all([getStudentProfile(progress), getSplitMap()]);
+          if (profile) {
+            courses = courses.filter((c) => itemVisible(c.grade, c.section, profile.grade, profile.gender, splitMap));
+          }
+        }
+        let progressMap = {};
+        if (progress) {
+          try {
+            const { data: cp } = await supabaseQuery(
+              `course_progress?user_id=eq.${enc(progress)}&select=course_id,progress&limit=500`
+            );
+            for (const row of cp || []) progressMap[row.course_id] = row.progress || 0;
+          } catch {
+          }
+        }
+        let gate = null;
+        if (student === "1" && grade && term) gate = await getGate(grade, term);
+        if (gate) {
+          let cutoff = gate.unlocked_unit_order ?? 99;
+          if (gate.unlocked_course_id) {
+            const ref = courses.find((c) => c.id === gate.unlocked_course_id);
+            if (ref) cutoff = Math.min(cutoff, ref.sort_order);
+          }
+          courses = courses.map((c) => ({
+            ...c,
+            locked: c.isLocked || !c.isVisible || !c.published || c.sort_order > cutoff || c.status === "empty" ? c.sort_order > cutoff || c.isLocked || !c.isVisible : false,
+            gateLocked: c.sort_order > cutoff,
+            isEmpty: c.status === "empty" || c.lessons === 0
+          }));
+        } else {
+          courses = courses.map((c) => ({
+            ...c,
+            locked: c.isLocked,
+            gateLocked: false,
+            isEmpty: c.status === "empty" || c.lessons === 0
+          }));
+        }
+        res.json(courses.map((c) => ({ ...c, progress: progressMap[c.id] || 0 })));
+      } catch (err) {
+        logger.error({ err }, "GET /curriculum/courses failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u0648\u062D\u062F\u0627\u062A" });
+      }
+    });
+    router2.post("/teacher/curriculum/courses", requireAdmin, async (req, res) => {
+      try {
+        const b = req.body || {};
+        const full = {
+          title: b.title || "\u0648\u062D\u062F\u0629 \u062A\u0639\u0644\u064A\u0645\u064A\u0629 \u062C\u062F\u064A\u062F\u0629",
+          description: b.description || "",
+          lessons_count: Number(b.lessons) || Number(b.lessons_count) || 0,
+          duration: b.duration || "",
+          color: b.color || "#2e7d32",
+          icon: b.icon || "book-open",
+          sort_order: Number(b.sortOrder) || Number(b.sort_order) || 1,
+          published: b.published !== false,
+          grade: b.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
+          term: b.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
+          cover_url: b.coverUrl || b.cover_url || "",
+          avatar_url: b.avatarUrl || b.avatar_url || "",
+          status: b.status || "published",
+          is_locked: !!b.isLocked,
+          is_visible: b.isVisible !== false,
+          section: b.section || "\u0627\u0644\u062C\u0645\u064A\u0639"
+        };
+        const r = await tolerantWrite("courses", "POST", "courses", full, COURSE_BASE);
+        if (r.error) throw new Error(String(r.error));
+        res.json({ success: true, message: "\u062A\u0645\u062A \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0648\u062D\u062F\u0629 \u0628\u0646\u062C\u0627\u062D!" });
+      } catch (err) {
+        logger.error({ err }, "POST /teacher/curriculum/courses failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u0648\u062D\u062F\u0629" });
+      }
+    });
+    router2.patch("/teacher/curriculum/courses/:id", requireAdmin, async (req, res) => {
+      try {
+        const b = req.body || {};
+        const full = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+        if (b.title !== void 0) full.title = b.title;
+        if (b.description !== void 0) full.description = b.description;
+        if (b.lessons !== void 0 || b.lessons_count !== void 0) full.lessons_count = Number(b.lessons ?? b.lessons_count) || 0;
+        if (b.duration !== void 0) full.duration = b.duration;
+        if (b.color !== void 0) full.color = b.color;
+        if (b.icon !== void 0) full.icon = b.icon;
+        if (b.sortOrder !== void 0 || b.sort_order !== void 0) full.sort_order = Number(b.sortOrder ?? b.sort_order) || 1;
+        if (b.published !== void 0) full.published = !!b.published;
+        if (b.grade !== void 0) full.grade = b.grade;
+        if (b.term !== void 0) full.term = b.term;
+        if (b.coverUrl !== void 0 || b.cover_url !== void 0) full.cover_url = b.coverUrl ?? b.cover_url ?? "";
+        if (b.avatarUrl !== void 0 || b.avatar_url !== void 0) full.avatar_url = b.avatarUrl ?? b.avatar_url ?? "";
+        if (b.status !== void 0) full.status = b.status;
+        if (b.isLocked !== void 0 || b.is_locked !== void 0) full.is_locked = !!(b.isLocked ?? b.is_locked);
+        if (b.isVisible !== void 0 || b.is_visible !== void 0) full.is_visible = (b.isVisible ?? b.is_visible) !== false;
+        if (b.section !== void 0) full.section = b.section || "\u0627\u0644\u062C\u0645\u064A\u0639";
+        const r = await tolerantWrite("courses", "PATCH", `courses?id=eq.${enc(req.params.id)}`, full, [...COURSE_BASE]);
+        if (r.error) throw new Error(String(r.error));
+        res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u0648\u062D\u062F\u0629 \u0628\u0646\u062C\u0627\u062D!" });
+      } catch (err) {
+        logger.error({ err }, "PATCH /teacher/curriculum/courses failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0648\u062D\u062F\u0629" });
+      }
+    });
+    router2.delete("/teacher/curriculum/courses/:id", requireAdmin, async (req, res) => {
+      try {
+        const r = await supabaseQuery(`courses?id=eq.${enc(req.params.id)}`, { method: "DELETE" });
+        if (r.error) throw new Error(String(r.error));
+        res.json({ success: true, message: "\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u0648\u062D\u062F\u0629 \u0648\u062F\u0631\u0648\u0633\u0647\u0627!" });
+      } catch (err) {
+        logger.error({ err }, "DELETE course failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0648\u062D\u062F\u0629" });
+      }
+    });
+    router2.get("/curriculum/lessons/:id", async (req, res) => {
+      try {
+        const { data } = await supabaseQuery(`lessons?id=eq.${enc(req.params.id)}&limit=1`);
+        if (!data?.[0]) {
+          res.status(404).json({ error: "\u0627\u0644\u062F\u0631\u0633 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F" });
+          return;
+        }
+        res.json(lessonToJson(data[0]));
+      } catch (err) {
+        logger.error({ err }, "GET /curriculum/lessons/:id failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u062F\u0631\u0633" });
+      }
+    });
+    router2.get("/curriculum/courses/:id/lessons", async (req, res) => {
+      try {
+        const courseId = req.params.id;
+        const { student } = req.query;
+        const { data: courseData } = await supabaseQuery(`courses?id=eq.${enc(courseId)}&limit=1`);
+        const course = courseData?.[0];
+        const { data } = await supabaseQuery(`lessons?course_id=eq.${enc(courseId)}&order=position.asc&limit=200`);
+        let lessons = (data || []).map(lessonToJson);
+        if (student === "1" && course) {
+          const gate = await getGate(course.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631", course.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644");
+          let cutoff = gate.unlocked_unit_order ?? 99;
+          if (gate.unlocked_course_id) {
+            const { data: refData } = await supabaseQuery(`courses?id=eq.${enc(gate.unlocked_course_id)}&limit=1`);
+            const refOrder = refData?.[0]?.sort_order;
+            if (typeof refOrder === "number") cutoff = Math.min(cutoff, refOrder);
+          }
+          const courseLocked = (course.sort_order ?? 1) > cutoff;
+          let lessonCutoff = 9999;
+          if (gate.unlocked_lesson_id && gate.unlocked_course_id === courseId) {
+            const ref = lessons.find((l) => l.id === gate.unlocked_lesson_id);
+            if (ref) lessonCutoff = ref.position;
+          }
+          lessons = lessons.map((l) => {
+            const locked = courseLocked || l.isLocked || !l.isVisible || l.position > lessonCutoff;
+            return { ...l, locked, gateLocked: courseLocked || l.position > lessonCutoff, isEmpty: l.status === "empty" };
+          });
+        } else {
+          lessons = lessons.map((l) => ({ ...l, locked: l.isLocked, gateLocked: false, isEmpty: l.status === "empty" }));
+        }
+        res.json(lessons);
+      } catch (err) {
+        logger.error({ err }, "GET /curriculum/courses/:id/lessons failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u062F\u0631\u0648\u0633" });
+      }
+    });
+    router2.post("/teacher/curriculum/lessons", requireAdmin, async (req, res) => {
+      try {
+        const b = req.body || {};
+        if (!b.course_id && !b.courseId) {
+          res.status(400).json({ error: "\u0627\u0644\u0648\u062D\u062F\u0629 \u0645\u0637\u0644\u0648\u0628\u0629 \u0644\u0644\u062F\u0631\u0633" });
+          return;
+        }
+        const full = {
+          course_id: b.course_id || b.courseId,
+          title: b.title || "\u062F\u0631\u0633 \u062C\u062F\u064A\u062F",
+          description: b.description || "",
+          position: Number(b.position) || 1,
+          content: b.content || {},
+          published: b.published !== false,
+          lesson_type: b.lessonType || b.lesson_type || "\u0645\u0637\u0627\u0644\u0639\u0629",
+          cover_url: b.coverUrl || b.cover_url || "",
+          images: b.images || [],
+          html_content: b.htmlContent || b.html_content || "",
+          html_file_url: b.htmlFileUrl || b.html_file_url || "",
+          status: b.status || "published",
+          is_locked: !!b.isLocked,
+          is_visible: b.isVisible !== false,
+          grade: b.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
+          term: b.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644"
+        };
+        const r = await tolerantWrite("lessons", "POST", "lessons?select=id", full, LESSON_BASE);
+        if (r.error) throw new Error(String(r.error));
+        let newLessonId = null;
+        if (Array.isArray(r.data) && r.data[0]?.id) newLessonId = r.data[0].id;
+        try {
+          const { data } = await supabaseQuery(`lessons?course_id=eq.${enc(full.course_id)}&select=id`);
+          await supabaseQuery(`courses?id=eq.${enc(full.course_id)}`, { method: "PATCH", body: { lessons_count: (data || []).length } });
+        } catch {
+        }
+        res.json({ success: true, message: "\u062A\u0645\u062A \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u062F\u0631\u0633 \u0628\u0646\u062C\u0627\u062D!", id: newLessonId });
+      } catch (err) {
+        logger.error({ err }, "POST lesson failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u062F\u0631\u0633" });
+      }
+    });
+    router2.patch("/teacher/curriculum/lessons/:id", requireAdmin, async (req, res) => {
+      try {
+        const b = req.body || {};
+        const full = {};
+        if (b.course_id !== void 0 || b.courseId !== void 0) full.course_id = b.course_id || b.courseId;
+        if (b.title !== void 0) full.title = b.title;
+        if (b.description !== void 0) full.description = b.description;
+        if (b.position !== void 0) full.position = Number(b.position) || 1;
+        if (b.content !== void 0) full.content = b.content;
+        if (b.published !== void 0) full.published = !!b.published;
+        if (b.lessonType !== void 0 || b.lesson_type !== void 0) full.lesson_type = b.lessonType || b.lesson_type;
+        if (b.coverUrl !== void 0 || b.cover_url !== void 0) full.cover_url = b.coverUrl ?? b.cover_url ?? "";
+        if (b.images !== void 0) full.images = b.images;
+        if (b.htmlContent !== void 0 || b.html_content !== void 0) full.html_content = b.htmlContent ?? b.html_content ?? "";
+        if (b.htmlFileUrl !== void 0 || b.html_file_url !== void 0) full.html_file_url = b.htmlFileUrl ?? b.html_file_url ?? "";
+        if (b.status !== void 0) full.status = b.status;
+        if (b.isLocked !== void 0 || b.is_locked !== void 0) full.is_locked = !!(b.isLocked ?? b.is_locked);
+        if (b.isVisible !== void 0 || b.is_visible !== void 0) full.is_visible = (b.isVisible ?? b.is_visible) !== false;
+        if (b.grade !== void 0) full.grade = b.grade;
+        if (b.term !== void 0) full.term = b.term;
+        const r = await tolerantWrite("lessons", "PATCH", `lessons?id=eq.${enc(req.params.id)}`, full, LESSON_BASE);
+        if (r.error) throw new Error(String(r.error));
+        res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u062F\u0631\u0633 \u0628\u0646\u062C\u0627\u062D!" });
+      } catch (err) {
+        logger.error({ err }, "PATCH lesson failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u062F\u0631\u0633" });
+      }
+    });
+    router2.delete("/teacher/curriculum/lessons/:id", requireAdmin, async (req, res) => {
+      try {
+        const r = await supabaseQuery(`lessons?id=eq.${enc(req.params.id)}`, { method: "DELETE" });
+        if (r.error) throw new Error(String(r.error));
+        res.json({ success: true, message: "\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u062F\u0631\u0633!" });
+      } catch (err) {
+        logger.error({ err }, "DELETE lesson failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u062F\u0631\u0633" });
+      }
+    });
+    router2.get("/curriculum/assessments", async (req, res) => {
+      try {
+        const { grade, term, student, student_id } = req.query;
+        let endpoint = "assessments?order=available_date.asc&limit=200";
+        if (grade) endpoint += `&grade=eq.${enc(grade)}`;
+        if (term) endpoint += `&term=eq.${enc(term)}`;
+        const { data } = await supabaseQuery(endpoint);
+        const lessonIds = [...new Set((data || []).map((a) => a.lesson_id).filter(Boolean))];
+        let lessonTitles = {};
+        if (lessonIds.length) {
+          try {
+            const { data: lessons } = await supabaseQuery(
+              `lessons?id=in.(${lessonIds.map(enc).join(",")})&select=id,title&limit=200`
+            );
+            for (const l of lessons || []) lessonTitles[l.id] = l.title;
+          } catch {
+          }
+        }
+        let realCounts = {};
+        try {
+          const { data: allQ } = await supabaseQuery("assessment_questions?select=assessment_id&limit=5000");
+          for (const q of allQ || []) realCounts[q.assessment_id] = (realCounts[q.assessment_id] || 0) + 1;
+        } catch {
+        }
+        let list = (data || []).map((a) => ({
+          id: a.id,
+          courseId: a.course_id || null,
+          lessonId: a.lesson_id || null,
+          lessonTitle: a.lesson_id && lessonTitles[a.lesson_id] || "",
+          title: a.title,
+          description: a.description || "",
+          unitTitle: a.unit_title || "",
+          questions: realCounts[a.id] ?? a.questions_count ?? 0,
+          duration: a.duration || "20 \u062F\u0642\u064A\u0642\u0629",
+          date: a.available_date || "",
+          grade: a.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
+          term: a.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
+          published: a.published !== false,
+          isVisible: a.is_visible !== false,
+          section: a.section || "\u0627\u0644\u062C\u0645\u064A\u0639"
+        }));
+        if (student === "1") list = list.filter((a) => a.published && a.isVisible);
+        if (student_id) {
+          const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
+          if (profile) list = list.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap));
+        }
+        res.json(list);
+      } catch (err) {
+        logger.error({ err }, "GET /curriculum/assessments failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u0627\u062E\u062A\u0628\u0627\u0631\u0627\u062A" });
+      }
+    });
+    router2.post("/teacher/curriculum/assessments/generate", requireAdmin, async (req, res) => {
+      try {
+        const { prompt, count, level, grade, unitTitle, lessonTitle } = req.body || {};
+        if (!prompt || !String(prompt).trim()) {
+          res.status(400).json({ error: "\u0627\u0643\u062A\u0628 \u0648\u0635\u0641\u0627\u064B \u0644\u0644\u0627\u062E\u062A\u0628\u0627\u0631 \u0623\u0648\u0644\u0627\u064B (\u0645\u062B\u0627\u0644: \u0627\u062E\u062A\u0628\u0627\u0631 \u0639\u0646 \u0627\u0644\u062D\u0627\u0644 \u0648\u0623\u0646\u0648\u0627\u0639\u0647\u0627)" });
+          return;
+        }
+        const { generateQuestions: generateQuestions2, suggestExamMeta: suggestExamMeta2, PRESET_DURATIONS: PRESET_DURATIONS2 } = await Promise.resolve().then(() => (init_ai(), ai_exports));
+        const { questions, provider, description, durationMinutes } = await generateQuestions2({
+          prompt: String(prompt).slice(0, 1e3),
+          count: count ? Number(count) : void 0,
+          level: level || "\u0645\u062A\u0648\u0633\u0637",
+          grade,
+          unitTitle,
+          lessonTitle
+        });
+        const { suggestedTitle, suggestedDuration } = suggestExamMeta2({
+          prompt: String(prompt),
+          lessonTitle,
+          unitTitle,
+          questionsCount: questions.length
+        });
+        let finalDuration = suggestedDuration;
+        if (durationMinutes && durationMinutes > 0) {
+          const presets = [10, 15, 20, 30, 45, 60];
+          const nearest = presets.reduce((a, b) => Math.abs(b - durationMinutes) < Math.abs(a - durationMinutes) ? b : a);
+          finalDuration = PRESET_DURATIONS2[presets.indexOf(nearest)] || suggestedDuration;
+        }
+        const clean = (s) => (s || "").replace(/^(المطالعة|الشعر|القواعد|البلاغة|العروض|الإملاء|التعبير|التقويم)\s*:\s*/, "").trim();
+        const about = clean(lessonTitle) || clean(unitTitle) || String(prompt).slice(0, 60);
+        const suggestedDescription = description || `\u0627\u062E\u062A\u0628\u0627\u0631 \u062A\u0641\u0627\u0639\u0644\u064A \u0628\u0645\u0633\u062A\u0648\u0649 ${level || "\u0645\u062A\u0648\u0633\u0637"} \u0645\u0646 ${questions.length} \u0623\u0633\u0626\u0644\u0629 \u062D\u0648\u0644 ${about} \u2014 \u0623\u062C\u0628 \u0639\u0646 \u0627\u0644\u0623\u0633\u0626\u0644\u0629 \u0648\u0631\u0627\u062C\u0639 \u0627\u0644\u0634\u0631\u0648\u062D\u0627\u062A \u0641\u0648\u0631 \u0627\u0644\u062A\u0633\u0644\u064A\u0645.`;
+        res.json({ success: true, questions, provider, suggestedTitle, suggestedDuration: finalDuration, suggestedDescription, durations: PRESET_DURATIONS2 });
+      } catch (err) {
+        logger.error({ err }, "POST curriculum assessments/generate failed");
+        res.status(500).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u062A\u0648\u0644\u064A\u062F \u0627\u0644\u0623\u0633\u0626\u0644\u0629" });
+      }
+    });
+    router2.post("/teacher/curriculum/assessments", requireAdmin, async (req, res) => {
+      try {
+        const b = req.body || {};
+        if (!b.title) {
+          res.status(400).json({ error: "\u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u0627\u062E\u062A\u0628\u0627\u0631 \u0645\u0637\u0644\u0648\u0628" });
+          return;
+        }
+        const full = {
+          course_id: b.courseId || b.course_id || null,
+          lesson_id: b.lessonId || b.lesson_id || null,
+          title: b.title,
+          description: b.description || "",
+          unit_title: b.unitTitle || b.unit_title || "",
+          questions_count: Array.isArray(b.questions) ? b.questions.length : Number(b.questions) || 0,
+          duration: b.duration || "20 \u062F\u0642\u064A\u0642\u0629",
+          available_date: b.date || b.available_date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
+          published: b.published !== false,
+          grade: b.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
+          term: b.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
+          is_visible: b.isVisible !== false,
+          section: b.section || "\u0627\u0644\u062C\u0645\u064A\u0639"
+        };
+        const created = await tolerantWrite("assessments", "POST", "assessments?select=id", full, ASSESSMENT_BASE);
+        if (created.error) throw new Error(String(created.error));
+        let newId = null;
+        if (Array.isArray(created.data) && created.data[0]?.id) newId = created.data[0].id;
+        else {
+          const { data } = await supabaseQuery(
+            `assessments?title=eq.${enc(full.title)}&order=created_at.desc&limit=1`
+          );
+          newId = data?.[0]?.id || null;
+        }
+        const cleanQuestions = Array.isArray(b.questions) ? b.questions.filter((q) => q?.question?.trim() && Array.isArray(q.options) && q.options.filter((o) => String(o || "").trim()).length >= 2) : [];
+        if (newId && cleanQuestions.length) {
+          const rows = cleanQuestions.map((q, i) => ({
+            assessment_id: newId,
+            question: q.question,
+            options: q.options || [],
+            correct_answer: Number(q.correctAnswer ?? q.correct_answer ?? 0),
+            explanation: q.explanation || "",
+            position: Number(q.position) || i + 1
+          }));
+          const qr = await supabaseQuery("assessment_questions", { method: "POST", body: rows });
+          if (qr.error) throw new Error(String(qr.error));
+          await supabaseQuery(`assessments?id=eq.${enc(newId)}`, { method: "PATCH", body: { questions_count: rows.length } });
+        }
+        res.json({ success: true, message: "\u062A\u0645 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u0627\u062E\u062A\u0628\u0627\u0631 \u0648\u0623\u0633\u0626\u0644\u062A\u0647 \u0628\u0646\u062C\u0627\u062D!", id: newId });
+      } catch (err) {
+        logger.error({ err }, "POST curriculum assessment failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u0627\u062E\u062A\u0628\u0627\u0631" });
+      }
+    });
+    router2.patch("/teacher/curriculum/assessments/:id", requireAdmin, async (req, res) => {
+      try {
+        const b = req.body || {};
+        const full = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+        if (b.title !== void 0) full.title = b.title;
+        if (b.description !== void 0) full.description = b.description;
+        if (b.unitTitle !== void 0 || b.unit_title !== void 0) full.unit_title = b.unitTitle ?? b.unit_title ?? "";
+        if (b.courseId !== void 0 || b.course_id !== void 0) full.course_id = b.courseId ?? b.course_id ?? null;
+        if (b.lessonId !== void 0 || b.lesson_id !== void 0) full.lesson_id = b.lessonId ?? b.lesson_id ?? null;
+        if (b.duration !== void 0) full.duration = b.duration;
+        if (b.date !== void 0 || b.available_date !== void 0) full.available_date = b.date ?? b.available_date;
+        if (b.published !== void 0) full.published = !!b.published;
+        if (b.grade !== void 0) full.grade = b.grade;
+        if (b.term !== void 0) full.term = b.term;
+        if (b.isVisible !== void 0 || b.is_visible !== void 0) full.is_visible = (b.isVisible ?? b.is_visible) !== false;
+        if (b.section !== void 0) full.section = b.section || "\u0627\u0644\u062C\u0645\u064A\u0639";
+        const r = await tolerantWrite("assessments", "PATCH", `assessments?id=eq.${enc(req.params.id)}`, full, [...ASSESSMENT_BASE]);
+        if (r.error) throw new Error(String(r.error));
+        res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u0627\u062E\u062A\u0628\u0627\u0631!" });
+      } catch (err) {
+        logger.error({ err }, "PATCH curriculum assessment failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0627\u062E\u062A\u0628\u0627\u0631" });
+      }
+    });
+    router2.delete("/teacher/curriculum/assessments/:id", requireAdmin, async (req, res) => {
+      try {
+        const r = await supabaseQuery(`assessments?id=eq.${enc(req.params.id)}`, { method: "DELETE" });
+        if (r.error) throw new Error(String(r.error));
+        res.json({ success: true, message: "\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u0627\u062E\u062A\u0628\u0627\u0631!" });
+      } catch (err) {
+        logger.error({ err }, "DELETE curriculum assessment failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0627\u062E\u062A\u0628\u0627\u0631" });
+      }
+    });
+    router2.get("/curriculum/assessments/:id/questions", async (req, res) => {
+      try {
+        const { data } = await supabaseQuery(
+          `assessment_questions?assessment_id=eq.${enc(req.params.id)}&order=position.asc&limit=200`
+        );
+        res.json(
+          (data || []).map((q) => ({
+            id: q.id,
+            question: q.question,
+            options: q.options || [],
+            correctAnswer: q.correct_answer,
+            explanation: q.explanation || "",
+            position: q.position ?? 1
+          }))
+        );
+      } catch (err) {
+        logger.error({ err }, "GET curriculum questions failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u0623\u0633\u0626\u0644\u0629" });
+      }
+    });
+    router2.post("/teacher/curriculum/assessments/:id/questions", requireAdmin, async (req, res) => {
+      try {
+        const b = req.body || {};
+        if (!b.question || !Array.isArray(b.options) || b.options.length < 2) {
+          res.status(400).json({ error: "\u0627\u0644\u0633\u0624\u0627\u0644 \u0648\u062E\u064A\u0627\u0631\u0627\u0646 \u0639\u0644\u0649 \u0627\u0644\u0623\u0642\u0644 \u0645\u0637\u0644\u0648\u0628\u0627\u0646" });
+          return;
+        }
+        const { data: existing } = await supabaseQuery(
+          `assessment_questions?assessment_id=eq.${enc(req.params.id)}&select=id`
+        );
+        const row = {
+          assessment_id: req.params.id,
+          question: b.question,
+          options: b.options,
+          correct_answer: Number(b.correctAnswer ?? b.correct_answer ?? 0),
+          explanation: b.explanation || "",
+          position: Number(b.position) || (existing || []).length + 1
+        };
+        const r = await supabaseQuery("assessment_questions", { method: "POST", body: [row] });
+        if (r.error) throw new Error(String(r.error));
+        await supabaseQuery(`assessments?id=eq.${enc(req.params.id)}`, {
+          method: "PATCH",
+          body: { questions_count: (existing || []).length + 1 }
+        });
+        res.json({ success: true, message: "\u062A\u0645\u062A \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0633\u0624\u0627\u0644!" });
+      } catch (err) {
+        logger.error({ err }, "POST curriculum question failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0633\u0624\u0627\u0644" });
+      }
+    });
+    router2.delete("/teacher/curriculum/questions/:id", requireAdmin, async (req, res) => {
+      try {
+        const { data: qrow } = await supabaseQuery(
+          `assessment_questions?id=eq.${enc(req.params.id)}&select=assessment_id&limit=1`
+        );
+        const aid = qrow?.[0]?.assessment_id;
+        const r = await supabaseQuery(`assessment_questions?id=eq.${enc(req.params.id)}`, { method: "DELETE" });
+        if (r.error) throw new Error(String(r.error));
+        if (aid) {
+          const { data: rest } = await supabaseQuery(`assessment_questions?assessment_id=eq.${enc(aid)}&select=id`);
+          await supabaseQuery(`assessments?id=eq.${enc(aid)}`, { method: "PATCH", body: { questions_count: (rest || []).length } });
+        }
+        res.json({ success: true, message: "\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u0633\u0624\u0627\u0644!" });
+      } catch (err) {
+        logger.error({ err }, "DELETE curriculum question failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0633\u0624\u0627\u0644" });
+      }
+    });
+    router2.get("/curriculum/settings", async (_req, res) => {
+      try {
+        const { data } = await supabaseQuery("platform_settings?select=semester,gender_split&limit=1");
+        res.json({
+          semester: data?.[0]?.semester || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
+          genderSplit: data?.[0]?.gender_split === true
+        });
+      } catch (err) {
+        logger.error({ err }, "GET /curriculum/settings failed");
+        res.json({ semester: "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644", genderSplit: false });
+      }
+    });
+    router2.get("/curriculum/announcements", async (req, res) => {
+      try {
+        const { grade, student_id } = req.query;
+        const { data } = await supabaseQuery("announcements?order=published_at.desc&limit=100");
+        let list = (data || []).filter((a) => a.published !== false).map(announcementToJson);
+        if (grade) list = list.filter((a) => a.grade === "\u0627\u0644\u062C\u0645\u064A\u0639" || a.grade === grade);
+        if (student_id) {
+          const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
+          if (profile) list = list.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap));
+        }
+        res.json(list);
+      } catch (err) {
+        logger.error({ err }, "GET /curriculum/announcements failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u0625\u0639\u0644\u0627\u0646\u0627\u062A" });
+      }
+    });
+    router2.post("/teacher/curriculum/announcements", requireAdmin, async (req, res) => {
+      try {
+        const b = req.body || {};
+        if (!b.title || !b.body) {
+          res.status(400).json({ error: "\u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u0625\u0639\u0644\u0627\u0646 \u0648\u0646\u0635\u0647 \u0645\u0637\u0644\u0648\u0628\u0627\u0646" });
+          return;
+        }
+        const full = {
+          title: b.title,
+          body: b.body,
+          announcement_type: b.type || "\u0625\u0631\u0634\u0627\u062F",
+          audience: b.audience || "\u0627\u0644\u062C\u0645\u064A\u0639",
+          grade: b.grade || "\u0627\u0644\u062C\u0645\u064A\u0639",
+          section: b.section || "\u0627\u0644\u062C\u0645\u064A\u0639",
+          published: b.published !== false,
+          published_at: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        const r = await tolerantWrite("announcements", "POST", "announcements", full, ["title", "body", "announcement_type", "audience", "published", "published_at"]);
+        if (r.error) throw new Error(String(r.error));
+        res.json({ success: true, message: "\u062A\u0645 \u0646\u0634\u0631 \u0627\u0644\u0625\u0639\u0644\u0627\u0646 \u0628\u0646\u062C\u0627\u062D!" });
+      } catch (err) {
+        logger.error({ err }, "POST curriculum announcement failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0646\u0634\u0631 \u0627\u0644\u0625\u0639\u0644\u0627\u0646" });
+      }
+    });
+    router2.patch("/teacher/curriculum/announcements/:id", requireAdmin, async (req, res) => {
+      try {
+        const b = req.body || {};
+        const full = {};
+        if (b.title !== void 0) full.title = b.title;
+        if (b.body !== void 0) full.body = b.body;
+        if (b.type !== void 0) full.announcement_type = b.type;
+        if (b.audience !== void 0) full.audience = b.audience;
+        if (b.grade !== void 0) full.grade = b.grade;
+        if (b.section !== void 0) full.section = b.section || "\u0627\u0644\u062C\u0645\u064A\u0639";
+        if (b.published !== void 0) full.published = !!b.published;
+        const r = await tolerantWrite("announcements", "PATCH", `announcements?id=eq.${enc(req.params.id)}`, full, ["title", "body", "announcement_type", "audience", "published"]);
+        if (r.error) throw new Error(String(r.error));
+        res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u0625\u0639\u0644\u0627\u0646!" });
+      } catch (err) {
+        logger.error({ err }, "PATCH curriculum announcement failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0625\u0639\u0644\u0627\u0646" });
+      }
+    });
+    router2.delete("/teacher/curriculum/announcements/:id", requireAdmin, async (req, res) => {
+      try {
+        const r = await supabaseQuery(`announcements?id=eq.${enc(req.params.id)}`, { method: "DELETE" });
+        if (r.error) throw new Error(String(r.error));
+        res.json({ success: true, message: "\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u0625\u0639\u0644\u0627\u0646!" });
+      } catch (err) {
+        logger.error({ err }, "DELETE curriculum announcement failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0625\u0639\u0644\u0627\u0646" });
+      }
+    });
+    router2.get("/teacher/curriculum/assignments", requireAdmin, async (req, res) => {
+      try {
+        const { grade } = req.query;
+        let endpoint = "assignments?order=due_date.asc&limit=200";
+        if (grade) endpoint += `&grade=eq.${enc(grade)}`;
+        const { data, error } = await supabaseQuery(endpoint);
+        if (error) throw new Error(String(error));
+        res.json((data || []).map(assignmentToJson));
+      } catch (err) {
+        logger.error({ err }, "GET teacher curriculum assignments failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u0648\u0627\u062C\u0628\u0627\u062A" });
+      }
+    });
+    router2.patch("/teacher/curriculum/assignments/:id", requireAdmin, async (req, res) => {
+      try {
+        const b = req.body || {};
+        const full = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+        if (b.title !== void 0) full.title = b.title;
+        if (b.description !== void 0) full.description = b.description;
+        if (b.unit !== void 0) full.unit = b.unit;
+        if (b.dueDate !== void 0 || b.due_date !== void 0) full.due_date = b.dueDate ?? b.due_date ?? null;
+        if (b.points !== void 0) full.points = Number(b.points) || 0;
+        if (b.published !== void 0) full.published = !!b.published;
+        if (b.grade !== void 0) full.grade = b.grade || "\u0627\u0644\u062C\u0645\u064A\u0639";
+        if (b.section !== void 0) full.section = b.section || "\u0627\u0644\u062C\u0645\u064A\u0639";
+        const base = ["title", "description", "unit", "due_date", "points", "published"];
+        const r = await tolerantWrite("assignments", "PATCH", `assignments?id=eq.${enc(req.params.id)}`, full, base);
+        if (r.error) throw new Error(String(r.error));
+        res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u0648\u0627\u062C\u0628!" });
+      } catch (err) {
+        logger.error({ err }, "PATCH curriculum assignment failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0648\u0627\u062C\u0628" });
+      }
+    });
+    router2.delete("/teacher/curriculum/assignments/:id", requireAdmin, async (req, res) => {
+      try {
+        const r = await supabaseQuery(`assignments?id=eq.${enc(req.params.id)}`, { method: "DELETE" });
+        if (r.error) throw new Error(String(r.error));
+        res.json({ success: true, message: "\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u0648\u0627\u062C\u0628!" });
+      } catch (err) {
+        logger.error({ err }, "DELETE curriculum assignment failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0648\u0627\u062C\u0628" });
+      }
+    });
+    curriculum_default = router2;
+  }
+});
+
 // src/app.ts
-var import_express5 = __toESM(require_express2(), 1);
+var import_express8 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_cookie_parser = __toESM(require_cookie_parser(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
 
 // src/routes/index.ts
-var import_express4 = __toESM(require_express2(), 1);
+var import_express7 = __toESM(require_express2(), 1);
 
 // src/routes/health.ts
 var import_express = __toESM(require_express2(), 1);
@@ -32736,7 +34211,9 @@ var ListAssignmentsResponseItem = objectType({
   "unit": stringType(),
   "dueDate": stringType(),
   "status": stringType(),
-  "points": numberType().int()
+  "points": numberType().int(),
+  "grade": stringType().optional(),
+  "section": stringType().optional()
 });
 var ListAssignmentsResponse = arrayType(ListAssignmentsResponseItem);
 var ListAssessmentsResponseItem = objectType({
@@ -32765,7 +34242,8 @@ var GetTeacherSettingsResponse = objectType({
   "teacherImageUrl": stringType(),
   "signatureUrl": stringType(),
   "accentColor": stringType(),
-  "semester": stringType()
+  "semester": stringType(),
+  "genderSplit": booleanType().optional()
 });
 var UpdateTeacherSettingsBody = objectType({
   "platformName": stringType().optional(),
@@ -32774,7 +34252,8 @@ var UpdateTeacherSettingsBody = objectType({
   "teacherImageUrl": stringType().optional(),
   "signatureUrl": stringType().optional(),
   "accentColor": stringType().optional(),
-  "semester": stringType().optional()
+  "semester": stringType().optional(),
+  "genderSplit": booleanType().optional()
 });
 var UpdateTeacherSettingsResponse = objectType({
   "platformName": stringType(),
@@ -32783,7 +34262,8 @@ var UpdateTeacherSettingsResponse = objectType({
   "teacherImageUrl": stringType(),
   "signatureUrl": stringType(),
   "accentColor": stringType(),
-  "semester": stringType()
+  "semester": stringType(),
+  "genderSplit": booleanType().optional()
 });
 var ListStudentsResponseItem = objectType({
   "id": stringType(),
@@ -32856,92 +34336,11 @@ router.get("/healthz", (_req, res) => {
 var health_default = router;
 
 // src/routes/platform.ts
-var import_express2 = __toESM(require_express2(), 1);
-
-// src/lib/logger.ts
-var import_pino = __toESM(require_pino(), 1);
-var isProduction = process.env.NODE_ENV === "production";
-var logger = (0, import_pino.default)({
-  level: process.env.LOG_LEVEL ?? "info",
-  redact: [
-    "req.headers.authorization",
-    "req.headers.cookie",
-    "res.headers['set-cookie']"
-  ],
-  ...isProduction ? {} : {
-    transport: {
-      target: "pino-pretty",
-      options: { colorize: true }
-    }
-  }
-});
-
-// src/lib/supabase.ts
-var SUPABASE_URL = process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co";
-var SERVICE_ROLE = process.env.service_role || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || "sb_publishable_kPG7zfG0FFZpRTkNnHhO1Q_oXoOq8fg";
-var baseHeaders = {
-  "Content-Type": "application/json",
-  apikey: SERVICE_ROLE,
-  Authorization: `Bearer ${SERVICE_ROLE}`
-};
-async function getSupabaseUser(accessToken) {
-  if (!accessToken) return null;
-  try {
-    const res = await fetch(
-      `${SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/user`,
-      {
-        headers: {
-          apikey: SERVICE_ROLE,
-          Authorization: `Bearer ${accessToken}`
-        }
-      }
-    );
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data && typeof data === "object" ? data : null;
-  } catch (err) {
-    logger.error({ err }, "getSupabaseUser failed");
-    return null;
-  }
-}
-async function supabaseQuery(endpoint, options = {}) {
-  try {
-    const url = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/${endpoint.replace(/^\/+/, "")}`;
-    const fetchHeaders = {
-      ...baseHeaders,
-      ...options.headers
-    };
-    const res = await fetch(url, {
-      method: options.method || "GET",
-      headers: fetchHeaders,
-      body: options.body ? JSON.stringify(options.body) : void 0
-    });
-    if (!res.ok) {
-      const errText = await res.text().catch(() => "");
-      logger.error({ endpoint, status: res.status, errText }, "Supabase query error");
-      return { data: null, error: errText || `Status ${res.status}` };
-    }
-    const contentRange = res.headers.get("content-range");
-    let count = null;
-    if (contentRange) {
-      const parts = contentRange.split("/");
-      if (parts[1] && parts[1] !== "*") {
-        count = parseInt(parts[1], 10);
-      }
-    }
-    if (res.status === 204) {
-      return { data: null, error: null };
-    }
-    const data = await res.json().catch(() => null);
-    return { data, error: null, count };
-  } catch (err) {
-    logger.error({ err, endpoint }, "Supabase fetch threw exception");
-    return { data: null, error: err.message };
-  }
-}
-
-// src/routes/platform.ts
-var router2 = (0, import_express2.Router)();
+var import_express3 = __toESM(require_express2(), 1);
+init_supabase();
+init_auth();
+init_logger();
+var router3 = (0, import_express3.Router)();
 async function resolveProfileFromSession(accessToken) {
   if (!accessToken) return null;
   try {
@@ -32959,12 +34358,20 @@ async function resolveProfileFromSession(accessToken) {
   }
 }
 async function getActiveStudent(req) {
+  const authUserId = req?.auth?.userId;
+  if (authUserId) {
+    try {
+      const { data } = await supabaseQuery(
+        `profiles?id=eq.${encodeURIComponent(authUserId)}&select=*&limit=1`
+      );
+      if (data?.[0]) return data[0];
+    } catch {
+    }
+  }
   const sessionProfile = await resolveProfileFromSession(
     req?.cookies?.supabase_access_token
   );
-  if (sessionProfile) return sessionProfile;
-  const { data } = await supabaseQuery("profiles?role=eq.student&order=created_at.asc&limit=1");
-  return data?.[0] || null;
+  return sessionProfile || null;
 }
 function toStudentShape(profile, progress) {
   return {
@@ -33047,9 +34454,11 @@ async function getAssessmentQuestions(assessmentId) {
   }));
 }
 async function resolveStudentId(requestedUserId, req) {
-  if (requestedUserId) return requestedUserId;
+  const authUserId = req?.auth?.userId;
+  if (authUserId) return authUserId;
   const active = await getActiveStudent(req);
-  return active?.id || null;
+  if (active?.id) return active.id;
+  return requestedUserId || null;
 }
 function normalizeArabic(value) {
   return value.replace(/[\u0622\u0623\u0625]/g, "\u0627").replace(/[\u0649]/g, "\u064A").replace(/\s+/g, " ").trim();
@@ -33063,7 +34472,7 @@ async function fetchBooksSafe() {
     return [];
   }
 }
-router2.get("/platform/overview", async (_req, res) => {
+router3.get("/platform/overview", async (_req, res) => {
   try {
     const [{ data: settingsList }, books] = await Promise.all([
       supabaseQuery("platform_settings?select=*&limit=1"),
@@ -33115,7 +34524,7 @@ router2.get("/platform/overview", async (_req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0645\u0646\u0635\u0629" });
   }
 });
-router2.get("/student/dashboard", async (req, res) => {
+router3.get("/student/dashboard", requireAuth, async (req, res) => {
   try {
     const activeStudent = await getActiveStudent(req);
     if (!activeStudent) {
@@ -33172,7 +34581,7 @@ router2.get("/student/dashboard", async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u0645\u064A\u0644 \u0644\u0648\u062D\u0629 \u0627\u0644\u0637\u0627\u0644\u0628" });
   }
 });
-router2.get("/teacher/dashboard", async (_req, res) => {
+router3.get("/teacher/dashboard", requireAdmin, async (_req, res) => {
   try {
     const [{ count: studentsCount }, { count: activeStudents }, { count: unitsCount }, { count: assignmentsCount }, { count: assessmentsCount }, { count: certificatesCount }, { data: recentStudentsData }, { data: assignmentsData }, { data: attemptsData }, { data: schoolsData }, weeklyActivity] = await Promise.all([
       supabaseQuery("profiles?role=eq.student", { headers: { Prefer: "count=exact" } }),
@@ -33234,7 +34643,7 @@ router2.get("/teacher/dashboard", async (_req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u0645\u064A\u0644 \u0644\u0648\u062D\u0629 \u0627\u0644\u0645\u0639\u0644\u0645" });
   }
 });
-router2.get("/courses", async (req, res) => {
+router3.get("/courses", async (req, res) => {
   try {
     const [activeStudent, { data }] = await Promise.all([
       getActiveStudent(req),
@@ -33257,7 +34666,7 @@ router2.get("/courses", async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u0648\u062D\u062F\u0627\u062A \u0627\u0644\u062A\u0639\u0644\u064A\u0645\u064A\u0629" });
   }
 });
-router2.get("/courses/:id/lessons", async (req, res) => {
+router3.get("/courses/:id/lessons", async (req, res) => {
   try {
     const courseId = req.params.id;
     const { data } = await supabaseQuery(`lessons?course_id=eq.${courseId}&order=position.asc`);
@@ -33267,7 +34676,7 @@ router2.get("/courses/:id/lessons", async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u062F\u0631\u0648\u0633 \u0627\u0644\u0648\u062D\u062F\u0629" });
   }
 });
-router2.post("/lessons/:id/complete", async (req, res) => {
+router3.post("/lessons/:id/complete", requireAuth, async (req, res) => {
   try {
     const lessonId = req.params.id;
     const userId = await resolveStudentId(req.body?.userId, req);
@@ -33286,7 +34695,7 @@ router2.post("/lessons/:id/complete", async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u0633\u062C\u064A\u0644 \u0625\u0643\u0645\u0627\u0644 \u0627\u0644\u062F\u0631\u0633" });
   }
 });
-router2.get("/assignments", async (req, res) => {
+router3.get("/assignments", async (req, res) => {
   try {
     const [activeStudent, { data }] = await Promise.all([
       getActiveStudent(req),
@@ -33303,22 +34712,34 @@ router2.get("/assignments", async (req, res) => {
     for (const sub of submissions) {
       statusMap[sub.assignment_id] = sub.score != null ? "\u062A\u0645 \u0627\u0644\u062A\u0633\u0644\u064A\u0645" : "\u0642\u064A\u062F \u0627\u0644\u0645\u0631\u0627\u062C\u0639\u0629";
     }
-    const parsed = (data || []).map((a) => ({
+    let parsed = (data || []).map((a) => ({
       id: a.id,
       title: a.title,
       description: a.description || "",
       unit: a.unit || "",
       dueDate: a.due_date || "",
       status: statusMap[a.id] || "\u0644\u0645 \u064A\u0628\u062F\u0623",
-      points: a.points || 0
+      points: a.points || 0,
+      grade: a.grade || "\u0627\u0644\u062C\u0645\u064A\u0639",
+      section: a.section || "\u0627\u0644\u062C\u0645\u064A\u0639"
     }));
+    if (activeStudent) {
+      const { getStudentProfile: getStudentProfile2, getSplitMap: getSplitMap2, itemVisible: itemVisible2 } = await Promise.resolve().then(() => (init_curriculum(), curriculum_exports));
+      const [profile, splitMap] = await Promise.all([
+        getStudentProfile2(activeStudent.id),
+        getSplitMap2()
+      ]);
+      if (profile) {
+        parsed = parsed.filter((a) => itemVisible2(a.grade, a.section, profile.grade, profile.gender, splitMap));
+      }
+    }
     res.json(ListAssignmentsResponse.parse(parsed));
   } catch (err) {
     logger.error({ err }, "Error in GET /assignments");
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u0648\u0627\u062C\u0628\u0627\u062A" });
   }
 });
-router2.post("/assignments/:id/submit", async (req, res) => {
+router3.post("/assignments/:id/submit", requireAuth, async (req, res) => {
   try {
     const assignmentId = req.params.id;
     const { answer, userId } = req.body;
@@ -33345,7 +34766,7 @@ router2.post("/assignments/:id/submit", async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0648\u0627\u062C\u0628" });
   }
 });
-router2.get("/assessments", async (req, res) => {
+router3.get("/assessments", async (req, res) => {
   try {
     const [activeStudent, { data }] = await Promise.all([
       getActiveStudent(req),
@@ -33380,7 +34801,7 @@ router2.get("/assessments", async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u062A\u0642\u064A\u064A\u0645\u0627\u062A" });
   }
 });
-router2.get("/assessments/:id/questions", async (req, res) => {
+router3.get("/assessments/:id/questions", async (req, res) => {
   try {
     const assessmentId = req.params.id;
     const questions = await getAssessmentQuestions(assessmentId);
@@ -33390,9 +34811,9 @@ router2.get("/assessments/:id/questions", async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0623\u0633\u0626\u0644\u0629 \u0627\u0644\u0627\u062E\u062A\u0628\u0627\u0631" });
   }
 });
-router2.post("/assessments/:id/attempt", async (req, res) => {
+router3.post("/assessments/:id/attempt", requireAuth, async (req, res) => {
   try {
-    const assessmentId = req.params.id;
+    const assessmentId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const { answers, userId } = req.body;
     const studentId = await resolveStudentId(userId, req);
     if (!studentId) {
@@ -33445,7 +34866,7 @@ router2.post("/assessments/:id/attempt", async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u0635\u062D\u064A\u062D \u0627\u0644\u0627\u062E\u062A\u0628\u0627\u0631" });
   }
 });
-router2.get("/announcements", async (_req, res) => {
+router3.get("/announcements", async (_req, res) => {
   try {
     const { data } = await supabaseQuery("announcements?published=eq.true&order=published_at.desc");
     const parsed = (data || []).map((a) => ({
@@ -33462,7 +34883,7 @@ router2.get("/announcements", async (_req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u0625\u0639\u0644\u0627\u0646\u0627\u062A" });
   }
 });
-router2.get("/teacher/settings", async (_req, res) => {
+router3.get("/teacher/settings", requireAdmin, async (_req, res) => {
   try {
     const { data } = await supabaseQuery("platform_settings?select=*&limit=1");
     const s = data?.[0] || {};
@@ -33473,7 +34894,8 @@ router2.get("/teacher/settings", async (_req, res) => {
       teacherImageUrl: s.teacher_image_url || "/teacher-ahmed.jpg",
       signatureUrl: s.signature_url || "",
       accentColor: s.accent_color || "#d7b65e",
-      semester: s.semester || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644"
+      semester: s.semester || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
+      genderSplit: s.gender_split === true
     };
     res.json(GetTeacherSettingsResponse.parse(settings));
   } catch (err) {
@@ -33481,7 +34903,7 @@ router2.get("/teacher/settings", async (_req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u0645\u0646\u0635\u0629" });
   }
 });
-router2.patch("/teacher/settings", async (req, res) => {
+router3.patch("/teacher/settings", requireAdmin, async (req, res) => {
   const parsed = UpdateTeacherSettingsBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -33496,15 +34918,16 @@ router2.patch("/teacher/settings", async (req, res) => {
     if (parsed.data.signatureUrl !== void 0) updatePayload.signature_url = parsed.data.signatureUrl;
     if (parsed.data.accentColor !== void 0) updatePayload.accent_color = parsed.data.accentColor;
     if (parsed.data.semester !== void 0) updatePayload.semester = parsed.data.semester;
+    if (parsed.data.genderSplit !== void 0) updatePayload.gender_split = !!parsed.data.genderSplit;
     try {
       await supabaseQuery("platform_settings?id=eq.true", {
         method: "PATCH",
         body: updatePayload
       });
     } catch (patchErr) {
-      if (updatePayload.semester !== void 0) {
-        logger.warn({ err: patchErr }, "semester column missing, retrying without it");
-        const { semester, ...rest } = updatePayload;
+      if (updatePayload.semester !== void 0 || updatePayload.gender_split !== void 0) {
+        logger.warn({ err: patchErr }, "new settings column missing, retrying without it");
+        const { semester, gender_split, ...rest } = updatePayload;
         await supabaseQuery("platform_settings?id=eq.true", { method: "PATCH", body: rest });
       } else {
         throw patchErr;
@@ -33519,7 +34942,8 @@ router2.patch("/teacher/settings", async (req, res) => {
       teacherImageUrl: s.teacher_image_url || parsed.data.teacherImageUrl || "/teacher-ahmed.jpg",
       signatureUrl: s.signature_url || parsed.data.signatureUrl || "",
       accentColor: s.accent_color || parsed.data.accentColor || "#d7b65e",
-      semester: s.semester || parsed.data.semester || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644"
+      semester: s.semester || parsed.data.semester || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
+      genderSplit: s.gender_split === true || parsed.data.genderSplit === true
     };
     res.json(UpdateTeacherSettingsResponse.parse(response));
   } catch (err) {
@@ -33527,7 +34951,7 @@ router2.patch("/teacher/settings", async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u0645\u0646\u0635\u0629" });
   }
 });
-router2.get("/teacher/students", async (_req, res) => {
+router3.get("/teacher/students", requireAdmin, async (_req, res) => {
   try {
     const [{ data }, progressAvg] = await Promise.all([
       supabaseQuery("profiles?order=created_at.desc"),
@@ -33540,7 +34964,7 @@ router2.get("/teacher/students", async (_req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0642\u0627\u0626\u0645\u0629 \u0627\u0644\u0637\u0644\u0627\u0628" });
   }
 });
-router2.post("/teacher/students", async (req, res) => {
+router3.post("/teacher/students", requireAdmin, async (req, res) => {
   try {
     const { name, email, school, grade, section, gender, phone } = req.body;
     if (!name) {
@@ -33568,7 +34992,7 @@ router2.post("/teacher/students", async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0637\u0627\u0644\u0628" });
   }
 });
-router2.post("/teacher/courses", async (req, res) => {
+router3.post("/teacher/courses", requireAdmin, async (req, res) => {
   try {
     const { title, description, lessons, duration, color } = req.body;
     await supabaseQuery("courses", {
@@ -33590,29 +35014,32 @@ router2.post("/teacher/courses", async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u0648\u062D\u062F\u0629" });
   }
 });
-router2.post("/teacher/assignments", async (req, res) => {
+router3.post("/teacher/assignments", requireAdmin, async (req, res) => {
   try {
-    const { title, description, unit, dueDate, points } = req.body;
-    await supabaseQuery("assignments", {
-      method: "POST",
-      body: [
-        {
-          title: title || "\u0648\u0627\u062C\u0628 \u062C\u062F\u064A\u062F",
-          description: description || "",
-          unit: unit || "\u0627\u0644\u0648\u062D\u062F\u0629 \u0627\u0644\u0623\u0648\u0644\u0649",
-          due_date: dueDate || new Date(Date.now() + 864e5 * 7).toISOString().split("T")[0],
-          points: parseInt(points, 10) || 20,
-          published: true
-        }
-      ]
-    });
+    const { title, description, unit, dueDate, points, grade, section } = req.body;
+    const full = {
+      title: title || "\u0648\u0627\u062C\u0628 \u062C\u062F\u064A\u062F",
+      description: description || "",
+      unit: unit || "\u0627\u0644\u0648\u062D\u062F\u0629 \u0627\u0644\u0623\u0648\u0644\u0649",
+      due_date: dueDate || new Date(Date.now() + 864e5 * 7).toISOString().split("T")[0],
+      points: parseInt(points, 10) || 20,
+      published: true,
+      grade: grade || "\u0627\u0644\u062C\u0645\u064A\u0639",
+      section: section || "\u0627\u0644\u062C\u0645\u064A\u0639"
+    };
+    let r = await supabaseQuery("assignments", { method: "POST", body: [full] });
+    if (r.error && /column|schema cache|Could not find/i.test(String(r.error))) {
+      const { grade: _g, section: _s, ...base } = full;
+      r = await supabaseQuery("assignments", { method: "POST", body: [base] });
+    }
+    if (r.error) throw new Error(String(r.error));
     res.json({ success: true, message: "\u062A\u0645\u062A \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0648\u0627\u062C\u0628 \u0628\u0646\u062C\u0627\u062D!" });
   } catch (err) {
     logger.error({ err }, "Error in POST /teacher/assignments");
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u0648\u0627\u062C\u0628" });
   }
 });
-router2.post("/teacher/assessments", async (req, res) => {
+router3.post("/teacher/assessments", requireAdmin, async (req, res) => {
   try {
     const { title, questions, duration, date } = req.body;
     await supabaseQuery("assessments", {
@@ -33633,7 +35060,7 @@ router2.post("/teacher/assessments", async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u062A\u0642\u064A\u064A\u0645" });
   }
 });
-router2.patch("/student/profile", async (req, res) => {
+router3.patch("/student/profile", requireAuth, async (req, res) => {
   try {
     const { id, name, school, branch, grade, section, phone } = req.body;
     const targetId = await resolveStudentId(id, req);
@@ -33658,12 +35085,541 @@ router2.patch("/student/profile", async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u062F\u064A\u062B \u0627\u0644\u0645\u0644\u0641 \u0627\u0644\u0634\u062E\u0635\u064A" });
   }
 });
-var platform_default = router2;
+var platform_default = router3;
+
+// src/routes/index.ts
+init_curriculum();
+
+// src/routes/storage.ts
+var import_express4 = __toESM(require_express2(), 1);
+init_imagekit();
+init_auth();
+init_logger();
+var router4 = (0, import_express4.Router)();
+var ALLOWED_FOLDERS = [
+  "/ard-al-lughah/covers",
+  "/ard-al-lughah/avatars",
+  "/ard-al-lughah/lessons",
+  "/ard-al-lughah/html",
+  "/ard-al-lughah/teacher",
+  "/ard-al-lughah/books"
+];
+function sanitizeFolder(folder) {
+  const f = String(folder || "/ard-al-lughah/lessons");
+  if (ALLOWED_FOLDERS.includes(f)) return f;
+  if (f.startsWith("/ard-al-lughah/") && !f.includes("..")) return f;
+  return "/ard-al-lughah/lessons";
+}
+router4.get("/teacher/storage", requireAdmin, async (_req, res) => {
+  try {
+    res.json({ success: true, ...getStorageStatus() });
+  } catch (err) {
+    logger.error({ err }, "GET /teacher/storage failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u062D\u0627\u0644\u0629 \u0627\u0644\u062A\u062E\u0632\u064A\u0646" });
+  }
+});
+router4.post("/teacher/upload", requireAdmin, async (req, res) => {
+  try {
+    const { file, fileName, folder, accountId } = req.body || {};
+    if (!file || typeof file !== "string") {
+      res.status(400).json({ error: "\u0645\u0644\u0641 \u063A\u064A\u0631 \u0635\u0627\u0644\u062D \u0644\u0644\u0631\u0641\u0639" });
+      return;
+    }
+    const result = await uploadFile(file, fileName || `upload-${Date.now()}`, sanitizeFolder(folder), accountId);
+    res.json({ success: true, message: "\u062A\u0645 \u0627\u0644\u0631\u0641\u0639 \u0625\u0644\u0649 \u0627\u0644\u062A\u062E\u0632\u064A\u0646 \u0627\u0644\u0633\u062D\u0627\u0628\u064A \u0628\u0646\u062C\u0627\u062D!", ...result });
+  } catch (err) {
+    logger.error({ err }, "POST /teacher/upload failed");
+    res.status(500).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u0631\u0641\u0639 \u0627\u0644\u0645\u0644\u0641" });
+  }
+});
+router4.delete("/teacher/upload", requireAdmin, async (req, res) => {
+  try {
+    const { fileId, accountId, url } = { ...req.query, ...req.body };
+    if (url) {
+      await deleteFileByUrl(String(url));
+    } else if (fileId) {
+      await deleteFileById(String(fileId), accountId ? String(accountId) : void 0);
+    } else {
+      res.status(400).json({ error: "\u062D\u062F\u062F fileId \u0623\u0648 url \u0644\u062D\u0630\u0641 \u0627\u0644\u0645\u0644\u0641" });
+      return;
+    }
+    res.json({ success: true, message: "\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u0645\u0644\u0641 \u0645\u0646 \u0627\u0644\u062A\u062E\u0632\u064A\u0646!" });
+  } catch (err) {
+    logger.error({ err }, "DELETE /teacher/upload failed");
+    res.status(500).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0645\u0644\u0641" });
+  }
+});
+var storage_default = router4;
+
+// src/routes/study.ts
+var import_express5 = __toESM(require_express2(), 1);
+init_supabase();
+init_imagekit();
+init_curriculum();
+init_auth();
+init_logger();
+var router5 = (0, import_express5.Router)();
+var enc2 = (v) => encodeURIComponent(Array.isArray(v) ? v[0] ?? "" : v ?? "");
+var V3_HINT = "\u0646\u0641\u0651\u0630 \u0645\u0644\u0641 sql_curriculum_v3.sql \u0641\u064A Supabase SQL Editor \u0623\u0648\u0644\u0627\u064B";
+function summaryToJson(s) {
+  return {
+    id: s.id,
+    title: s.title,
+    description: s.description || "",
+    content: s.content || "",
+    summaryType: s.summary_type || "\u0645\u0644\u062E\u0635",
+    grade: s.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
+    term: s.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
+    unitTitle: s.unit_title || "",
+    courseId: s.course_id || null,
+    coverUrl: s.cover_url || "",
+    fileUrl: s.file_url || "",
+    published: s.published !== false,
+    sortOrder: s.sort_order ?? 1,
+    section: s.section || "\u0627\u0644\u062C\u0645\u064A\u0639"
+  };
+}
+router5.get("/curriculum/summaries", async (req, res) => {
+  try {
+    const { grade, term, student_id } = req.query;
+    let endpoint = "summaries?order=sort_order.asc&limit=200";
+    if (grade) endpoint += `&grade=eq.${enc2(grade)}`;
+    if (term) endpoint += `&term=eq.${enc2(term)}`;
+    const { data, error } = await supabaseQuery(endpoint);
+    if (error) throw new Error(String(error));
+    let list = (data || []).filter((s) => s.published !== false).map(summaryToJson);
+    if (student_id) {
+      const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
+      if (profile) list = list.filter((s) => itemVisible(s.grade, s.section, profile.grade, profile.gender, splitMap));
+    }
+    res.json(list);
+  } catch (err) {
+    logger.error({ err }, "GET /curriculum/summaries failed");
+    res.json([]);
+  }
+});
+router5.get("/teacher/curriculum/summaries", requireAdmin, async (req, res) => {
+  try {
+    const { grade, term } = req.query;
+    let endpoint = "summaries?order=sort_order.asc&limit=200";
+    if (grade) endpoint += `&grade=eq.${enc2(grade)}`;
+    if (term) endpoint += `&term=eq.${enc2(term)}`;
+    const { data, error } = await supabaseQuery(endpoint);
+    if (error) throw new Error(String(error));
+    res.json((data || []).map(summaryToJson));
+  } catch (err) {
+    logger.error({ err }, "GET teacher summaries failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u0645\u0644\u062E\u0635\u0627\u062A \u2014 " + V3_HINT });
+  }
+});
+router5.post("/teacher/curriculum/summaries", requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!b.title) {
+      res.status(400).json({ error: "\u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u0645\u0644\u062E\u0635 \u0645\u0637\u0644\u0648\u0628" });
+      return;
+    }
+    const { error } = await supabaseQuery("summaries", {
+      method: "POST",
+      body: [{
+        title: b.title,
+        description: b.description || "",
+        content: b.content || "",
+        summary_type: b.summaryType || b.summary_type || "\u0645\u0644\u062E\u0635",
+        grade: b.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
+        term: b.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
+        unit_title: b.unitTitle || b.unit_title || "",
+        course_id: b.courseId || b.course_id || null,
+        cover_url: b.coverUrl || b.cover_url || "",
+        file_url: b.fileUrl || b.file_url || "",
+        section: b.section || "\u0627\u0644\u062C\u0645\u064A\u0639",
+        published: b.published !== false,
+        sort_order: Number(b.sortOrder ?? b.sort_order) || 1
+      }]
+    });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "\u062A\u0645\u062A \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0645\u0644\u062E\u0635 \u0628\u0646\u062C\u0627\u062D!" });
+  } catch (err) {
+    logger.error({ err }, "POST summary failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0645\u0644\u062E\u0635 \u2014 " + V3_HINT });
+  }
+});
+router5.patch("/teacher/curriculum/summaries/:id", requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const full = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+    if (b.title !== void 0) full.title = b.title;
+    if (b.description !== void 0) full.description = b.description;
+    if (b.content !== void 0) full.content = b.content;
+    if (b.summaryType !== void 0 || b.summary_type !== void 0) full.summary_type = b.summaryType ?? b.summary_type;
+    if (b.grade !== void 0) full.grade = b.grade;
+    if (b.term !== void 0) full.term = b.term;
+    if (b.unitTitle !== void 0 || b.unit_title !== void 0) full.unit_title = b.unitTitle ?? b.unit_title ?? "";
+    if (b.courseId !== void 0 || b.course_id !== void 0) full.course_id = b.courseId ?? b.course_id ?? null;
+    if (b.coverUrl !== void 0 || b.cover_url !== void 0) full.cover_url = b.coverUrl ?? b.cover_url ?? "";
+    if (b.fileUrl !== void 0 || b.file_url !== void 0) full.file_url = b.fileUrl ?? b.file_url ?? "";
+    if (b.section !== void 0) full.section = b.section || "\u0627\u0644\u062C\u0645\u064A\u0639";
+    if (b.published !== void 0) full.published = !!b.published;
+    if (b.sortOrder !== void 0 || b.sort_order !== void 0) full.sort_order = Number(b.sortOrder ?? b.sort_order) || 1;
+    const { error } = await supabaseQuery(`summaries?id=eq.${enc2(req.params.id)}`, { method: "PATCH", body: full });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u0645\u0644\u062E\u0635!" });
+  } catch (err) {
+    logger.error({ err }, "PATCH summary failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0645\u0644\u062E\u0635" });
+  }
+});
+router5.delete("/teacher/curriculum/summaries/:id", requireAdmin, async (req, res) => {
+  try {
+    const { error } = await supabaseQuery(`summaries?id=eq.${enc2(req.params.id)}`, { method: "DELETE" });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u0645\u0644\u062E\u0635!" });
+  } catch (err) {
+    logger.error({ err }, "DELETE summary failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0645\u0644\u062E\u0635" });
+  }
+});
+async function lessonTitlesFor(ids) {
+  const uniq = [...new Set(ids.filter(Boolean))];
+  if (!uniq.length) return {};
+  try {
+    const { data } = await supabaseQuery(
+      `lessons?id=in.(${uniq.map(enc2).join(",")})&select=id,title&limit=200`
+    );
+    const map = {};
+    for (const l of data || []) map[l.id] = l.title;
+    return map;
+  } catch {
+    return {};
+  }
+}
+function taskToJson(t, mySubmission, lessonTitles = {}) {
+  let requirements = [];
+  try {
+    requirements = Array.isArray(t.requirements) ? t.requirements : JSON.parse(t.requirements || "[]");
+  } catch {
+    requirements = [];
+  }
+  return {
+    id: t.id,
+    title: t.title,
+    description: t.description || "",
+    grade: t.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
+    term: t.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
+    unitTitle: t.unit_title || "",
+    courseId: t.course_id || null,
+    lessonId: t.lesson_id || null,
+    lessonTitle: t.lesson_id && lessonTitles[t.lesson_id] || "",
+    requirements,
+    dueDate: t.due_date || "",
+    points: t.points ?? 10,
+    published: t.published !== false,
+    section: t.section || "\u0627\u0644\u062C\u0645\u064A\u0639",
+    myStatus: mySubmission?.status || null,
+    myScore: mySubmission?.score ?? null,
+    myFeedback: mySubmission?.feedback || "",
+    submissionsCount: t.submissionsCount ?? void 0
+  };
+}
+router5.get("/curriculum/notebooks", async (req, res) => {
+  try {
+    const { grade, term, student_id } = req.query;
+    let endpoint = "notebook_tasks?order=created_at.desc&limit=200";
+    if (grade) endpoint += `&grade=eq.${enc2(grade)}`;
+    if (term) endpoint += `&term=eq.${enc2(term)}`;
+    const { data, error } = await supabaseQuery(endpoint);
+    if (error) throw new Error(String(error));
+    let subs = {};
+    let profile = null;
+    let splitMap = {};
+    if (student_id) {
+      const ids = (data || []).map((t) => t.id);
+      if (ids.length) {
+        const { data: sdata } = await supabaseQuery(
+          `notebook_submissions?user_id=eq.${enc2(student_id)}&select=task_id,status,score,feedback&limit=200`
+        );
+        for (const s of sdata || []) subs[s.task_id] = s;
+      }
+      [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
+    }
+    const lessonTitles = await lessonTitlesFor((data || []).map((t) => t.lesson_id));
+    let list = (data || []).filter((t) => t.published !== false).map((t) => taskToJson(t, subs[t.id], lessonTitles));
+    if (profile) list = list.filter((t) => itemVisible(t.grade, t.section, profile.grade, profile.gender, splitMap));
+    res.json(list);
+  } catch (err) {
+    logger.error({ err }, "GET /curriculum/notebooks failed");
+    res.json([]);
+  }
+});
+router5.get("/teacher/curriculum/notebooks", requireAdmin, async (req, res) => {
+  try {
+    const { grade, term } = req.query;
+    let endpoint = "notebook_tasks?order=created_at.desc&limit=200";
+    if (grade) endpoint += `&grade=eq.${enc2(grade)}`;
+    if (term) endpoint += `&term=eq.${enc2(term)}`;
+    const { data, error } = await supabaseQuery(endpoint);
+    if (error) throw new Error(String(error));
+    const { data: allSubs } = await supabaseQuery("notebook_submissions?select=task_id&limit=2000");
+    const counts = {};
+    for (const s of allSubs || []) counts[s.task_id] = (counts[s.task_id] || 0) + 1;
+    const lessonTitles = await lessonTitlesFor((data || []).map((t) => t.lesson_id));
+    res.json((data || []).map((t) => ({ ...taskToJson(t, void 0, lessonTitles), submissionsCount: counts[t.id] || 0 })));
+  } catch (err) {
+    logger.error({ err }, "GET teacher notebooks failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0645\u0647\u0627\u0645 \u0627\u0644\u062F\u0641\u062A\u0631 \u2014 " + V3_HINT });
+  }
+});
+router5.post("/teacher/curriculum/notebooks", requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!b.title) {
+      res.status(400).json({ error: "\u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u0645\u0647\u0645\u0629 \u0645\u0637\u0644\u0648\u0628" });
+      return;
+    }
+    const requirements = Array.isArray(b.requirements) ? b.requirements.filter((r) => r?.label?.trim()).slice(0, 20).map((r) => ({
+      label: String(r.label).slice(0, 200),
+      kind: r.kind || "\u0643\u062A\u0627\u0628\u0629",
+      place: String(r.place || "").slice(0, 120)
+    })) : [];
+    const { error } = await supabaseQuery("notebook_tasks", {
+      method: "POST",
+      body: [{
+        title: b.title,
+        description: b.description || "",
+        grade: b.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
+        term: b.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
+        unit_title: b.unitTitle || b.unit_title || "",
+        course_id: b.courseId || b.course_id || null,
+        lesson_id: b.lessonId || b.lesson_id || null,
+        requirements,
+        due_date: b.dueDate || b.due_date || null,
+        points: Number(b.points) || 10,
+        section: b.section || "\u0627\u0644\u062C\u0645\u064A\u0639",
+        published: b.published !== false
+      }]
+    });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "\u062A\u0645 \u0625\u0646\u0634\u0627\u0621 \u0645\u0647\u0645\u0629 \u0627\u0644\u062F\u0641\u062A\u0631 \u0628\u0646\u062C\u0627\u062D!" });
+  } catch (err) {
+    logger.error({ err }, "POST notebook task failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u0645\u0647\u0645\u0629 \u2014 " + V3_HINT });
+  }
+});
+router5.patch("/teacher/curriculum/notebooks/:id", requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const full = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+    if (b.title !== void 0) full.title = b.title;
+    if (b.description !== void 0) full.description = b.description;
+    if (b.grade !== void 0) full.grade = b.grade;
+    if (b.term !== void 0) full.term = b.term;
+    if (b.unitTitle !== void 0 || b.unit_title !== void 0) full.unit_title = b.unitTitle ?? b.unit_title ?? "";
+    if (b.courseId !== void 0 || b.course_id !== void 0) full.course_id = b.courseId ?? b.course_id ?? null;
+    if (b.lessonId !== void 0 || b.lesson_id !== void 0) full.lesson_id = b.lessonId ?? b.lesson_id ?? null;
+    if (b.requirements !== void 0) {
+      full.requirements = Array.isArray(b.requirements) ? b.requirements.filter((r) => r?.label?.trim()).slice(0, 20).map((r) => ({
+        label: String(r.label).slice(0, 200),
+        kind: r.kind || "\u0643\u062A\u0627\u0628\u0629",
+        place: String(r.place || "").slice(0, 120)
+      })) : [];
+    }
+    if (b.dueDate !== void 0 || b.due_date !== void 0) full.due_date = b.dueDate ?? b.due_date ?? null;
+    if (b.points !== void 0) full.points = Number(b.points) || 10;
+    if (b.section !== void 0) full.section = b.section || "\u0627\u0644\u062C\u0645\u064A\u0639";
+    if (b.published !== void 0) full.published = !!b.published;
+    const { error } = await supabaseQuery(`notebook_tasks?id=eq.${enc2(req.params.id)}`, { method: "PATCH", body: full });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u0645\u0647\u0645\u0629!" });
+  } catch (err) {
+    logger.error({ err }, "PATCH notebook task failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0645\u0647\u0645\u0629" });
+  }
+});
+router5.delete("/teacher/curriculum/notebooks/:id", requireAdmin, async (req, res) => {
+  try {
+    const { error } = await supabaseQuery(`notebook_tasks?id=eq.${enc2(req.params.id)}`, { method: "DELETE" });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u0645\u0647\u0645\u0629 \u0648\u062A\u0633\u0644\u064A\u0645\u0627\u062A\u0647\u0627!" });
+  } catch (err) {
+    logger.error({ err }, "DELETE notebook task failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0645\u0647\u0645\u0629" });
+  }
+});
+router5.get("/teacher/curriculum/notebooks/:id/submissions", requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabaseQuery(
+      `notebook_submissions?task_id=eq.${enc2(req.params.id)}&order=submitted_at.desc&limit=500`
+    );
+    if (error) throw new Error(String(error));
+    const userIds = [...new Set((data || []).map((s) => s.user_id))];
+    let names = {};
+    if (userIds.length) {
+      const { data: profiles } = await supabaseQuery(
+        `profiles?id=in.(${userIds.map(enc2).join(",")})&select=id,full_name,grade,section,school,avatar_url&limit=500`
+      );
+      for (const p of profiles || []) names[p.id] = p;
+    }
+    res.json(
+      (data || []).map((s) => {
+        let checks = [];
+        try {
+          checks = Array.isArray(s.checks) ? s.checks : JSON.parse(s.checks || "[]");
+        } catch {
+          checks = [];
+        }
+        return {
+          id: s.id,
+          photos: Array.isArray(s.photos) ? s.photos : [],
+          note: s.note || "",
+          status: s.status || "\u0645\u0633\u0644\u0651\u0645",
+          score: s.score ?? null,
+          feedback: s.feedback || "",
+          checks,
+          submittedAt: s.submitted_at,
+          student: {
+            id: s.user_id,
+            name: names[s.user_id]?.full_name || "\u0637\u0627\u0644\u0628",
+            grade: names[s.user_id]?.grade || "",
+            section: names[s.user_id]?.section || "",
+            school: names[s.user_id]?.school || "",
+            avatarUrl: names[s.user_id]?.avatar_url || ""
+          }
+        };
+      })
+    );
+  } catch (err) {
+    logger.error({ err }, "GET notebook submissions failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u062A\u0633\u0644\u064A\u0645\u0627\u062A" });
+  }
+});
+router5.post("/api/notebooks/:id/submit", requireAuth, async (req, res) => {
+  try {
+    const { userId, photos, note } = req.body || {};
+    if (!userId) {
+      res.status(400).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u062F\u064A\u062F \u0627\u0644\u0637\u0627\u0644\u0628" });
+      return;
+    }
+    if (!Array.isArray(photos) || !photos.length) {
+      res.status(400).json({ error: "\u0635\u0648\u0651\u0631 \u062F\u0641\u062A\u0631\u0643 \u0648\u0623\u0631\u0641\u0642 \u0635\u0648\u0631\u0629 \u0648\u0627\u062D\u062F\u0629 \u0639\u0644\u0649 \u0627\u0644\u0623\u0642\u0644" });
+      return;
+    }
+    let initChecks = [];
+    try {
+      const { data: task } = await supabaseQuery(
+        `notebook_tasks?id=eq.${enc2(req.params.id)}&select=requirements&limit=1`
+      );
+      const reqs = task?.[0]?.requirements;
+      const arr = Array.isArray(reqs) ? reqs : JSON.parse(reqs || "[]");
+      initChecks = arr.map((r) => ({ label: String(r.label || ""), done: false }));
+    } catch {
+    }
+    const payload = {
+      task_id: req.params.id,
+      user_id: userId,
+      photos,
+      note: note || "",
+      status: "\u0645\u0633\u0644\u0651\u0645",
+      checks: initChecks,
+      submitted_at: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    const existing = await supabaseQuery(
+      `notebook_submissions?task_id=eq.${enc2(req.params.id)}&user_id=eq.${enc2(userId)}&limit=1`
+    );
+    if (existing.data?.[0]) {
+      const { error } = await supabaseQuery(`notebook_submissions?id=eq.${existing.data[0].id}`, {
+        method: "PATCH",
+        body: { ...payload, score: null, feedback: "" }
+      });
+      if (error) throw new Error(String(error));
+    } else {
+      const { error } = await supabaseQuery("notebook_submissions", { method: "POST", body: [payload] });
+      if (error) throw new Error(String(error));
+    }
+    res.json({ success: true, message: "\u062A\u0645 \u062A\u0633\u0644\u064A\u0645 \u0635\u0648\u0631 \u062F\u0641\u062A\u0631\u0643 \u0644\u0644\u0623\u0633\u062A\u0627\u0630 \u0628\u0646\u062C\u0627\u062D! \u0623\u062D\u0633\u0646\u062A." });
+  } catch (err) {
+    logger.error({ err }, "POST notebook submit failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u0633\u0644\u064A\u0645 \u0627\u0644\u062F\u0641\u062A\u0631 \u2014 " + V3_HINT });
+  }
+});
+router5.get("/api/notebooks/:id/mine", async (req, res) => {
+  try {
+    const { user_id } = req.query;
+    if (!user_id) {
+      res.status(400).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u062F\u064A\u062F \u0627\u0644\u0637\u0627\u0644\u0628" });
+      return;
+    }
+    const { data } = await supabaseQuery(
+      `notebook_submissions?task_id=eq.${enc2(req.params.id)}&user_id=eq.${enc2(user_id)}&limit=1`
+    );
+    const s = data?.[0];
+    if (!s) {
+      res.json(null);
+      return;
+    }
+    let checks = [];
+    try {
+      checks = Array.isArray(s.checks) ? s.checks : JSON.parse(s.checks || "[]");
+    } catch {
+      checks = [];
+    }
+    res.json({
+      photos: Array.isArray(s.photos) ? s.photos : [],
+      note: s.note || "",
+      status: s.status || "\u0645\u0633\u0644\u0651\u0645",
+      score: s.score ?? null,
+      feedback: s.feedback || "",
+      checks,
+      submittedAt: s.submitted_at
+    });
+  } catch (err) {
+    logger.error({ err }, "GET notebook mine failed");
+    res.json(null);
+  }
+});
+router5.patch("/teacher/curriculum/notebook-submissions/:id", requireAdmin, async (req, res) => {
+  try {
+    const { score, feedback, status, checks } = req.body || {};
+    const full = { reviewed_at: (/* @__PURE__ */ new Date()).toISOString() };
+    if (score !== void 0) full.score = score === null || score === "" ? null : Number(score);
+    if (feedback !== void 0) full.feedback = feedback;
+    if (checks !== void 0) {
+      full.checks = Array.isArray(checks) ? checks.map((c) => ({ label: String(c.label || ""), done: !!c.done })) : [];
+    }
+    if (status !== void 0) full.status = status;
+    else if (score !== void 0 || checks !== void 0) full.status = "\u062A\u0645 \u0627\u0644\u062A\u0642\u064A\u064A\u0645";
+    const { error } = await supabaseQuery(`notebook_submissions?id=eq.${enc2(req.params.id)}`, {
+      method: "PATCH",
+      body: full
+    });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u062A\u0642\u064A\u064A\u0645!" });
+  } catch (err) {
+    logger.error({ err }, "PATCH notebook submission failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u062A\u0642\u064A\u064A\u0645" });
+  }
+});
+router5.post("/api/student/upload", requireAuth, async (req, res) => {
+  try {
+    const { file, fileName } = req.body || {};
+    if (!file || typeof file !== "string") {
+      res.status(400).json({ error: "\u0645\u0644\u0641 \u063A\u064A\u0631 \u0635\u0627\u0644\u062D \u0644\u0644\u0631\u0641\u0639" });
+      return;
+    }
+    const result = await uploadFile(file, fileName || `notebook-${Date.now()}`, "/ard-al-lughah/notebooks");
+    res.json({ success: true, ...result });
+  } catch (err) {
+    logger.error({ err }, "POST /api/student/upload failed");
+    res.status(500).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u0631\u0641\u0639 \u0627\u0644\u0635\u0648\u0631\u0629" });
+  }
+});
+var study_default = router5;
 
 // src/routes/auth.ts
-var import_express3 = __toESM(require_express2(), 1);
+var import_express6 = __toESM(require_express2(), 1);
 import { createHash, randomBytes } from "node:crypto";
-var router3 = (0, import_express3.Router)();
+init_logger();
+init_supabase();
+var router6 = (0, import_express6.Router)();
 var authUnavailableMessage = "\u062E\u062F\u0645\u0629 \u0627\u0644\u0645\u0635\u0627\u062F\u0642\u0629 \u063A\u064A\u0631 \u0645\u062A\u0627\u062D\u0629 \u0645\u0624\u0642\u062A\u064B\u0627. \u062D\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649 \u0628\u0639\u062F \u0642\u0644\u064A\u0644.";
 var SUPABASE_URL2 = process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co";
 var SUPABASE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SECRET_KEY || "sb_publishable_kPG7zfG0FFZpRTkNnHhO1Q_oXoOq8fg";
@@ -33700,8 +35656,24 @@ function authUser(data) {
     id: String(user.id ?? ""),
     email: String(user.email ?? ""),
     fullName: String(metadata.full_name ?? metadata.name ?? ""),
-    avatarUrl: String(metadata.avatar_url ?? "")
+    avatarUrl: String(metadata.avatar_url ?? metadata.picture ?? "")
   };
+}
+async function syncGoogleAvatar(userId, metadata) {
+  const pic = String(metadata.avatar_url ?? metadata.picture ?? "");
+  if (!userId || !pic) return pic;
+  try {
+    const { data } = await supabaseQuery(`profiles?id=eq.${userId}&select=avatar_url&limit=1`);
+    if (!data?.[0]?.avatar_url) {
+      await supabaseQuery(`profiles?id=eq.${userId}`, {
+        method: "PATCH",
+        body: { avatar_url: pic }
+      });
+    }
+  } catch (err) {
+    logger.warn({ err }, "Failed to sync Google avatar");
+  }
+  return pic;
 }
 function base64url(input) {
   return input.toString("base64url");
@@ -33760,7 +35732,7 @@ function setSessionCookies(res, data) {
     });
   }
 }
-router3.post("/auth/register", async (req, res) => {
+router6.post("/auth/register", async (req, res) => {
   const parsed = RegisterAccountBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -33821,7 +35793,7 @@ router3.post("/auth/register", async (req, res) => {
     })
   );
 });
-router3.post("/auth/login", async (req, res) => {
+router6.post("/auth/login", async (req, res) => {
   const parsed = LoginAccountBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -33845,7 +35817,7 @@ router3.post("/auth/login", async (req, res) => {
     })
   );
 });
-router3.post("/auth/forgot-password", async (req, res) => {
+router6.post("/auth/forgot-password", async (req, res) => {
   const parsed = RequestPasswordResetBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -33866,7 +35838,7 @@ router3.post("/auth/forgot-password", async (req, res) => {
     })
   );
 });
-router3.get("/auth/google", (req, res) => {
+router6.get("/auth/google", (req, res) => {
   try {
     const verifier = generateCodeVerifier();
     const challenge = generateCodeChallenge(verifier);
@@ -33893,7 +35865,7 @@ router3.get("/auth/google", (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0631\u0627\u0628\u0637 \u0627\u0644\u062F\u062E\u0648\u0644 \u0639\u0628\u0631 Google. \u062D\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649." });
   }
 });
-router3.post("/auth/exchange", async (req, res) => {
+router6.post("/auth/exchange", async (req, res) => {
   const code = typeof req.body?.code === "string" ? req.body.code : "";
   if (!code) {
     res.status(400).json({ error: "\u0631\u0645\u0632 \u0627\u0644\u062A\u0623\u0643\u064A\u062F \u0645\u0641\u0642\u0648\u062F. \u0623\u0639\u062F \u0627\u0644\u0645\u062D\u0627\u0648\u0644\u0629." });
@@ -33933,6 +35905,8 @@ router3.post("/auth/exchange", async (req, res) => {
     const userId = String(data.user?.id ?? "");
     if (userId) {
       const profile = await fetchProfileById(userId);
+      const meta = data.user?.user_metadata ?? {};
+      await syncGoogleAvatar(userId, meta);
       res.json({
         authenticated: true,
         needsSetup: profileNeedsSetup(profile),
@@ -33950,7 +35924,7 @@ router3.post("/auth/exchange", async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u0623\u0643\u064A\u062F \u0627\u0644\u062C\u0644\u0633\u0629 \u0639\u0628\u0631 Google. \u062D\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649." });
   }
 });
-router3.get("/auth/me", async (req, res) => {
+router6.get("/auth/me", async (req, res) => {
   const accessToken = req.cookies?.supabase_access_token;
   if (!accessToken) {
     res.json({ authenticated: false });
@@ -33966,6 +35940,7 @@ router3.get("/auth/me", async (req, res) => {
   const userId = String(user.id ?? "");
   const metadata = user.user_metadata ?? {};
   const profile = userId ? await fetchProfileById(userId) : null;
+  const syncedPic = await syncGoogleAvatar(userId, metadata);
   res.json({
     authenticated: true,
     needsSetup: profileNeedsSetup(profile),
@@ -33974,12 +35949,12 @@ router3.get("/auth/me", async (req, res) => {
       id: userId,
       email: String(user.email ?? ""),
       fullName: String(metadata.full_name ?? metadata.name ?? profile?.full_name ?? ""),
-      avatarUrl: String(metadata.avatar_url ?? profile?.avatar_url ?? ""),
+      avatarUrl: syncedPic || String(profile?.avatar_url ?? ""),
       role: String(profile?.role || metadata.role || "student")
     }
   });
 });
-router3.post("/auth/complete-profile", async (req, res) => {
+router6.post("/auth/complete-profile", async (req, res) => {
   const accessToken = req.cookies?.supabase_access_token;
   const user = accessToken ? await getSupabaseUser(accessToken) : null;
   if (!user) {
@@ -34045,23 +36020,27 @@ router3.post("/auth/complete-profile", async (req, res) => {
     user: { id: profile.id, email: profile.email, fullName: profile.full_name, avatarUrl: "" }
   });
 });
-router3.post("/auth/logout", (_req, res) => {
+router6.post("/auth/logout", (_req, res) => {
   res.clearCookie("supabase_access_token");
   res.clearCookie("supabase_refresh_token");
   res.clearCookie("supabase_pkce_verifier");
   res.json(LogoutAccountResponse.parse({ message: "\u062A\u0645 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062E\u0631\u0648\u062C." }));
 });
-var auth_default = router3;
+var auth_default = router6;
 
 // src/routes/index.ts
-var router4 = (0, import_express4.Router)();
-router4.use(health_default);
-router4.use(platform_default);
-router4.use(auth_default);
-var routes_default = router4;
+var router7 = (0, import_express7.Router)();
+router7.use(health_default);
+router7.use(platform_default);
+router7.use(curriculum_default);
+router7.use(storage_default);
+router7.use(study_default);
+router7.use(auth_default);
+var routes_default = router7;
 
 // src/app.ts
-var app = (0, import_express5.default)();
+init_logger();
+var app = (0, import_express8.default)();
 app.use(
   (0, import_pino_http.default)({
     logger,
@@ -34082,8 +36061,8 @@ app.use(
   })
 );
 app.use((0, import_cors.default)());
-app.use(import_express5.default.json());
-app.use(import_express5.default.urlencoded({ extended: true }));
+app.use(import_express8.default.json({ limit: "25mb" }));
+app.use(import_express8.default.urlencoded({ extended: true, limit: "25mb" }));
 app.use((0, import_cookie_parser.default)());
 app.use("/api", routes_default);
 var app_default = app;

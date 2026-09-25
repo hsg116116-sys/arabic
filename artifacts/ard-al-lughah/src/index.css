@@ -186,9 +186,45 @@
   .animate-rise { animation: rise .6s cubic-bezier(.2,.8,.2,1) both; }
   .animate-fade { animation: fade .45s ease both; }
   .scrollbar-thin { scrollbar-width: thin; scrollbar-color: hsl(var(--border)) transparent; }
+  .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  /* أثناء فتح أي نافذة: إخفاء ترويسة التطبيق والقائمة الجانبية وشريط الأقسام نهائياً
+     (بدون تحريك التخطيط) — فلا يظهر شيء فوق النافذة أبداً */
+  body:has([role="dialog"]) header.sticky,
+  body:has([role="dialog"]) aside,
+  body:has([role="dialog"]) nav.fixed {
+    visibility: hidden !important;
+  }
 }
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* ===== حركات الاختبارات التفاعلية ===== */
+@keyframes quiz-in-next { from { opacity: 0; transform: translateX(-56px) scale(.98); } to { opacity: 1; transform: translateX(0) scale(1); } }
+@keyframes quiz-in-prev { from { opacity: 0; transform: translateX(56px) scale(.98); } to { opacity: 1; transform: translateX(0) scale(1); } }
+@keyframes opt-pop { 0% { transform: scale(.92); } 55% { transform: scale(1.04); } 100% { transform: scale(1); } }
+@keyframes fade-up { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes float-slow { 0%, 100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-12px) rotate(2deg); } }
+@keyframes spin-slow { to { transform: rotate(360deg); } }
+@keyframes timer-danger { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+@keyframes score-pop { 0% { opacity: 0; transform: scale(.4); } 60% { opacity: 1; transform: scale(1.12); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes modal-pop { from { opacity: 0; transform: translateY(18px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes bar-fill { from { width: 0; } }
+@keyframes glow-pulse { 0%, 100% { box-shadow: 0 0 0 0 hsl(var(--accent) / .45); } 50% { box-shadow: 0 0 0 9px hsl(var(--accent) / 0); } }
+
+.animate-quiz-next { animation: quiz-in-next .38s cubic-bezier(.2,.8,.2,1) both; }
+.animate-quiz-prev { animation: quiz-in-prev .38s cubic-bezier(.2,.8,.2,1) both; }
+.animate-opt-pop { animation: opt-pop .3s ease both; }
+.animate-fade-up { animation: fade-up .5s cubic-bezier(.2,.8,.2,1) both; }
+.animate-float-slow { animation: float-slow 6s ease-in-out infinite; }
+.animate-score-pop { animation: score-pop .6s cubic-bezier(.2,.8,.2,1) both; }
+.animate-modal-pop { animation: modal-pop .38s cubic-bezier(.2,.8,.2,1) both; }
+.animate-bar-fill { animation: bar-fill 1s ease both; }
+.animate-glow-pulse { animation: glow-pulse 2s ease-in-out infinite; }
+.animate-timer-danger { animation: timer-danger 1s ease-in-out infinite; }
+.stagger-1 { animation-delay: .06s; } .stagger-2 { animation-delay: .12s; }
+.stagger-3 { animation-delay: .18s; } .stagger-4 { animation-delay: .24s; }
+.stagger-5 { animation-delay: .3s; }
 
 @media (max-width: 640px) {
   .hero-portrait-frame {

@@ -168,7 +168,9 @@ export const ListAssignmentsResponseItem = zod.object({
   "unit": zod.string(),
   "dueDate": zod.string(),
   "status": zod.string(),
-  "points": zod.number().int()
+  "points": zod.number().int(),
+  "grade": zod.string().optional(),
+  "section": zod.string().optional()
 })
 export const ListAssignmentsResponse = zod.array(ListAssignmentsResponseItem)
 
@@ -212,7 +214,8 @@ export const GetTeacherSettingsResponse = zod.object({
   "teacherImageUrl": zod.string(),
   "signatureUrl": zod.string(),
   "accentColor": zod.string(),
-  "semester": zod.string()
+  "semester": zod.string(),
+  "genderSplit": zod.boolean().optional()
 })
 
 
@@ -226,7 +229,8 @@ export const UpdateTeacherSettingsBody = zod.object({
   "teacherImageUrl": zod.string().optional(),
   "signatureUrl": zod.string().optional(),
   "accentColor": zod.string().optional(),
-  "semester": zod.string().optional()
+  "semester": zod.string().optional(),
+  "genderSplit": zod.boolean().optional()
 })
 
 export const UpdateTeacherSettingsResponse = zod.object({
@@ -236,7 +240,8 @@ export const UpdateTeacherSettingsResponse = zod.object({
   "teacherImageUrl": zod.string(),
   "signatureUrl": zod.string(),
   "accentColor": zod.string(),
-  "semester": zod.string()
+  "semester": zod.string(),
+  "genderSplit": zod.boolean().optional()
 })
 
 

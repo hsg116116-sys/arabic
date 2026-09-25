@@ -13,4 +13,6 @@ export interface PlatformSettings {
   teacherImageUrl: string;
   signatureUrl: string;
   accentColor: string;
+  semester?: string;
+  genderSplit?: boolean;
 }

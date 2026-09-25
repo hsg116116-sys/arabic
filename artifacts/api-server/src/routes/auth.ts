@@ -63,8 +63,26 @@ function authUser(data: Record<string, unknown>) {
     id: String(user.id ?? ""),
     email: String(user.email ?? ""),
     fullName: String(metadata.full_name ?? metadata.name ?? ""),
-    avatarUrl: String(metadata.avatar_url ?? ""),
+    avatarUrl: String(metadata.avatar_url ?? metadata.picture ?? ""),
   };
+}
+
+/** مزامنة صورة Google إلى بروفايل الطالب (مرة واحدة عند الدخول) */
+async function syncGoogleAvatar(userId: string, metadata: Record<string, unknown>): Promise<string> {
+  const pic = String(metadata.avatar_url ?? metadata.picture ?? "");
+  if (!userId || !pic) return pic;
+  try {
+    const { data } = await supabaseQuery<any[]>(`profiles?id=eq.${userId}&select=avatar_url&limit=1`);
+    if (!data?.[0]?.avatar_url) {
+      await supabaseQuery(`profiles?id=eq.${userId}`, {
+        method: "PATCH",
+        body: { avatar_url: pic },
+      });
+    }
+  } catch (err) {
+    logger.warn({ err }, "Failed to sync Google avatar");
+  }
+  return pic;
 }
 
 // ============================================================================
@@ -345,6 +363,8 @@ router.post("/auth/exchange", async (req, res): Promise<void> => {
     const userId = String((data.user as Record<string, unknown>)?.id ?? "");
     if (userId) {
       const profile = await fetchProfileById(userId);
+      const meta = ((data.user as Record<string, unknown>)?.user_metadata ?? {}) as Record<string, unknown>;
+      await syncGoogleAvatar(userId, meta);
       res.json({
         authenticated: true,
         needsSetup: profileNeedsSetup(profile),
@@ -382,6 +402,7 @@ router.get("/auth/me", async (req, res) => {
   const userId = String(user.id ?? "");
   const metadata = (user.user_metadata ?? {}) as Record<string, unknown>;
   const profile = userId ? await fetchProfileById(userId) : null;
+  const syncedPic = await syncGoogleAvatar(userId, metadata);
 
   res.json({
     authenticated: true,
@@ -391,7 +412,7 @@ router.get("/auth/me", async (req, res) => {
       id: userId,
       email: String(user.email ?? ""),
       fullName: String(metadata.full_name ?? metadata.name ?? profile?.full_name ?? ""),
-      avatarUrl: String(metadata.avatar_url ?? profile?.avatar_url ?? ""),
+      avatarUrl: syncedPic || String(profile?.avatar_url ?? ""),
       role: String(profile?.role || (metadata.role as string) || "student"),
     },
   });
