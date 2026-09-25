@@ -1440,6 +1440,8 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
   const dashAvatar = studentDash.data?.student?.avatarUrl || '';
   const avatarSrc = mode === 'teacher' ? teacherImageUrl : dashAvatar || meAvatar || undefined;
 
+  // بوابة الدخول: لا يُعرض أي محتوى قبل التأكد من الجلسة والصلاحية
+  const [authReady, setAuthReady] = useState(false);
   useEffect(() => {
     if (mode !== 'student') return;
     let cancelled = false;
@@ -1448,7 +1450,8 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
         if (cancelled) return;
         if (!me.authenticated) { setLocation('/login'); return; }
         if (me.needsSetup) { setLocation('/auth/complete'); return; }
-        if (me.role === 'admin') setLocation('/teacher');
+        if (me.role === 'admin') { setLocation('/teacher'); return; }
+        setAuthReady(true);
       })
       .catch(() => {
         if (!cancelled) setLocation('/login');
@@ -1463,7 +1466,8 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
       .then((me) => {
         if (cancelled) return;
         if (!me.authenticated) { setLocation('/login'); return; }
-        if (me.role !== 'admin') setLocation('/student');
+        if (me.role !== 'admin') { setLocation('/student'); return; }
+        setAuthReady(true);
       })
       .catch(() => {
         if (!cancelled) setLocation('/login');
@@ -1584,7 +1588,19 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
             )}
           </div>
         </header>
-        <main className="animate-fade px-5 py-7 pb-24 sm:px-8 lg:px-10">{children}</main>
+        <main className="animate-fade px-5 py-7 pb-24 sm:px-8 lg:px-10">
+          {authReady ? children : (
+            <div className="grid min-h-[55dvh] place-items-center" data-testid="auth-gate-loading">
+              <div className="flex flex-col items-center gap-4 text-center">
+                <span className="grid h-16 w-16 place-items-center rounded-3xl bg-primary text-primary-foreground shadow-lg">
+                  <RefreshCw size={26} className="animate-spin" />
+                </span>
+                <p className="font-display text-lg font-bold text-primary">نتحقق من صلاحية الدخول...</p>
+                <p className="text-xs text-muted-foreground">لحظات ويتم توجيهك لمكانك الصحيح</p>
+              </div>
+            </div>
+          )}
+        </main>
       </div>
 
       <nav className="fixed inset-x-3 bottom-3 z-40 flex items-center gap-1.5 overflow-x-auto rounded-3xl border border-white/10 bg-[#0d2926] p-2 shadow-2xl no-scrollbar lg:hidden">
