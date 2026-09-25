@@ -4204,7 +4204,6 @@ function CurriculumManagerPage({ onlyTab, hero }: {
   const [examDetailQuestions, setExamDetailQuestions] = useState<any[]>([]);
   const [newQ, setNewQ] = useState({ question: '', options: ['', '', '', ''], correctAnswer: 0, explanation: '' });
 
-  const [storage, setStorage] = useState<any>(null);
   const [notes, setNotes] = useState<any[]>([]);
   const [loadingNotes, setLoadingNotes] = useState(false);
   const [noteModal, setNoteModal] = useState(false);
@@ -4271,10 +4270,6 @@ function CurriculumManagerPage({ onlyTab, hero }: {
       setNotes(Array.isArray(data) ? data : []);
     } catch (e) { console.error(e); } finally { setLoadingNotes(false); }
   };
-
-  useEffect(() => {
-    jsonFetch('/api/teacher/storage').then(setStorage).catch(() => undefined);
-  }, []);
 
   const loadHw = async () => {
     setLoadingHw(true);
@@ -4579,20 +4574,6 @@ function CurriculumManagerPage({ onlyTab, hero }: {
       />
 
       {msg ? <p className="mb-4 rounded-xl bg-accent/20 px-4 py-3 text-sm font-bold text-accent-foreground">{msg}</p> : null}
-
-      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card px-4 py-3 text-xs shadow-sm">
-        <span className="grid h-9 w-9 place-items-center rounded-xl bg-secondary text-primary"><ImagePlus size={17} /></span>
-        <span className="font-bold text-primary">التخزين السحابي للصور والملفات:</span>
-        {storage ? (
-          <>
-            <span className="font-semibold text-muted-foreground">{storage.configured || 0} حسابات مهيأة (≈{(storage.configured || 0) * 3}GB)</span>
-            {storage.activeAccountId ? <span className="rounded-full bg-green-500/15 px-2.5 py-1 font-bold text-green-800">النشط الآن: {storage.activeAccountId} ✓</span> : null}
-            <span className="text-muted-foreground">· التناوب تلقائي عند امتلاء حساب · النص فقط في Supabase</span>
-          </>
-        ) : (
-          <span className="font-semibold text-destructive">غير مهيأ — أضف مفاتيح IMAGEKIT_* في .env (السيرفر) ثم أعد التشغيل</span>
-        )}
-      </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {GRADES.map((g) => (
