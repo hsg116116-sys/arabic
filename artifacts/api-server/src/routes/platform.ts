@@ -246,6 +246,32 @@ router.get("/platform/overview", async (_req, res) => {
 });
 
 // 2. Student Dashboard
+// 0. هوية المنصة العامة (خفيفة للشعار والصورة والاسم في كل الصفحات — بلا مصادقة)
+router.get("/platform/identity", async (_req, res) => {
+  try {
+    const { data } = await supabaseQuery<any[]>("platform_settings?select=*&limit=1");
+    const s = data?.[0] || {};
+    res.json({
+      platformName: s.platform_name || "أرض اللغة",
+      teacherName: s.teacher_name || "المعلم أحمد يحيى الأسطل",
+      teacherBio: s.teacher_bio || "",
+      teacherImageUrl: s.teacher_image_url || "/teacher-ahmed.jpg",
+      accentColor: s.accent_color || "#d7b65e",
+      semester: s.semester || "الفصل الأول",
+    });
+  } catch (err: any) {
+    logger.error({ err }, "Error in GET /platform/identity");
+    res.json({
+      platformName: "أرض اللغة",
+      teacherName: "المعلم أحمد يحيى الأسطل",
+      teacherBio: "",
+      teacherImageUrl: "/teacher-ahmed.jpg",
+      accentColor: "#d7b65e",
+      semester: "الفصل الأول",
+    });
+  }
+});
+
 router.get("/student/dashboard", requireAuth, async (req, res) => {
   try {
     const activeStudent = await getActiveStudent(req);
@@ -469,21 +495,33 @@ router.get("/assignments", async (req, res) => {
       submissions = subRes.data || [];
     }
     const statusMap: Record<string, string> = {};
+    const scoreMap: Record<string, number | null> = {};
     for (const sub of submissions) {
-      statusMap[sub.assignment_id] = sub.score != null ? "تم التسليم" : "قيد المراجعة";
+      statusMap[sub.assignment_id] = sub.score != null ? "تم التقييم" : "قيد المراجعة";
+      scoreMap[sub.assignment_id] = sub.score ?? null;
     }
 
-    let parsed = (data || []).map((a) => ({
-      id: a.id,
-      title: a.title,
-      description: a.description || "",
-      unit: a.unit || "",
-      dueDate: a.due_date || "",
+    let parsed = (data || []).map((a) => {
+      let images: string[] = [];
+      try {
+        images = Array.isArray(a.images) ? a.images : JSON.parse(a.images || "[]");
+      } catch { images = []; }
+      return {
+        id: a.id,
+        title: a.title,
+        description: a.description || "",
+        unit: a.unit || "",
+        courseId: a.course_id || null,
+        lessonId: a.lesson_id || null,
+        images: images.filter((u) => String(u || "").trim()),
+        dueDate: a.due_date || "",
       status: statusMap[a.id] || "لم يبدأ",
+      score: scoreMap[a.id] ?? null,
       points: a.points || 0,
       grade: a.grade || "الجميع",
       section: a.section || "الجميع",
-    }));
+      };
+    });
 
     // فلترة الأقسام للواجبات — التقسيم لكل صف لحاله (صف الطالب النشط)
     if (activeStudent) {
@@ -504,34 +542,101 @@ router.get("/assignments", async (req, res) => {
   }
 });
 
-// 5.1 Submit Assignment
+// 5.1 Submit Assignment (صور الحل + إنشاء أو تحديث التسليم)
 router.post("/assignments/:id/submit", requireAuth, async (req, res) => {
   try {
     const assignmentId = req.params.id;
-    const { answer, userId } = req.body;
+    const { answer, userId, photos } = req.body;
     const studentId = await resolveStudentId(userId, req);
     if (!studentId) {
       res.status(404).json({ error: "لم يتم العثور على الطالب النشط" });
       return;
     }
+    const cleanPhotos = Array.isArray(photos) ? photos.filter((u: unknown) => String(u || "").trim()) : [];
+    if (!String(answer || "").trim() && !cleanPhotos.length) {
+      res.status(400).json({ error: "اكتب حلّك أو أرفق صورة واحدة على الأقل" });
+      return;
+    }
 
-    await supabaseQuery("assignment_submissions", {
-      method: "POST",
-      body: [
-        {
-          assignment_id: assignmentId,
-          user_id: studentId,
-          status: "تم التسليم بنجاح",
-          answer: answer || "تم تقديم الإجابة",
-          submitted_at: new Date().toISOString(),
-        },
-      ],
-    });
+    // ممنوع التعديل أثناء المراجعة: تسليم بلا علامة = قيد المراجعة ولا يُمس حتى يقيّمه الأستاذ
+    const { data: prev } = await supabaseQuery<any[]>(
+      `assignment_submissions?assignment_id=eq.${assignmentId}&user_id=eq.${studentId}&select=id,score,status&limit=1`,
+    );
+    if (prev?.[0] && prev[0].score == null && String(prev[0].status || "") !== "تم التقييم") {
+      res.status(400).json({ error: "تسليمك قيد مراجعة الأستاذ 🔒 — لا يمكن التعديل أو إعادة الرفع حتى يقيّمه." });
+      return;
+    }
+
+    const fullRow = {
+      assignment_id: assignmentId,
+      user_id: studentId,
+      status: "تم التسليم بنجاح",
+      answer: String(answer || "").trim() || "تسليم بصور مرفقة",
+      photos: cleanPhotos,
+      submitted_at: new Date().toISOString(),
+    };
+    const writeRow = async (row: Record<string, any>) => {
+      if (prev?.[0]) {
+        return supabaseQuery(`assignment_submissions?id=eq.${prev[0].id}`, {
+          method: "PATCH",
+          body: { ...row, score: null, feedback: "" },
+        });
+      }
+      return supabaseQuery("assignment_submissions", { method: "POST", body: [row] });
+    };
+
+    let r = await writeRow(fullRow);
+    if (r.error && /column|schema cache|Could not find/i.test(String(r.error))) {
+      // القاعدة قبل عمود photos — نخزن الصور كنص في attachment_url
+      const { photos: _p, ...withoutPhotos } = fullRow;
+      if (cleanPhotos.length) (withoutPhotos as any).attachment_url = JSON.stringify(cleanPhotos);
+      r = await writeRow(withoutPhotos);
+    }
+    if (r.error) throw new Error(String(r.error));
 
     res.json({ success: true, message: "تم إرسال إجابتك إلى الأستاذ أحمد يحيى الأسطل بنجاح!" });
   } catch (err: any) {
     logger.error({ err }, "Error in POST /assignments/:id/submit");
     res.status(500).json({ error: "تعذر إرسال الواجب" });
+  }
+});
+
+// 5.2 My submission for one assignment (حلّي + صوري + تقييم الأستاذ)
+router.get("/assignments/:id/mine", requireAuth, async (req, res) => {
+  try {
+    const assignmentId = req.params.id;
+    const { userId } = req.query as { userId?: string };
+    const studentId = await resolveStudentId(userId as string, req);
+    if (!studentId) {
+      res.json(null);
+      return;
+    }
+    const { data } = await supabaseQuery<any[]>(
+      `assignment_submissions?assignment_id=eq.${assignmentId}&user_id=eq.${studentId}&order=submitted_at.desc&limit=1`,
+    );
+    const s = data?.[0];
+    if (!s) {
+      res.json(null);
+      return;
+    }
+    let photos: string[] = [];
+    try {
+      if (Array.isArray(s.photos)) photos = s.photos;
+      else if (typeof s.photos === "string" && s.photos.trim()) photos = JSON.parse(s.photos);
+      else if (s.attachment_url && String(s.attachment_url).trim().startsWith("[")) photos = JSON.parse(s.attachment_url);
+      else if (s.attachment_url && String(s.attachment_url).trim()) photos = [String(s.attachment_url)];
+    } catch { photos = []; }
+    res.json({
+      answer: s.answer || "",
+      photos: photos.filter((u) => String(u || "").trim()),
+      score: s.score ?? null,
+      feedback: s.feedback || "",
+      status: s.status || "تم التسليم",
+      submittedAt: s.submitted_at || null,
+    });
+  } catch (err: any) {
+    logger.error({ err }, "Error in GET /assignments/:id/mine");
+    res.json(null);
   }
 });
 
@@ -825,10 +930,16 @@ router.post("/teacher/courses", requireAdmin, async (req, res) => {
 router.post("/teacher/assignments", requireAdmin, async (req, res) => {
   try {
     const { title, description, unit, dueDate, points, grade, section } = req.body;
+    const courseId = req.body?.courseId ?? req.body?.course_id ?? null;
+    const lessonId = req.body?.lessonId ?? req.body?.lesson_id ?? null;
+    const images = Array.isArray(req.body?.images) ? req.body.images.filter((u: unknown) => String(u || "").trim()) : [];
     const full = {
       title: title || "واجب جديد",
       description: description || "",
       unit: unit || "الوحدة الأولى",
+      course_id: courseId,
+      lesson_id: lessonId,
+      images,
       due_date: dueDate || new Date(Date.now() + 86400000 * 7).toISOString().split("T")[0],
       points: parseInt(points, 10) || 20,
       published: true,
@@ -837,8 +948,13 @@ router.post("/teacher/assignments", requireAdmin, async (req, res) => {
     };
     let r = await supabaseQuery("assignments", { method: "POST", body: [full] });
     if (r.error && /column|schema cache|Could not find/i.test(String(r.error))) {
+      // القاعدة قبل صور الواجبات وربط الدروس — نعيد المحاولة بدونهما
+      const { lesson_id: _l, course_id: _c, images: _i, ...withoutNew } = full;
+      r = await supabaseQuery("assignments", { method: "POST", body: [withoutNew] });
+    }
+    if (r.error && /column|schema cache|Could not find/i.test(String(r.error))) {
       // القاعدة قبل v5 — نعيد المحاولة بالحقول الأساسية
-      const { grade: _g, section: _s, ...base } = full;
+      const { grade: _g, section: _s, course_id: _cc, lesson_id: _ll, images: _ii, ...base } = full;
       r = await supabaseQuery("assignments", { method: "POST", body: [base] });
     }
     if (r.error) throw new Error(String(r.error));

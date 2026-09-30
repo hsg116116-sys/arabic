@@ -372,7 +372,7 @@ router.get("/teacher/curriculum/notebooks/:id/submissions", requireAdmin, async 
 });
 
 /** تسليم الطالب لصور دفتره (إنشاء أو تحديث) */
-router.post("/api/notebooks/:id/submit", requireAuth, async (req, res) => {
+router.post("/notebooks/:id/submit", requireAuth, async (req, res) => {
   try {
     const { userId, photos, note } = req.body || {};
     if (!userId) {
@@ -423,7 +423,7 @@ router.post("/api/notebooks/:id/submit", requireAuth, async (req, res) => {
 });
 
 /** تسليم الطالب نفسه (صوره + بنوده + تقييمه) */
-router.get("/api/notebooks/:id/mine", async (req, res) => {
+router.get("/notebooks/:id/mine", async (req, res) => {
   try {
     const { user_id } = req.query as { user_id?: string };
     if (!user_id) {
@@ -486,7 +486,7 @@ router.patch("/teacher/curriculum/notebook-submissions/:id", requireAdmin, async
 });
 
 /** رفع صور الدفاتر للطلاب (مجلد مخصص) */
-router.post("/api/student/upload", requireAuth, async (req, res) => {
+router.post("/student/upload", requireAuth, async (req, res) => {
   try {
     const { file, fileName } = req.body || {};
     if (!file || typeof file !== "string") {

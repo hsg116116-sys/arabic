@@ -111,6 +111,7 @@ export interface Assignment {
   title: string;
   description: string;
   unit: string;
+  courseId?: string | null;
   dueDate: string;
   status: string;
   points: number;

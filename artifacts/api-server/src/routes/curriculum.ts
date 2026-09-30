@@ -14,45 +14,6 @@ const router: IRouter = Router();
 const enc = (v: string | string[] | undefined): string =>
   encodeURIComponent(Array.isArray(v) ? v[0] ?? "" : v ?? "");
 
-type Gate = {
-  grade: string;
-  term: string;
-  unlocked_course_id: string | null;
-  unlocked_lesson_id: string | null;
-  unlocked_unit_order: number;
-  note: string;
-};
-
-const DEFAULT_GATE: Gate = {
-  grade: "",
-  term: "",
-  unlocked_course_id: null,
-  unlocked_lesson_id: null,
-  unlocked_unit_order: 99,
-  note: "",
-};
-
-async function getGate(grade: string, term: string): Promise<Gate> {
-  try {
-    const { data } = await supabaseQuery<any[]>(
-      `grade_gates?grade=eq.${enc(grade)}&term=eq.${enc(term)}&limit=1`,
-    );
-    const g = data?.[0];
-    if (!g) return { ...DEFAULT_GATE, grade, term };
-    return {
-      grade: g.grade,
-      term: g.term,
-      unlocked_course_id: g.unlocked_course_id || null,
-      unlocked_lesson_id: g.unlocked_lesson_id || null,
-      unlocked_unit_order:
-        typeof g.unlocked_unit_order === "number" ? g.unlocked_unit_order : 99,
-      note: g.note || "",
-    };
-  } catch {
-    return { ...DEFAULT_GATE, grade, term };
-  }
-}
-
 /** جنس الطالب من بروفايله (طالب/طالبة) — null إن تعذر */
 export async function getStudentGender(userId?: string): Promise<string | null> {
   if (!userId) return null;
@@ -267,64 +228,16 @@ router.get("/curriculum/grades", async (_req, res) => {
   ]);
 });
 
-// ───────────────────────────── البوابات ─────────────────────────────
-router.get("/curriculum/gates", async (req, res) => {
-  try {
-    const { grade, term } = req.query as { grade?: string; term?: string };
-    let endpoint = "grade_gates?order=grade.asc";
-    if (grade) endpoint += `&grade=eq.${enc(grade)}`;
-    if (term) endpoint += `&term=eq.${enc(term)}`;
-    const { data } = await supabaseQuery<any[]>(endpoint);
-    res.json(
-      (data || []).map((g) => ({
-        grade: g.grade,
-        term: g.term,
-        unlockedCourseId: g.unlocked_course_id || null,
-        unlockedLessonId: g.unlocked_lesson_id || null,
-        unlockedUnitOrder: g.unlocked_unit_order ?? 99,
-        note: g.note || "",
-        updatedAt: g.updated_at || null,
-      })),
-    );
-  } catch (err: any) {
-    logger.error({ err }, "GET /curriculum/gates failed");
-    res.json([]);
-  }
+// ───────────────────────────── البوابات (أُزيلت نهائياً) ─────────────────────────────
+// قسم "آخر ما وصلنا" حُذف من المنصة: ما يراه الطالب يحدده قفل الوحدة/الدرس فقط.
+// أُبقي المسارين أدناه كجسر توافق (يُرجعان نجاحاً فارغاً) حتى لا تنكسر أي نسخة قديمة.
+
+router.get("/curriculum/gates", async (_req, res) => {
+  res.json([]);
 });
 
-/** حفظ بوابة "آخر ما وصلنا" — upsert متسامح */
-router.patch("/teacher/gates", requireAdmin, async (req, res) => {
-  try {
-    const { grade, term, unlockedCourseId, unlockedLessonId, unlockedUnitOrder, note } = req.body || {};
-    if (!grade || !term) {
-      res.status(400).json({ error: "الصف والفصل مطلوبان" });
-      return;
-    }
-    const payload: Record<string, any> = { grade, term, updated_at: new Date().toISOString() };
-    if (unlockedCourseId !== undefined) payload.unlocked_course_id = unlockedCourseId || null;
-    if (unlockedLessonId !== undefined) payload.unlocked_lesson_id = unlockedLessonId || null;
-    if (unlockedUnitOrder !== undefined) payload.unlocked_unit_order = Number(unlockedUnitOrder) || 0;
-    if (note !== undefined) payload.note = note;
-
-    // هل الصف موجود؟
-    const existing = await supabaseQuery<any[]>(
-      `grade_gates?grade=eq.${enc(grade)}&term=eq.${enc(term)}&limit=1`,
-    );
-    if (existing.data?.[0]) {
-      const r = await supabaseQuery(`grade_gates?grade=eq.${enc(grade)}&term=eq.${enc(term)}`, {
-        method: "PATCH",
-        body: payload,
-      });
-      if (r.error) throw new Error(String(r.error));
-    } else {
-      const r = await supabaseQuery("grade_gates", { method: "POST", body: [payload] });
-      if (r.error) throw new Error(String(r.error));
-    }
-    res.json({ success: true, message: "تم حفظ نقطة الوصول لطلاب هذا الصف بنجاح!" });
-  } catch (err: any) {
-    logger.error({ err }, "PATCH /teacher/gates failed");
-    res.status(500).json({ error: "تعذر حفظ البوابة — نفّذ ملف sql_curriculum_v2.sql أولاً" });
-  }
+router.patch("/teacher/gates", requireAdmin, async (_req, res) => {
+  res.json({ success: true, message: "قسم البوابات أُزيل — استخدم قفل الوحدة مباشرة." });
 });
 
 // ───────────────────────────── الوحدات ─────────────────────────────
@@ -361,29 +274,21 @@ router.get("/curriculum/courses", async (req, res) => {
       } catch { /* تجاهل */ }
     }
 
-    // بوابة الطالب: وسم المقفل (لا نحذف — الواجهة تعرض القفل)
-    let gate: Gate | null = null;
-    if (student === "1" && grade && term) gate = await getGate(grade, term);
-    if (gate) {
-      let cutoff = gate.unlocked_unit_order ?? 99;
-      if (gate.unlocked_course_id) {
-        const ref = courses.find((c) => c.id === gate!.unlocked_course_id);
-        if (ref) cutoff = Math.min(cutoff, ref.sort_order);
-      }
-      courses = courses.map((c) => ({
+    // لا بوابات: ما يراه الطالب يحدده القفل اليدوي فقط (isLocked/الحالة/الظهور).
+    // (قسم "آخر ما وصلنا" أُزيل نهائياً — أي صف قديم في grade_gates يُتجاهل عمداً)
+    courses = courses.map((c) => {
+      const statusLocked = c.status === "locked" || c.status === "hidden";
+      const manualLocked = !!c.isLocked || statusLocked || !c.isVisible || !c.published;
+      const empty = c.status === "empty" || (c.lessons ?? 0) === 0;
+      return {
         ...c,
-        locked: c.isLocked || !c.isVisible || !c.published || c.sort_order > cutoff || c.status === "empty" ? c.sort_order > cutoff || c.isLocked || !c.isVisible : false,
-        gateLocked: c.sort_order > cutoff,
-        isEmpty: c.status === "empty" || c.lessons === 0,
-      }));
-    } else {
-      courses = courses.map((c) => ({
-        ...c,
-        locked: c.isLocked,
+        locked: manualLocked,
         gateLocked: false,
-        isEmpty: c.status === "empty" || c.lessons === 0,
-      }));
-    }
+        manualLocked,
+        isEmpty: empty,
+        lockReason: manualLocked ? "manual" : empty ? "empty" : "open",
+      };
+    });
 
     res.json(courses.map((c) => ({ ...c, progress: progressMap[c.id] || 0 })));
   } catch (err: any) {
@@ -481,33 +386,28 @@ router.get("/curriculum/lessons/:id", async (req, res) => {
 router.get("/curriculum/courses/:id/lessons", async (req, res) => {
   try {
     const courseId = req.params.id;
-    const { student } = req.query as { student?: string };
-    const { data: courseData } = await supabaseQuery<any[]>(`courses?id=eq.${enc(courseId)}&limit=1`);
-    const course = courseData?.[0];
-    const { data } = await supabaseQuery<any[]>(`lessons?course_id=eq.${enc(courseId)}&order=position.asc&limit=200`);
+    // وضع brief=1: قائمة خفيفة بلا محتوى ثقيل (توفير Egress) — التفاصيل تُجلب عند فتح الدرس
+    const brief = (req.query as { brief?: string }).brief === "1";
+    const { data } = await supabaseQuery<any[]>(
+      brief
+        ? `lessons?course_id=eq.${enc(courseId)}&select=id,course_id,title,description,position,published,lesson_type,cover_url,status,is_locked,is_visible,grade,term&order=position.asc&limit=200`
+        : `lessons?course_id=eq.${enc(courseId)}&order=position.asc&limit=200`,
+    );
     let lessons = (data || []).map(lessonToJson);
 
-    if (student === "1" && course) {
-      const gate = await getGate(course.grade || "الصف العاشر", course.term || "الفصل الأول");
-      let cutoff = gate.unlocked_unit_order ?? 99;
-      if (gate.unlocked_course_id) {
-        const { data: refData } = await supabaseQuery<any[]>(`courses?id=eq.${enc(gate.unlocked_course_id)}&limit=1`);
-        const refOrder = refData?.[0]?.sort_order;
-        if (typeof refOrder === "number") cutoff = Math.min(cutoff, refOrder);
-      }
-      const courseLocked = (course.sort_order ?? 1) > cutoff;
-      let lessonCutoff = 9999;
-      if (gate.unlocked_lesson_id && gate.unlocked_course_id === courseId) {
-        const ref = lessons.find((l) => l.id === gate.unlocked_lesson_id);
-        if (ref) lessonCutoff = ref.position;
-      }
-      lessons = lessons.map((l) => {
-        const locked = courseLocked || l.isLocked || !l.isVisible || l.position > lessonCutoff;
-        return { ...l, locked, gateLocked: courseLocked || l.position > lessonCutoff, isEmpty: l.status === "empty" };
-      });
-    } else {
-      lessons = lessons.map((l) => ({ ...l, locked: l.isLocked, gateLocked: false, isEmpty: l.status === "empty" }));
-    }
+    // لا بوابات: قفل الدرس يدوي فقط (زر/حالة/ظهور) — قسم "آخر ما وصلنا" أُزيل نهائياً.
+    lessons = lessons.map((l) => {
+      const statusLocked = l.status === "locked" || l.status === "hidden";
+      const manualLocked = !!l.isLocked || statusLocked || !l.isVisible || l.published === false;
+      return {
+        ...l,
+        locked: manualLocked,
+        gateLocked: false,
+        manualLocked,
+        isEmpty: l.status === "empty",
+        lockReason: manualLocked ? "manual" : "open",
+      };
+    });
     res.json(lessons);
   } catch (err: any) {
     logger.error({ err }, "GET /curriculum/courses/:id/lessons failed");
@@ -960,11 +860,18 @@ router.delete("/teacher/curriculum/announcements/:id", requireAdmin, async (req,
 
 // ───────────────────────────── الواجبات (إدارة خام للمعلم) ─────────────────────────────
 function assignmentToJson(a: any) {
+  let images: string[] = [];
+  try {
+    images = Array.isArray(a.images) ? a.images : JSON.parse(a.images || "[]");
+  } catch { images = []; }
   return {
     id: a.id,
     title: a.title,
     description: a.description || "",
     unit: a.unit || "",
+    courseId: a.course_id || null,
+    lessonId: a.lesson_id || null,
+    images: images.filter((u) => String(u || "").trim()),
     dueDate: a.due_date || "",
     points: a.points ?? 0,
     published: a.published !== false,
@@ -980,7 +887,18 @@ router.get("/teacher/curriculum/assignments", requireAdmin, async (req, res) => 
     if (grade) endpoint += `&grade=eq.${enc(grade)}`;
     const { data, error } = await supabaseQuery<any[]>(endpoint);
     if (error) throw new Error(String(error));
-    res.json((data || []).map(assignmentToJson));
+    // عدد التسليمات لكل واجب (لشارة المراجعة عند المعلم)
+    let counts: Record<string, number> = {};
+    try {
+      const ids = (data || []).map((a) => a.id);
+      if (ids.length) {
+        const { data: subs } = await supabaseQuery<any[]>(
+          `assignment_submissions?assignment_id=in.(${ids.map(enc).join(",")})&select=assignment_id&limit=2000`,
+        );
+        for (const s of subs || []) counts[s.assignment_id] = (counts[s.assignment_id] || 0) + 1;
+      }
+    } catch { /* تجاهل */ }
+    res.json((data || []).map((a) => ({ ...assignmentToJson(a), submissionsCount: counts[a.id] || 0 })));
   } catch (err: any) {
     logger.error({ err }, "GET teacher curriculum assignments failed");
     res.status(500).json({ error: "تعذر جلب الواجبات" });
@@ -994,6 +912,9 @@ router.patch("/teacher/curriculum/assignments/:id", requireAdmin, async (req, re
     if (b.title !== undefined) full.title = b.title;
     if (b.description !== undefined) full.description = b.description;
     if (b.unit !== undefined) full.unit = b.unit;
+    if (b.courseId !== undefined || b.course_id !== undefined) full.course_id = b.courseId ?? b.course_id ?? null;
+    if (b.lessonId !== undefined || b.lesson_id !== undefined) full.lesson_id = b.lessonId ?? b.lesson_id ?? null;
+    if (b.images !== undefined) full.images = Array.isArray(b.images) ? b.images.filter((u: unknown) => String(u || "").trim()) : [];
     if (b.dueDate !== undefined || b.due_date !== undefined) full.due_date = b.dueDate ?? b.due_date ?? null;
     if (b.points !== undefined) full.points = Number(b.points) || 0;
     if (b.published !== undefined) full.published = !!b.published;
@@ -1017,6 +938,83 @@ router.delete("/teacher/curriculum/assignments/:id", requireAdmin, async (req, r
   } catch (err: any) {
     logger.error({ err }, "DELETE curriculum assignment failed");
     res.status(500).json({ error: "تعذر حذف الواجب" });
+  }
+});
+
+// ───────────────────────────── تسليمات الواجبات (مراجعة المعلم) ─────────────────────────────
+function hwPhotosOf(s: any): string[] {
+  try {
+    if (Array.isArray(s.photos)) return s.photos.filter((u: unknown) => String(u || "").trim());
+    if (typeof s.photos === "string" && s.photos.trim()) {
+      const p = JSON.parse(s.photos);
+      if (Array.isArray(p)) return p.filter((u: unknown) => String(u || "").trim());
+    }
+    if (s.attachment_url && String(s.attachment_url).trim().startsWith("[")) {
+      const p = JSON.parse(s.attachment_url);
+      if (Array.isArray(p)) return p.filter((u: unknown) => String(u || "").trim());
+    }
+    if (s.attachment_url && String(s.attachment_url).trim()) return [String(s.attachment_url)];
+  } catch { /* تجاهل */ }
+  return [];
+}
+
+router.get("/teacher/curriculum/assignments/:id/submissions", requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabaseQuery<any[]>(
+      `assignment_submissions?assignment_id=eq.${enc(req.params.id)}&order=submitted_at.desc&limit=200`,
+    );
+    if (error) throw new Error(String(error));
+    const uids = [...new Set((data || []).map((s) => s.user_id).filter(Boolean))];
+    let profiles: Record<string, any> = {};
+    if (uids.length) {
+      try {
+        const { data: profs } = await supabaseQuery<any[]>(
+          `profiles?id=in.(${uids.map(enc).join(",")})&select=id,full_name,grade,school,avatar_url&limit=200`,
+        );
+        for (const p of profs || []) profiles[p.id] = p;
+      } catch { /* تجاهل */ }
+    }
+    res.json(
+      (data || []).map((s) => ({
+        id: s.id,
+        answer: s.answer || "",
+        photos: hwPhotosOf(s),
+        score: s.score ?? null,
+        feedback: s.feedback || "",
+        status: s.status || "تم التسليم",
+        submittedAt: s.submitted_at || null,
+        student: {
+          id: s.user_id,
+          name: profiles[s.user_id]?.full_name || "طالب",
+          grade: profiles[s.user_id]?.grade || "",
+          school: profiles[s.user_id]?.school || "",
+          avatarUrl: profiles[s.user_id]?.avatar_url || "",
+        },
+      })),
+    );
+  } catch (err: any) {
+    logger.error({ err }, "GET hw submissions failed");
+    res.status(500).json({ error: "تعذر جلب التسليمات" });
+  }
+});
+
+router.patch("/teacher/curriculum/assignment-submissions/:id", requireAdmin, async (req, res) => {
+  try {
+    const { score, feedback, status } = req.body || {};
+    const full: Record<string, any> = { reviewed_at: new Date().toISOString() };
+    if (score !== undefined) full.score = score === null || score === "" ? null : Number(score);
+    if (feedback !== undefined) full.feedback = feedback;
+    if (status !== undefined) full.status = status;
+    else if (full.score !== undefined && full.score !== null) full.status = "تم التقييم";
+    const { error } = await supabaseQuery(`assignment_submissions?id=eq.${enc(req.params.id)}`, {
+      method: "PATCH",
+      body: full,
+    });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "تم حفظ التقييم!" });
+  } catch (err: any) {
+    logger.error({ err }, "PATCH hw submission failed");
+    res.status(500).json({ error: "تعذر حفظ التقييم" });
   }
 });
 

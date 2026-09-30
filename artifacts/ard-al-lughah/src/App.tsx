@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -90,7 +90,18 @@ import {
 import { Link, Route, Switch, Router as WouterRouter, useLocation, useParams } from 'wouter';
 import NotFound from '@/pages/not-found';
 
-const queryClient = new QueryClient();
+// تخفيف استهلاك Supabase: لا إعادة جلب مع كل تركيز نافذة، وصلاحية 3 دقائق للبيانات
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 3 * 60 * 1000,
+      gcTime: 10 * 60 * 1000,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      retry: 1,
+    },
+  },
+});
 
 async function jsonFetch(path: string, options?: { method?: string; body?: unknown }): Promise<any> {
   const res = await fetch(path, {
@@ -123,6 +134,52 @@ const platformBannerUrl = '/ard-al-lughah-banner-transparent.png';
 const bookNineUrl = '/arab-9.jpg';
 const bookTenUrl = '/arab-10.jpg';
 
+/* =========================================================================
+   هوية المنصة الحية — من قاعدة البيانات إلى كل الموقع فوراً
+   (اسم المنصة، اسم/صورة/نبذة المعلم، اللون، الفصل)
+========================================================================= */
+const DEFAULT_IDENTITY = {
+  platformName: 'أرض اللغة',
+  teacherName: 'المعلم أحمد يحيى الأسطل',
+  teacherBio: 'معلم اللغة العربية والتربية الإسلامية والقرآن الكريم.',
+  teacherImageUrl: '/teacher-ahmed.jpg',
+  accentColor: '#d7b65e',
+  semester: 'الفصل الأول',
+};
+
+function usePlatformIdentity() {
+  const q = useQuery({
+    queryKey: ['platform-identity'],
+    queryFn: () => jsonFetch('/api/platform/identity'),
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    retry: 1,
+    refetchOnWindowFocus: false,
+  });
+  return { ...DEFAULT_IDENTITY, ...(q.data || {}) };
+}
+
+/** مزامنة عنوان الصفحة ولون المتصفح مع هوية المنصة */
+function useIdentityHead() {
+  const id = usePlatformIdentity();
+  useEffect(() => {
+    try {
+      document.title = `${id.platformName} | منصة اللغة العربية والقرآن الكريم في فلسطين`;
+      let meta = document.querySelector('meta[name="theme-color"]');
+      if (!meta) {
+        meta = document.createElement('meta');
+        meta.setAttribute('name', 'theme-color');
+        document.head.appendChild(meta);
+      }
+      meta.setAttribute('content', '#0d2926');
+      const desc = document.querySelector('meta[name="description"]');
+      if (desc && id.teacherName) {
+        desc.setAttribute('content', `${id.platformName} — مدرسة فلسطينية للغة العربية والقرآن الكريم مع ${id.teacherName}.`);
+      }
+    } catch { /* تجاهل */ }
+  }, [id.platformName, id.teacherName]);
+}
+
 const resourceTabs = [
   { id: 'quizzes', label: 'بنك الاختبارات', icon: Target, description: 'تقييمات حقيقية على المنصة' },
   { id: 'downloads', label: 'المكتبة الرقمية', icon: Download, description: 'الكتب المعتمدة القابلة للقراءة والتحميل' },
@@ -132,7 +189,6 @@ const resourceTabs = [
 const navStudent = [
   { href: '/student', label: 'نظرة عامة', icon: LayoutDashboard },
   { href: '/student/courses', label: 'الوحدات التعليمية', icon: BookOpen },
-  { href: '/student/summaries', label: 'الملخصات', icon: NotebookText },
   { href: '/student/notebook', label: 'دفتري', icon: NotebookPen },
   { href: '/student/assessments', label: 'التقييمات', icon: Target },
   { href: '/student/assignments', label: 'الواجبات', icon: ClipboardCheck },
@@ -384,12 +440,55 @@ function statusLabel(status?: string, isEmpty?: boolean) {
   return 'مفتوحة';
 }
 
-/** رفع صور الطالب (الدفاتر) إلى مجلد مخصص سحابياً */
+/** رفع صور الطالب (الدفاتر) إلى مجلد مخصص سحابياً — مع ضغط تلقائي لصور الجوال الضخمة */
 async function uploadStudentPhoto(file: File): Promise<any> {
-  const dataUrl = await fileToDataUrl(file);
+  const dataUrl = await compressImageFile(file);
   return jsonFetch('/api/student/upload', {
     method: 'POST',
     body: { file: dataUrl, fileName: file.name },
+  });
+}
+
+/** ضغط صورة على الجهاز (أقصى ضلع 1600px بجودة JPEG 82%) — يسرّع الرفع ويمنع فشله.
+ *  عند أي خطأ يُرجع الصورة الأصلية كما هي بدل منع الرفع. */
+function compressImageFile(file: File): Promise<string> {
+  return new Promise((resolve) => {
+    if (!file.type.startsWith('image/')) {
+      fileToDataUrl(file).then(resolve).catch(() => resolve(''));
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const MAX = 1600;
+        const scale = Math.min(1, MAX / Math.max(img.width || 1, img.height || 1));
+        // صغيرة أصلاً؟ أرسلها كما هي بلا إعادة ترميز
+        if (scale >= 1 && file.size < 900 * 1024) {
+          URL.revokeObjectURL(url);
+          fileToDataUrl(file).then(resolve).catch(() => resolve(''));
+          return;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('no-ctx');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
+      } catch {
+        URL.revokeObjectURL(url);
+        fileToDataUrl(file).then(resolve).catch(() => resolve(''));
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      fileToDataUrl(file).then(resolve).catch(() => resolve(''));
+    };
+    img.src = url;
   });
 }
 
@@ -462,10 +561,11 @@ function QuickTile({ icon: Icon, title, body, href, badge, color = '#17413f' }: 
 function Logo({ compact = false, size = 'md' }: { compact?: boolean; size?: 'sm' | 'md' | 'lg' }) {
   const imgClass = compact ? 'h-12 w-12' : size === 'lg' ? 'h-16 w-16 lg:h-20 lg:w-20' : 'h-14 w-14';
   const textClass = compact ? 'text-lg' : size === 'lg' ? 'text-2xl lg:text-3xl' : 'text-xl';
+  const id = usePlatformIdentity();
   return (
     <Link href="/" className="inline-flex shrink-0 items-center gap-3" data-testid="link-brand">
-      <img src={platformLogoUrl} alt="شعار أرض اللغة" className={`${imgClass} object-contain`} />
-      <span className={`${textClass} font-display font-bold tracking-tight text-primary`}>أرض اللغة</span>
+      <img src={platformLogoUrl} alt={`شعار ${id.platformName}`} className={`${imgClass} object-contain`} />
+      <span className={`${textClass} font-display font-bold tracking-tight text-primary`}>{id.platformName}</span>
     </Link>
   );
 }
@@ -634,6 +734,11 @@ function PublicHeader() {
 function Home() {
   const overview = useGetPlatformOverview();
   const platform = overview.data;
+  // الهوية الحية من الإعدادات أولاً (تتحدث فور حفظ الأستاذ)، ثم نظرة المنصة، ثم الثوابت
+  const identity = usePlatformIdentity();
+  const tName = identity.teacherName !== DEFAULT_IDENTITY.teacherName || !platform?.teacherName ? identity.teacherName : (platform?.teacherName ?? identity.teacherName);
+  const tImg = identity.teacherImageUrl !== DEFAULT_IDENTITY.teacherImageUrl || !platform?.settings?.teacherImageUrl ? identity.teacherImageUrl : (platform?.settings?.teacherImageUrl ?? identity.teacherImageUrl);
+  const pName = identity.platformName;
   const stats = platform?.stats;
   const semester = platform?.semester ?? 'الفصل الأول';
   const allBooks = platform?.books ?? [];
@@ -691,7 +796,7 @@ function Home() {
                 <Sparkles size={14} className="text-accent-foreground" /> منصة عربية للتعلّم من قلب فلسطين
               </div>
               <h1 className="max-w-2xl text-balance font-display text-[2.75rem] font-bold leading-[1.45] text-primary sm:text-5xl lg:text-[4.35rem]">
-                أرض اللغة
+                {pName}
                 <br />
                 <span className="text-accent-foreground">تقرّبك من العربية.</span>
               </h1>
@@ -881,11 +986,11 @@ function Home() {
           <div className="relative mx-auto w-full max-w-sm">
             <div className="absolute -inset-4 rotate-3 rounded-[2rem] bg-accent/25" />
             <div className="relative aspect-[4/5] overflow-hidden rounded-[2rem] bg-primary text-primary-foreground shadow-lg">
-              <img src={teacherImageUrl} alt="الأستاذ أحمد يحيى الأسطل" className="h-full w-full object-cover object-[center_18%]" data-testid="img-teacher-public" />
+              <img src={tImg} alt={tName} className="h-full w-full object-cover object-[center_18%]" data-testid="img-teacher-public" />
               <div className="absolute inset-0 bg-gradient-to-t from-primary via-primary/25 to-transparent" />
               <div className="absolute bottom-7 right-7 left-7">
                 <p className="text-sm text-primary-foreground/70">المعلم الذي يمشي معك</p>
-                <h2 className="mt-1 font-display text-3xl font-bold">{platform?.teacherName ?? 'أحمد يحيى الأسطل'}</h2>
+                <h2 className="mt-1 font-display text-3xl font-bold">{tName}</h2>
               </div>
               <div className="absolute left-7 top-7 h-3 w-3 rounded-full bg-accent shadow-[0_0_0_6px_hsl(var(--accent)/.18)]" />
             </div>
@@ -896,10 +1001,10 @@ function Home() {
             <p className="mt-5 max-w-xl text-lg leading-8 text-muted-foreground">
               {platform?.description ?? 'بيئة تعليمية تفاعلية شاملة تجمع بين المنهاج الفلسطيني المعتمد، الشروحات النحوية والأدبية المعمقة، التكليفات التطبيقية، والاختبارات التفاعلية المباشرة.'}
             </p>
-            <div className="mt-8 flex items-center gap-5">
-              <div className="h-px w-16 bg-accent" />
-              <span className="font-display text-xl text-primary">{platform?.teacherName ?? 'أحمد يحيى الأسطل'}</span>
-            </div>
+              <div className="mt-8 flex items-center gap-5">
+                <div className="h-px w-16 bg-accent" />
+                <span className="font-display text-xl text-primary">{tName}</span>
+              </div>
           </div>
         </section>
 
@@ -1110,7 +1215,7 @@ function Login() {
     login.mutate(
       { data: { email: String(data.get('email') ?? ''), password: String(data.get('password') ?? '') } },
       {
-        onSuccess: () => redirectAfterAuth(setLocation),
+        onSuccess: () => { resetAuthGate(); redirectAfterAuth(setLocation); },
         onError: (error) => setMessage(error?.message || 'تعذر تسجيل الدخول. راجع البيانات وحاول مرة أخرى.'),
       }
     );
@@ -1215,7 +1320,7 @@ function Register() {
         },
       },
       {
-        onSuccess: () => redirectAfterAuth(setLocation),
+        onSuccess: () => { resetAuthGate(); redirectAfterAuth(setLocation); },
         onError: (error) => setMessage(error?.message || 'تعذر إنشاء الحساب. تحقق من صحة البريد وكلمة المرور وحاول ثانية.'),
       }
     );
@@ -1319,7 +1424,9 @@ function AuthCallback() {
         if (cancelled) return;
         setStatus(result.needsSetup ? 'تم التحقق من حسابك بنجاح. أكمل بياناتك لتندفع إلى مساحة التعلم!' : 'تم التحقق من حسابك بنجاح.');
         window.setTimeout(() => {
-          if (!cancelled) setLocation(result.needsSetup ? '/auth/complete' : '/student');
+          if (cancelled) return;
+          resetAuthGate();
+          setLocation(result.needsSetup ? '/auth/complete' : '/student');
         }, 800);
       } catch (err: any) {
         if (!cancelled) {
@@ -1420,6 +1527,20 @@ function CompleteProfilePage() {
   );
 }
 
+// ذاكرة بوابة الدخول: تحقق واحد صالح لـ 5 دقائق بدل شاشة "نتحقق..." مع كل صفحة
+let authGateCache: { mode: string; at: number } | null = null;
+const AUTH_GATE_TTL = 5 * 60 * 1000;
+export function resetAuthGate() { authGateCache = null; }
+
+// حلقة تجديد الجلسة: تنعش التوكن كل 45 دقيقة طالما الموقع مفتوح (جلسة تدوم 30 يوماً)
+let refreshTimer: ReturnType<typeof setInterval> | null = null;
+function ensureRefreshLoop() {
+  if (refreshTimer) return;
+  refreshTimer = setInterval(() => {
+    fetch('/api/auth/refresh', { method: 'POST' }).catch(() => undefined);
+  }, 45 * 60 * 1000);
+}
+
 function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: ReactNode }) {
   const [location, setLocation] = useLocation();
   const [mobileMenu, setMobileMenu] = useState(false);
@@ -1438,40 +1559,51 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
     return () => { cancelled = true; };
   }, []);
   const dashAvatar = studentDash.data?.student?.avatarUrl || '';
-  const avatarSrc = mode === 'teacher' ? teacherImageUrl : dashAvatar || meAvatar || undefined;
+  const identity = usePlatformIdentity();
+  const avatarSrc = mode === 'teacher' ? (identity.teacherImageUrl || teacherImageUrl) : dashAvatar || meAvatar || undefined;
 
-  // بوابة الدخول: لا يُعرض أي محتوى قبل التأكد من الجلسة والصلاحية
+  // بوابة الدخول: تحقق واحد يُحفظ 5 دقائق — لا شاشة تحقق مع كل تنقل
   const [authReady, setAuthReady] = useState(false);
   useEffect(() => {
-    if (mode !== 'student') return;
+    ensureRefreshLoop();
     let cancelled = false;
-    fetchAuthMe()
-      .then((me) => {
-        if (cancelled) return;
-        if (!me.authenticated) { setLocation('/login'); return; }
-        if (me.needsSetup) { setLocation('/auth/complete'); return; }
-        if (me.role === 'admin') { setLocation('/teacher'); return; }
-        setAuthReady(true);
-      })
-      .catch(() => {
-        if (!cancelled) setLocation('/login');
-      });
-    return () => { cancelled = true; };
-  }, [mode, setLocation]);
-
-  useEffect(() => {
-    if (mode !== 'teacher') return;
-    let cancelled = false;
-    fetchAuthMe()
-      .then((me) => {
-        if (cancelled) return;
-        if (!me.authenticated) { setLocation('/login'); return; }
-        if (me.role !== 'admin') { setLocation('/student'); return; }
-        setAuthReady(true);
-      })
-      .catch(() => {
-        if (!cancelled) setLocation('/login');
-      });
+    const decide = (me: any): boolean => {
+      if (!me?.authenticated) return false;
+      if (mode === 'student') {
+        if (me.needsSetup) { setLocation('/auth/complete'); return false; }
+        if (me.role === 'admin') { setLocation('/teacher'); return false; }
+        return true;
+      }
+      if (me.role !== 'admin') { setLocation('/student'); return false; }
+      return true;
+    };
+    const fresh = authGateCache && authGateCache.mode === mode && Date.now() - authGateCache.at < AUTH_GATE_TTL;
+    if (fresh) {
+      // دخول فوري بلا شاشة + إعادة تحقق صامتة لا تطرد عند عطل الشبكة
+      setAuthReady(true);
+      fetchAuthMe()
+        .then((me) => {
+          if (cancelled) return;
+          if (decide(me)) authGateCache = { mode, at: Date.now() };
+        })
+        .catch(() => undefined);
+    } else {
+      fetchAuthMe()
+        .then((me) => {
+          if (cancelled) return;
+          if (decide(me)) {
+            authGateCache = { mode, at: Date.now() };
+            setAuthReady(true);
+          } else if (!me?.authenticated) {
+            authGateCache = null;
+            setLocation('/login');
+          }
+        })
+        .catch(() => {
+          // بلا ذاكرة صالحة ولا شبكة: لا نطرد فوراً — نعرض زر إعادة بدل شاشة عالقة
+          if (!cancelled && !authGateCache) setLocation('/login');
+        });
+    }
     return () => { cancelled = true; };
   }, [mode, setLocation]);
 
@@ -1484,10 +1616,11 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
   const signOut = () => {
     logout.mutate(undefined, {
       onSuccess: () => {
+        resetAuthGate();
         queryClient.clear();
         setLocation('/login');
       },
-      onError: () => setLocation('/login'),
+      onError: () => { resetAuthGate(); setLocation('/login'); },
     });
   };
 
@@ -2036,8 +2169,69 @@ function AssignmentsPage() {
   const [filter, setFilter] = useState<'all' | 'pending' | 'submitted'>('all');
   const [selectedAssignment, setSelectedAssignment] = useState<any | null>(null);
   const [studentAnswer, setStudentAnswer] = useState('');
+  const [answerPhotos, setAnswerPhotos] = useState<string[]>([]);
+  const [uploadingAnswer, setUploadingAnswer] = useState(0);
+  const [answerErr, setAnswerErr] = useState('');
+  const [mySub, setMySub] = useState<any | null>(null);
+  const [loadingMine, setLoadingMine] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitFeedback, setSubmitFeedback] = useState('');
+  const [submitOk, setSubmitOk] = useState(true);
+
+  // حالة الموعد: متأخر / اليوم / متبقٍ
+  const dueInfo = (due: string) => {
+    if (!due) return null;
+    const t = new Date(); t.setHours(0, 0, 0, 0);
+    const d = new Date(`${due}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return null;
+    const diff = Math.round((d.getTime() - t.getTime()) / 86400000);
+    if (diff < 0) return { label: 'انتهى الموعد', cls: 'bg-destructive/10 text-destructive' };
+    if (diff === 0) return { label: 'التسليم اليوم!', cls: 'bg-destructive/10 text-destructive' };
+    if (diff === 1) return { label: 'متبقٍ يوم واحد', cls: 'bg-amber-500/15 text-amber-800' };
+    if (diff === 2) return { label: 'متبقٍ يومان', cls: 'bg-amber-500/15 text-amber-800' };
+    return { label: `متبقٍ ${diff} أيام`, cls: 'bg-secondary text-muted-foreground' };
+  };
+
+  const openAssignment = (a: any) => {
+    setSelectedAssignment(a);
+    setStudentAnswer('');
+    setAnswerPhotos([]);
+    setAnswerErr('');
+    setSubmitFeedback('');
+    setSubmitOk(true);
+    setMySub(null);
+    setLoadingMine(true);
+    fetch(`/api/assignments/${a.id}/mine`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d) {
+          setMySub(d);
+          setStudentAnswer(d.answer || '');
+          setAnswerPhotos(Array.isArray(d.photos) ? d.photos : []);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => setLoadingMine(false));
+  };
+
+  const pickAnswerPhotos = (files: File[]) => {
+    if (!files.length || uploadingAnswer) return;
+    setAnswerErr('');
+    setUploadingAnswer(files.length);
+    (async () => {
+      for (const f of files) {
+        try {
+          const res = await uploadStudentPhoto(f);
+          if (res?.url) setAnswerPhotos((p) => [...p, res.url]);
+          else setAnswerErr('تعذر رفع صورة — حاول مجدداً');
+        } catch (e: any) {
+          setAnswerErr(e?.message || 'تعذر رفع الصورة');
+        } finally {
+          setUploadingAnswer((n) => Math.max(n - 1, 0));
+        }
+      }
+    })();
+  };
 
   const assignments = useMemo(() => {
     const list = query.data ?? [];
@@ -2048,25 +2242,37 @@ function AssignmentsPage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!selectedAssignment || !studentAnswer.trim()) return;
+    if (!selectedAssignment || submitting) return;
+    if (!studentAnswer.trim() && !answerPhotos.length) {
+      setSubmitOk(false);
+      setSubmitFeedback('اكتب حلّك أو أرفق صورة واحدة على الأقل');
+      return;
+    }
     setSubmitting(true);
     setSubmitFeedback('');
+    setSubmitOk(true);
     try {
       const res = await fetch(`/api/assignments/${selectedAssignment.id}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ answer: studentAnswer }),
+        body: JSON.stringify({ answer: studentAnswer, photos: answerPhotos }),
       });
-      const resData = await res.json();
+      const resData = await res.json().catch(() => ({}));
+      if (res.status === 404) throw new Error('السيرفر يحتاج تحديثاً — أعد تشغيل سيرفر API ثم حاول مجدداً');
+      if (!res.ok) throw new Error(resData.error || resData.message || 'تعذر إرسال الواجب');
+      setSubmitOk(true);
       setSubmitFeedback(resData.message || 'تم إرسال الحل بنجاح!');
       query.refetch();
+      openAssignment({ ...selectedAssignment });
       setTimeout(() => {
         setSelectedAssignment(null);
         setStudentAnswer('');
+        setAnswerPhotos([]);
         setSubmitFeedback('');
       }, 2500);
-    } catch (e) {
-      setSubmitFeedback('تعذر إرسال الواجب حالياً.');
+    } catch (e: any) {
+      setSubmitOk(false);
+      setSubmitFeedback(e?.message || 'تعذر إرسال الواجب حالياً.');
     } finally {
       setSubmitting(false);
     }
@@ -2101,30 +2307,48 @@ function AssignmentsPage() {
             <span>الحالة</span>
             <span>إجراء</span>
           </div>
-          {assignments.map((a) => (
+          {assignments.map((a) => {
+            const due = dueInfo(a.dueDate);
+            const imgCount = Array.isArray(a.images) ? a.images.length : 0;
+            return (
             <div key={a.id} className="grid gap-3 border-b border-border px-5 py-5 last:border-0 sm:grid-cols-[1.5fr_1.1fr_.7fr_.6fr_.6fr] sm:items-center sm:gap-4 sm:px-6" data-testid={`row-assignment-${a.id}`}>
               <div>
                 <p className="font-bold text-primary text-base">{a.title}</p>
                 <p className="mt-1 text-xs text-muted-foreground line-clamp-1">{a.description}</p>
+                {imgCount ? <span className="mt-1.5 inline-flex items-center gap-1 rounded-lg bg-secondary px-2 py-0.5 text-[11px] font-bold text-primary"><ImagePlus size={12} /> {imgCount} صور توضيحية</span> : null}
               </div>
               <p className="text-sm font-medium text-muted-foreground">{a.unit}{a.section && a.section !== 'الجميع' ? <span className="mr-2 rounded-full bg-[#6a1b9a]/15 px-2 py-0.5 text-[10px] font-bold text-[#6a1b9a]">{a.section === 'طالب' ? 'الطلاب فقط' : 'الطالبات فقط'}</span> : null}</p>
-              <p className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
-                <Clock3 size={15} /> {a.dueDate}
-              </p>
-              <span className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${a.status.includes('تم') ? 'bg-green-100 text-green-800' : 'bg-accent/30 text-accent-foreground'}`}>
-                {a.status}
-              </span>
-              <Button onClick={() => setSelectedAssignment(a)} variant="soft" className="text-xs py-2">
+              <div className="flex flex-col items-start gap-1.5">
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
+                  <Clock3 size={15} /> {a.dueDate}
+                </p>
+                {due ? <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-extrabold ${due.cls}`}>{due.label}</span> : null}
+              </div>
+              <div className="flex flex-col items-start gap-1.5">
+                <span className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${a.status.includes('تم') ? 'bg-green-100 text-green-800' : 'bg-accent/30 text-accent-foreground'}`}>
+                  {a.status}
+                </span>
+                {a.score != null ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-green-600 px-3 py-1 text-xs font-extrabold text-white shadow-sm"><Award size={12} /> علامتك: {a.score}</span>
+                ) : null}
+              </div>
+              <Button onClick={() => openAssignment(a)} variant="soft" className="text-xs py-2">
                 {a.status.includes('تم') ? 'عرض التسليم' : 'تقديم الحل'}
               </Button>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       {/* Submit Assignment Modal */}
       {selectedAssignment && (
-        <Modal title={selectedAssignment.title} eyebrow={selectedAssignment.unit} onClose={() => setSelectedAssignment(null)} maxWidth="max-w-xl">
+        <Modal title={selectedAssignment.title} eyebrow={selectedAssignment.unit} onClose={() => setSelectedAssignment(null)} maxWidth="max-w-2xl">
+          {(() => {
+            // قيّمك الأستاذ؟ علامة موجودة أو حالة تقييم صريحة — عندها يُفتح التعديل ويُعرض التقييم
+            const reviewed = !!(mySub && (mySub.score != null || mySub.status === 'تم التقييم'));
+            const lockedForReview = !!(mySub && !reviewed);
+            return (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="rounded-2xl bg-secondary/40 p-4 text-xs leading-6 text-muted-foreground">
               <p className="font-bold text-primary mb-1">تعليمات الواجب:</p>
@@ -2132,20 +2356,73 @@ function AssignmentsPage() {
               <p className="mt-2 font-semibold text-primary">الدرجة المخصصة: {selectedAssignment.points} نقطة · تاريخ التسليم: {selectedAssignment.dueDate}</p>
             </div>
 
+            {lockedForReview ? (
+              <p className="flex items-center gap-2 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3.5 text-sm font-extrabold text-amber-800">
+                <Lock size={16} /> تسليمك قيد مراجعة الأستاذ — لا يمكن التعديل أو إعادة الرفع حتى يقيّمه.
+              </p>
+            ) : null}
+
+            {Array.isArray(selectedAssignment.images) && selectedAssignment.images.length ? (
+              <div className="rounded-2xl border border-border p-4">
+                <p className="mb-3 flex items-center gap-2 text-sm font-bold text-primary"><ImagePlus size={16} /> صور الواجب التوضيحية ({selectedAssignment.images.length})</p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {selectedAssignment.images.map((src: string, i: number) => (
+                    <a key={i} href={src} target="_blank" rel="noreferrer" className="group overflow-hidden rounded-xl border border-border">
+                      <img src={src} alt={`صورة الواجب ${i + 1}`} loading="lazy" className="max-h-44 w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {loadingMine ? (
+              <p className="flex items-center gap-2 rounded-xl bg-secondary/50 px-4 py-3 text-xs font-bold text-primary"><RefreshCw size={14} className="animate-spin" /> جارٍ تحميل تسليمك السابق...</p>
+            ) : mySub && (mySub.score != null || mySub.feedback || mySub.status === 'تم التقييم') ? (
+              <div className="rounded-2xl border-2 border-green-500/40 bg-green-500/10 p-4 shadow-sm">
+                <p className="flex items-center gap-2 text-sm font-extrabold text-green-800"><Award size={17} /> تمت مراجعتك ✓ {mySub.score != null ? `· علامتك: ${mySub.score}` : ''}</p>
+                {mySub.feedback ? <p className="mt-1.5 text-sm leading-7 text-green-900"><b>ملاحظة الأستاذ:</b> {mySub.feedback}</p> : <p className="mt-1 text-xs font-bold text-green-800">راجع الأستاذ حلّك — أحسنت على التسليم!</p>}
+              </div>
+            ) : null}
+
             <label className="block text-sm font-semibold">
               <span className="mb-2 block">إجابتك / حل الواجب:</span>
               <textarea
                 value={studentAnswer}
                 onChange={(e) => setStudentAnswer(e.target.value)}
-                required
+                disabled={lockedForReview}
                 rows={6}
                 placeholder="اكتب هنا إجابتك النموذجية، الإعراب، أو الفقرة التعبيرية المطلوبة بالتفصيل..."
-                className="w-full resize-none rounded-2xl border border-input bg-background p-4 text-sm outline-none focus:border-primary focus:ring-4 focus:ring-accent/20"
+                className="w-full resize-none rounded-2xl border border-input bg-background p-4 text-sm outline-none focus:border-primary focus:ring-4 focus:ring-accent/20 disabled:opacity-60"
               />
             </label>
 
+            <div className="rounded-2xl border border-dashed border-border p-4">
+              <p className="mb-3 text-sm font-bold text-primary">صور حلّك ({answerPhotos.length}) — صوّر دفترك أو أرفق صوراً</p>
+              {answerPhotos.length ? (
+                <div className="mb-3 grid grid-cols-3 gap-2">
+                  {answerPhotos.map((src, i) => (
+                    <div key={i} className="group relative overflow-hidden rounded-xl border border-border">
+                      <img src={src} alt={`صورة الحل ${i + 1}`} className="h-24 w-full object-cover" />
+                        {!lockedForReview ? (
+                          <button type="button" onClick={() => setAnswerPhotos((p) => p.filter((_, x) => x !== i))} className="absolute left-1 top-1 rounded-lg bg-black/60 p-1 text-white"><X size={13} /></button>
+                        ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <label className={`inline-flex cursor-pointer items-center gap-2 rounded-xl bg-secondary px-4 py-2.5 text-sm font-bold text-primary hover:bg-accent/40 ${uploadingAnswer ? 'opacity-60' : ''} ${lockedForReview ? 'pointer-events-none opacity-50' : ''}`}>
+                {uploadingAnswer ? <RefreshCw size={15} className="animate-spin" /> : <Camera size={15} />} {uploadingAnswer ? `جارٍ الرفع (${uploadingAnswer})...` : 'التقط / اختر صور الحل'}
+                <input type="file" accept="image/*,.heic,.heif" multiple className="hidden" onChange={(e) => {
+                  const files = Array.from(e.target.files || []);
+                  e.target.value = '';
+                  pickAnswerPhotos(files);
+                }} />
+              </label>
+              {answerErr ? <p className="mt-2 text-xs font-bold text-destructive">{answerErr}</p> : null}
+            </div>
+
             {submitFeedback && (
-              <div className="rounded-2xl bg-accent/20 p-3 text-sm font-bold text-accent-foreground text-center">
+              <div className={`rounded-2xl p-3 text-sm font-bold text-center ${submitOk ? 'bg-accent/20 text-accent-foreground' : 'bg-destructive/10 text-destructive'}`}>
                 {submitFeedback}
               </div>
             )}
@@ -2154,11 +2431,13 @@ function AssignmentsPage() {
               <Button onClick={() => setSelectedAssignment(null)} variant="ghost">
                 إلغاء
               </Button>
-              <Button type="submit" disabled={submitting} variant="primary" className="py-2.5 px-6">
-                {submitting ? 'جارٍ الإرسال...' : 'إرسال للأستاذ أحمد الأسطل'} <ArrowLeft size={16} />
+              <Button type="submit" disabled={submitting || lockedForReview} variant="primary" className="py-2.5 px-6">
+                {submitting ? 'جارٍ الإرسال...' : lockedForReview ? (<><Lock size={15} /> قيد المراجعة — بانتظار الأستاذ</>) : mySub ? 'إعادة الإرسال بعد التعديل' : 'إرسال للأستاذ أحمد الأسطل'} <ArrowLeft size={16} />
               </Button>
             </div>
           </form>
+            );
+          })()}
         </Modal>
       )}
     </Shell>
@@ -3240,6 +3519,8 @@ function SettingsPage() {
       {
         onSuccess: () => {
           setSaved(true);
+          // انتشار فوري: حدّث هوية الموقع في الذاكرة مباشرة ثم أعد الجلب للتأكيد
+          queryClient.setQueryData(['platform-identity'], (old: any) => ({ ...(old || {}), ...values }));
           queryClient.invalidateQueries();
         },
         onError: () => setSaveError('تعذر حفظ التغييرات. تحقق من الاتصال وحاول ثانية.'),
@@ -3440,10 +3721,29 @@ function SettingsField({ label, value, onChange, testId, multiline = false }: { 
 /** جلب محتوى HTML خارجي (ملف نصي سحابي) وعرضه داخل الدرس — بلا Egress على Supabase */
 function decodeArdB64(s: string): string {
   try {
-    return decodeURIComponent(escape(atob(s.replace(/^ARDB64\s*/, '').trim())));
+    const b64 = s.replace(/^ARDB64\s*/, '').trim();
+    // فك مقطّع لملفات base64 الكبيرة (atob قد يفشل مع النصوص الضخمة دفعة واحدة)
+    const CHUNK = 0x8000;
+    let bin = '';
+    for (let i = 0; i < b64.length; i += CHUNK) {
+      bin += atob(b64.slice(i, i + CHUNK));
+    }
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder('utf-8').decode(bytes);
   } catch {
     return s;
   }
+}
+
+/** صلاحيات إطار HTML: السكربتات ضرورية لعمل تصاميم المعلم (Tailwind/تفاعلات).
+ *  الرفع مقصور على الأستاذ (requireAdmin) فالمحتوى موثوق — والطلاب لا يدخلون HTML أبداً. */
+const HTML_FRAME_SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-modals allow-popups';
+
+/** حجم تقريبي للنص بالكيلوبايت (العربية = 2 بايت للحرف غالباً) */
+function htmlKb(s?: string | null): number {
+  if (!s) return 0;
+  return Math.round((s.length * 2) / 1024);
 }
 
 function ExtHtmlViewer({ url, fill }: { url: string; fill?: boolean }) {
@@ -3477,7 +3777,7 @@ function ExtHtmlViewer({ url, fill }: { url: string; fill?: boolean }) {
       </div>
     );
   }
-  return <iframe title="المحتوى التفاعلي" sandbox="allow-same-origin" srcDoc={html} className={fill ? 'h-full w-full bg-white' : 'h-[480px] w-full bg-white'} data-testid="iframe-lesson-html-ext" />;
+  return <iframe title="المحتوى التفاعلي" sandbox={HTML_FRAME_SANDBOX} srcDoc={html} loading="lazy" referrerPolicy="no-referrer" className={fill ? 'h-full w-full bg-white' : 'h-[480px] w-full bg-white'} data-testid="iframe-lesson-html-ext" />;
 }
 
 /* =========================================================================
@@ -3493,8 +3793,11 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
   const [extFailed, setExtFailed] = useState(false);
   const [progress, setProgress] = useState(0);
   const [fluidH, setFluidH] = useState<number | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [htmlSize, setHtmlSize] = useState(0);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const endedRef = useRef(false);
+  const scrollBoundRef = useRef(false);
   const inline = !!lesson?.htmlContent;
 
   useEffect(() => {
@@ -3502,15 +3805,30 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
     setExtFailed(false);
     setProgress(0);
     setFluidH(null);
+    setHtmlSize(0);
     endedRef.current = false;
-    if (inline || !lesson?.htmlFileUrl) return;
+    scrollBoundRef.current = false;
+    if (inline) {
+      setHtmlSize(htmlKb(lesson?.htmlContent));
+      return;
+    }
+    if (!lesson?.htmlFileUrl) return;
     let live = true;
-    fetch(lesson.htmlFileUrl)
-      .then((r) => { if (!r.ok) throw new Error(); return r.text(); })
-      .then((t) => { if (live) setExtHtml(t.startsWith('ARDB64') ? decodeArdB64(t) : t); })
-      .catch(() => { if (live) setExtFailed(true); });
-    return () => { live = false; };
-  }, [lesson, inline]);
+    const ctrl = new AbortController();
+    // مهلة 30 ثانية للملفات الكبيرة — بعدها فشل واضح مع زر إعادة بدل التعليق الأبدي
+    const timer = window.setTimeout(() => ctrl.abort(), 30000);
+    fetch(lesson.htmlFileUrl, { signal: ctrl.signal })
+      .then((r) => { if (!r.ok) throw new Error('http-' + r.status); return r.text(); })
+      .then((t) => {
+        window.clearTimeout(timer);
+        if (!live) return;
+        const decoded = t.startsWith('ARDB64') ? decodeArdB64(t) : t;
+        setHtmlSize(htmlKb(decoded));
+        setExtHtml(decoded);
+      })
+      .catch(() => { window.clearTimeout(timer); if (live) setExtFailed(true); });
+    return () => { live = false; window.clearTimeout(timer); ctrl.abort(); };
+  }, [lesson, inline, attempt]);
 
   const html: string | null = inline ? lesson.htmlContent : extHtml;
 
@@ -3518,9 +3836,16 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
     try {
       const win = iframeRef.current?.contentWindow;
       const doc = iframeRef.current?.contentDocument;
-      if (!win || !doc) return;
+      if (!win || !doc || !doc.body) return;
       const h = Math.max(doc.body?.scrollHeight || 0, doc.documentElement?.scrollHeight || 0);
-      if (h > 120) setFluidH((old) => old ?? Math.min(h + 48, 6000));
+      // ارتفاع مرن يتوسع مع المحتوى الديناميكي (أكورديون/تبويبات) ولا يتقلص فجأة
+      if (h > 120) {
+        setFluidH((old) => {
+          const next = Math.min(h + 48, 8000);
+          if (old == null) return next;
+          return next > old + 300 ? next : old;
+        });
+      }
       const st = win.scrollY || doc.documentElement.scrollTop || doc.body.scrollTop || 0;
       const vh = win.innerHeight || doc.documentElement.clientHeight || 1;
       const frac = h > vh ? Math.min(st / (h - vh), 1) : 1;
@@ -3531,6 +3856,23 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
       }
     } catch { /* cross-origin: لا تتبع */ }
   };
+
+  const bindFrameScroll = () => {
+    try {
+      const win = iframeRef.current?.contentWindow;
+      if (!win || scrollBoundRef.current) return;
+      scrollBoundRef.current = true;
+      win.addEventListener('scroll', trackProgress, { passive: true });
+    } catch { /* cross-origin */ }
+  };
+
+  // إعادة القياس دورياً للمحتوى الديناميكي الذي يتغير ارتفاعه بعد التحميل
+  useEffect(() => {
+    if (!html) return;
+    const id = window.setInterval(trackProgress, 1500);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [html, attempt]);
 
   const openNewTab = () => {
     const src = inline ? lesson.htmlContent : extHtml;
@@ -3556,6 +3898,11 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
         <span className="flex items-center gap-1.5 rounded-xl bg-primary px-2.5 py-1.5 text-xs font-extrabold text-primary-foreground">
           <FileCode2 size={14} /> المحتوى التفاعلي
         </span>
+        {htmlSize > 0 ? (
+          <span className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold tabular-nums ${htmlSize > 600 ? 'bg-amber-500/15 text-amber-800' : 'bg-secondary text-muted-foreground'}`} title={htmlSize > 600 ? 'ملف كبير — قد يكون بطيئاً على الأجهزة الضعيفة، فضّل ملء الشاشة' : 'حجم المحتوى'}>
+            {htmlSize > 600 ? 'ملف كبير ' : ''}{htmlSize} ك.ب
+          </span>
+        ) : null}
         <span className="mr-auto" />
         <span className="flex items-center gap-1 rounded-xl bg-background p-1 ring-1 ring-border">
           <button type="button" onClick={() => setZoom((z) => Math.max(0.7, +(z - 0.1).toFixed(2)))} title="تصغير العرض" className="grid h-8 w-9 place-items-center rounded-lg text-sm font-extrabold text-primary hover:bg-secondary">أ-</button>
@@ -3577,7 +3924,11 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
         {!inline && extFailed ? (
           <div className="p-6 text-center">
             <p className="text-sm font-bold text-destructive">تعذر تحميل المحتوى التفاعلي</p>
-            <a href={lesson.htmlFileUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 rounded-xl bg-secondary px-4 py-2.5 text-xs font-bold text-primary">فتح الملف مباشرة <ArrowLeft size={14} /></a>
+            <p className="mx-auto mt-1 max-w-md text-xs leading-5 text-muted-foreground">تحقق من الاتصال — للملفات الكبيرة جداً جرّب فتحها في تبويب جديد أو أخبر الأستاذ لتقسيمها.</p>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              <button type="button" onClick={() => setAttempt((a) => a + 1)} className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-extrabold text-primary-foreground shadow-sm transition-transform hover:scale-105"><RefreshCw size={14} /> إعادة المحاولة</button>
+              <a href={lesson.htmlFileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-secondary px-4 py-2.5 text-xs font-bold text-primary">فتح الملف مباشرة <ArrowLeft size={14} /></a>
+            </div>
           </div>
         ) : !html ? (
           <div className="flex items-center gap-3 p-6 text-sm font-bold text-primary">
@@ -3587,9 +3938,11 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
           <iframe
             ref={iframeRef}
             title={`محتوى ${lesson.title}`}
-            sandbox="allow-same-origin"
+            sandbox={HTML_FRAME_SANDBOX}
             srcDoc={html}
-            onLoad={trackProgress}
+            onLoad={() => { trackProgress(); bindFrameScroll(); }}
+            loading="lazy"
+            referrerPolicy="no-referrer"
             style={{ zoom }}
             className="w-full bg-white"
             height={frameH}
@@ -3622,13 +3975,37 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
           </div>
           <div className="min-h-0 flex-1 px-2 pb-2 sm:px-5 sm:pb-5">
             <div className="h-full overflow-hidden rounded-2xl bg-white shadow-2xl">
-              <iframe title={`محتوى ${lesson.title}`} sandbox="allow-same-origin" srcDoc={html} style={{ zoom }} className="h-full w-full" />
+              <iframe title={`محتوى ${lesson.title}`} sandbox={HTML_FRAME_SANDBOX} srcDoc={html} loading="lazy" referrerPolicy="no-referrer" style={{ zoom }} className="h-full w-full" />
             </div>
           </div>
         </div>
       ) : null}
     </div>
   );
+}
+
+/** معاينة HTML في لوحة المعلم — تعمل مع الكود الملصق ومع الملف المرفوع (تفك ARDB64 مثله مثل العارض) */
+function HtmlPreviewFrame({ content, fileUrl }: { content?: string; fileUrl?: string }) {
+  const [text, setText] = useState<string | null>(content || null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (content) { setText(content); setFailed(false); return; }
+    if (!fileUrl) { setText(null); setFailed(false); return; }
+    let live = true;
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => ctrl.abort(), 25000);
+    fetch(fileUrl, { signal: ctrl.signal })
+      .then((r) => { if (!r.ok) throw new Error(); return r.text(); })
+      .then((t) => {
+        window.clearTimeout(timer);
+        if (live) { setText(t.startsWith('ARDB64') ? decodeArdB64(t) : t); setFailed(false); }
+      })
+      .catch(() => { window.clearTimeout(timer); if (live) setFailed(true); });
+    return () => { live = false; window.clearTimeout(timer); ctrl.abort(); };
+  }, [content, fileUrl]);
+  if (failed) return <p className="mt-3 rounded-xl bg-destructive/10 px-4 py-3 text-xs font-bold text-destructive">تعذر تحميل المعاينة — تحقق من الملف أو أعد رفعه.</p>;
+  if (!text) return <p className="mt-3 flex items-center gap-2 rounded-xl bg-secondary/50 px-4 py-3 text-xs font-bold text-primary"><RefreshCw size={14} className="animate-spin" /> جارٍ تجهيز المعاينة...</p>;
+  return <iframe title="معاينة HTML" sandbox={HTML_FRAME_SANDBOX} srcDoc={text} loading="lazy" referrerPolicy="no-referrer" className="mt-3 h-80 w-full rounded-xl border border-border bg-white" />;
 }
 
 function LessonViewerBody({ lesson, exam, onStartExam }: { lesson: any; exam?: any; onStartExam?: () => void }) {
@@ -3759,6 +4136,126 @@ function LessonViewerBody({ lesson, exam, onStartExam }: { lesson: any; exam?: a
    صفحة الطالب الجديدة — الوحدات حسب الصف والفصل مع الأقفال والأغلفة
 ========================================================================= */
 
+/* =========================================================================
+   رفع واجب مباشر — نافذة سريعة تُفتح من داخل الوحدة دون مغادرتها
+========================================================================= */
+function HwQuickSubmitModal({ hw, onClose, onSubmitted }: { hw: any; onClose: () => void; onSubmitted: () => void }) {
+  const [answer, setAnswer] = useState('');
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(0);
+  const [mine, setMine] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [ok, setOk] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`/api/assignments/${hw.id}/mine`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d) {
+          setMine(d);
+          setAnswer(d.answer || '');
+          setPhotos(Array.isArray(d.photos) ? d.photos : []);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
+  }, [hw.id]);
+
+  const lockedForReview = !!(mine && mine.score == null && mine.status !== 'تم التقييم');
+
+  const pick = (files: File[]) => {
+    if (!files.length || uploading) return;
+    setUploading(files.length);
+    (async () => {
+      for (const f of files) {
+        try {
+          const res = await uploadStudentPhoto(f);
+          if (res?.url) setPhotos((p) => [...p, res.url]);
+        } catch { /* تجاهل */ }
+        finally { setUploading((n) => Math.max(n - 1, 0)); }
+      }
+    })();
+  };
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (submitting || lockedForReview) return;
+    if (!answer.trim() && !photos.length) { setOk(false); setMsg('اكتب حلّك أو أرفق صورة واحدة على الأقل'); return; }
+    setSubmitting(true);
+    setMsg(''); setOk(true);
+    try {
+      const res = await fetch(`/api/assignments/${hw.id}/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answer, photos }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || data.message || 'تعذر الإرسال');
+      setOk(true);
+      setMsg(data.message || 'تم التسليم بنجاح! ✓');
+      onSubmitted();
+      setTimeout(onClose, 1800);
+    } catch (e: any) {
+      setOk(false);
+      setMsg(e?.message || 'تعذر الإرسال');
+    } finally { setSubmitting(false); }
+  };
+
+  return (
+    <Modal title={hw.title} eyebrow={`رفع الواجب · ${hw.unit || ''}`} onClose={onClose} maxWidth="max-w-xl">
+      {loading ? <StateNotice type="loading" /> : (
+        <form onSubmit={submit} className="space-y-4" dir="rtl">
+          {lockedForReview ? (
+            <p className="flex items-center gap-2 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm font-extrabold text-amber-800">
+              <Lock size={15} /> تسليمك قيد مراجعة الأستاذ — لا يمكن التعديل حتى يقيّمه.
+            </p>
+          ) : null}
+          {mine && (mine.score != null || mine.status === 'تم التقييم') ? (
+            <p className="flex items-center gap-2 rounded-2xl border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm font-extrabold text-green-800">
+              <Award size={15} /> تمت مراجعتك{mine.score != null ? ` · علامتك: ${mine.score}` : ''}{mine.feedback ? ` — ${mine.feedback}` : ''}
+            </p>
+          ) : null}
+          <label className="block text-sm font-semibold">
+            <span className="mb-2 block">حلّك:</span>
+            <textarea value={answer} onChange={(e) => setAnswer(e.target.value)} disabled={lockedForReview} rows={4} placeholder="اكتب الحل هنا..." className="w-full resize-none rounded-2xl border border-input bg-background p-4 text-sm outline-none focus:border-primary focus:ring-4 focus:ring-accent/20 disabled:opacity-60" />
+          </label>
+          <div className="rounded-2xl border border-dashed border-border p-4">
+            <p className="mb-3 text-sm font-bold text-primary">صور الحل ({photos.length})</p>
+            {photos.length ? (
+              <div className="mb-3 grid grid-cols-3 gap-2">
+                {photos.map((src, i) => (
+                  <div key={i} className="group relative overflow-hidden rounded-xl border border-border">
+                    <img src={src} alt={`صورة ${i + 1}`} className="h-20 w-full object-cover" />
+                    {!lockedForReview ? (
+                      <button type="button" onClick={() => setPhotos((p) => p.filter((_, x) => x !== i))} className="absolute left-1 top-1 rounded-lg bg-black/60 p-1 text-white"><X size={12} /></button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {!lockedForReview ? (
+              <label className={`inline-flex cursor-pointer items-center gap-2 rounded-xl bg-secondary px-4 py-2.5 text-sm font-bold text-primary hover:bg-accent/40 ${uploading ? 'opacity-60' : ''}`}>
+                {uploading ? <RefreshCw size={14} className="animate-spin" /> : <Camera size={14} />} {uploading ? `جارٍ الرفع (${uploading})...` : 'التقط / اختر صور الحل'}
+                <input type="file" accept="image/*,.heic,.heif" multiple className="hidden" onChange={(e) => { const f = Array.from(e.target.files || []); e.target.value = ''; pick(f); }} />
+              </label>
+            ) : null}
+          </div>
+          {msg ? <p className={`rounded-xl p-3 text-center text-sm font-bold ${ok ? 'bg-accent/20 text-accent-foreground' : 'bg-destructive/10 text-destructive'}`}>{msg}</p> : null}
+          <div className="flex items-center justify-end gap-3">
+            <Button onClick={onClose} variant="ghost">إغلاق</Button>
+            <Button type="submit" disabled={submitting || lockedForReview} variant="primary" className="px-6 py-2.5">
+              {submitting ? 'جارٍ الإرسال...' : mine ? 'إعادة الإرسال' : 'إرسال الحل'} <ArrowLeft size={15} />
+            </Button>
+          </div>
+        </form>
+      )}
+    </Modal>
+  );
+}
+
 function StudentCoursesPage() {
   const { grade: effectiveGrade, term, split, gender, student } = useStudentGradeTerm();
   const [courses, setCourses] = useState<any[]>([]);
@@ -3773,6 +4270,14 @@ function StudentCoursesPage() {
   const [lessonQuiz, setLessonQuiz] = useState<any | null>(null);
   const [lessonExam, setLessonExam] = useState<any | null>(null);
   const [quizLocked, setQuizLocked] = useState(false);
+  // مهام الوحدة المطلوبة: واجبات + دفتر + اختبارات مرتبطة بالوحدة
+  const [hwList, setHwList] = useState<any[]>([]);
+  const [examList, setExamList] = useState<any[]>([]);
+  const [nbList, setNbList] = useState<any[]>([]);
+  // أسهم المهام: مطوية افتراضياً، تُفتح تلقائياً عند وجود معلَّق
+  const [expandedLessons, setExpandedLessons] = useState<Record<string, boolean>>({});
+  const [expandedGeneral, setExpandedGeneral] = useState(false);
+  const [quickHw, setQuickHw] = useState<any | null>(null);
   useEffect(() => {
     setLessonQuiz(null);
     setLessonExam(null);
@@ -3807,20 +4312,86 @@ function StudentCoursesPage() {
 
   useEffect(() => {
     loadCourses();
+    loadUnitTasks();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveGrade, term, student?.id]);
+
+  // تحميل المهام المرتبطة بالوحدات (واجبات مطلوبة + دفتر مطلوب + اختبارات)
+  const loadUnitTasks = async () => {
+    try {
+      const aq = new URLSearchParams({ grade: effectiveGrade, term, student: '1' });
+      const nq = new URLSearchParams({ grade: effectiveGrade, term });
+      if (student?.id) { aq.set('student_id', student.id); nq.set('student_id', student.id); }
+      const [hw, ex, nb] = await Promise.all([
+        jsonFetch('/api/assignments').catch(() => []),
+        jsonFetch(`/api/curriculum/assessments?${aq.toString()}`).catch(() => []),
+        jsonFetch(`/api/curriculum/notebooks?${nq.toString()}`).catch(() => []),
+      ]);
+      setHwList(Array.isArray(hw) ? hw : []);
+      setExamList(Array.isArray(ex) ? ex : []);
+      setNbList(Array.isArray(nb) ? nb : []);
+    } catch { setHwList([]); setExamList([]); setNbList([]); }
+  };
+
+  // ربط المهمة بالوحدة: عبر courseId المضمون، أو مطابقة اسم الوحدة للواجبات القديمة
+  const matchCourse = (x: any, course: any) =>
+    (x.courseId && x.courseId === course.id) ||
+    ((x.unit || x.unitTitle) && (x.unit || x.unitTitle) === course.title);
+  const hwFor = (course: any) => hwList.filter((h) => matchCourse(h, course));
+  const examsFor = (course: any) => examList.filter((e) => matchCourse(e, course));
+  const nbFor = (course: any) => nbList.filter((t) => matchCourse(t, course));
+  const hwPending = (h: any) => !h.status || h.status === 'لم يبدأ';
+  const nbPending = (t: any) => !t.myStatus;
+  // مهام الدرس المحدد (بسهم جانبي) — عبر lessonId المباشر
+  const hwForLesson = (lesson: any) => hwList.filter((h) => h.lessonId === lesson.id);
+  const examsForLesson = (lesson: any) => examList.filter((e) => e.lessonId === lesson.id);
+  const nbForLesson = (lesson: any) => nbList.filter((t) => t.lessonId === lesson.id);
+  const lessonTasksCount = (lesson: any) => hwForLesson(lesson).length + examsForLesson(lesson).length + nbForLesson(lesson).length;
+  const lessonHasPending = (lesson: any) => hwForLesson(lesson).some(hwPending) || nbForLesson(lesson).some(nbPending);
+  const toggleLessonTasks = (id: string) => setExpandedLessons((m) => ({ ...m, [id]: !m[id] }));
+  // مهام عامة للوحدة (مرتبطة بالوحدة دون درس محدد، أو مطابقة نصية قديمة)
+  const generalHw = (course: any) => hwFor(course).filter((h) => !h.lessonId);
+  const generalExams = (course: any) => examsFor(course).filter((e) => !e.lessonId);
+  const generalNb = (course: any) => nbFor(course).filter((t) => !t.lessonId);
+  // فتح تلقائي لأسهم الدروس المعلَّقة حتى ينتبه الطالب (لا تُغلق ما فتحه يدوياً)
+  useEffect(() => {
+    if (!selectedCourse || loadingLessons || !lessons.length) return;
+    setExpandedLessons((m) => {
+      const n = { ...m };
+      for (const l of lessons) {
+        if (lessonHasPending(l)) n[l.id] = true;
+      }
+      return n;
+    });
+    const gPend = generalHw(selectedCourse).some(hwPending) || generalNb(selectedCourse).some(nbPending);
+    if (gPend) setExpandedGeneral(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCourse, lessons, loadingLessons, hwList, nbList]);
 
   const openCourse = async (course: any) => {
     if (course.locked || course.isEmpty) return;
     setSelectedCourse(course);
     setLoadingLessons(true);
     try {
-      const data = await jsonFetch(`/api/curriculum/courses/${course.id}/lessons?student=1`);
+      // قائمة خفيفة (brief) توفيراً للباقة — المحتوى الكامل يُجلب عند فتح الدرس فقط
+      const data = await jsonFetch(`/api/curriculum/courses/${course.id}/lessons?student=1&brief=1`);
       setLessons(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error(e);
     } finally {
       setLoadingLessons(false);
+    }
+  };
+
+  // العرض السريع: يجلب المحتوى الكامل للدرس المطلوب فقط
+  const openLessonQuick = async (lesson: any) => {
+    if (lesson.locked) return;
+    setActiveLesson({ ...lesson, _loadingFull: true });
+    try {
+      const full = await jsonFetch(`/api/curriculum/lessons/${lesson.id}`);
+      setActiveLesson({ ...lesson, ...(full && typeof full === 'object' ? full : {}) });
+    } catch {
+      setActiveLesson(lesson);
     }
   };
 
@@ -3839,88 +4410,175 @@ function StudentCoursesPage() {
     }
   };
 
-  const visibleCourses = showLocked ? courses : courses.filter((c) => !c.gateLocked && c.isVisible && c.published);
-  const openCount = courses.filter((c) => !c.locked && !c.isEmpty).length;
+  // مصدر واحد للحقيقة: أي قفل (زر القفل/الحالة/إخفاء/فارغة) = مقفلة عند الطالب
+  const isUnitLocked = (c: any) =>
+    !!c.locked || !!c.manualLocked || !!c.isLocked ||
+    c.status === 'locked' || c.status === 'hidden' ||
+    !!c.isEmpty || c.isVisible === false || c.published === false;
+  const lockReasonText = (c: any) => {
+    if (c.isEmpty || c.status === 'empty' || (c.lessons ?? 0) === 0) return 'ستُنشر قريباً — يجهزها الأستاذ';
+    if (c.isVisible === false || c.published === false || c.status === 'hidden') return 'مخفية حالياً من الأستاذ';
+    if (c.status === 'locked' || c.lockReason === 'manual' || c.isLocked) return 'مقفلة من الأستاذ 🔒';
+    if (c.locked) return 'مقفلة حالياً';
+    return 'متاحة الآن';
+  };
+  const baseVisible = courses.filter((c) => c.isVisible !== false && c.published !== false);
+  const visibleCourses = showLocked ? baseVisible : baseVisible.filter((c) => !isUnitLocked(c));
+  const openCount = baseVisible.filter((c) => !isUnitLocked(c)).length;
+  const lockedCount = baseVisible.filter((c) => isUnitLocked(c) && !c.isEmpty).length;
+  const soonCount = baseVisible.filter((c) => !!c.isEmpty).length;
+  // كل المهام المطلوبة المعلقة في الوحدات المفتوحة (واجبات لم تُسلَّم + دفتر لم يُسلَّم)
+  const requiredPending = baseVisible
+    .filter((c) => !isUnitLocked(c))
+    .reduce((n, c) => n + hwFor(c).filter(hwPending).length + nbFor(c).filter(nbPending).length, 0);
 
   return (
     <Shell mode="student">
       <SectionHero
         eyebrow="المنهاج الفلسطيني المعتمد"
         title="الوحدات التعليمية"
-        body={`وحدات ${effectiveGrade} · ${term} — تظهر لك فقط الوحدات التي وصلتم إليها مع الأستاذ.`}
+        body={`وحدات ${effectiveGrade} · ${term} — تظهر لك فقط الوحدات التي وصلتم إليها مع الأستاذ، وأي وحدة يفتحها الأستاذ تظهر لك فوراً.`}
         tone="light"
         stats={[
           { value: openCount, label: 'وحدات مفتوحة' },
+          { value: requiredPending, label: 'مهام مطلوبة عليك' },
           { value: courses.length, label: 'إجمالي الوحدات' },
         ]}
       />
       <GradeTermBadge grade={effectiveGrade} term={term} split={split} gender={gender} />
-      <div className="mb-5 flex items-center justify-end">
-        <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-muted-foreground">
-          <input type="checkbox" checked={showLocked} onChange={(e) => setShowLocked(e.target.checked)} className="accent-primary" /> عرض الوحدات المقفلة أيضاً
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => { loadCourses(); loadUnitTasks(); }}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-2.5 text-xs font-bold text-primary shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+        >
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> تحديث الوحدات
+        </button>
+        <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-secondary/60 px-4 py-2.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary">
+          <input type="checkbox" checked={showLocked} onChange={(e) => setShowLocked(e.target.checked)} className="h-4 w-4 accent-primary" /> عرض الوحدات المقفلة أيضاً
         </label>
       </div>
 
       {loading ? (
-        <StateNotice type="loading" />
+        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="animate-pulse overflow-hidden rounded-3xl border border-border bg-card">
+              <div className="h-40 bg-muted" />
+              <div className="space-y-3 p-6">
+                <div className="h-4 w-2/3 rounded bg-muted" />
+                <div className="h-3 w-full rounded bg-muted/70" />
+                <div className="h-9 w-28 rounded-xl bg-muted/70" />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : loadError ? (
         <StateNotice type="error" onRetry={loadCourses} />
       ) : !visibleCourses.length ? (
-        <div className="rounded-2xl border border-dashed border-border bg-card px-6 py-12 text-center">
-          <span className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-secondary text-primary"><Lock size={20} /></span>
-          <p className="font-semibold">لا توجد وحدات مفتوحة بعد في {effectiveGrade} · {term}</p>
-          <p className="mt-1 text-sm text-muted-foreground">سيفتحها لك الأستاذ تباعاً كلما تقدمتم في المنهاج — تابع حصة الأستاذ أحمد.</p>
+        <div className="relative overflow-hidden rounded-[2rem] border border-dashed border-border bg-gradient-to-b from-card to-secondary/30 px-6 py-14 text-center shadow-sm">
+          <span className="pointer-events-none absolute -left-10 -top-10 h-40 w-40 rounded-full bg-accent/20 blur-3xl" />
+          <span className="pointer-events-none absolute -right-10 -bottom-10 h-40 w-40 rounded-full bg-primary/10 blur-3xl" />
+          <span className="relative mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-gradient-to-br from-[#17413f] to-[#2a7a72] text-white shadow-xl"><Lock size={26} /></span>
+          <p className="relative font-display text-xl font-extrabold text-primary">
+            {courses.length && !openCount ? `كل وحدات ${effectiveGrade} · ${term} بانتظار فتح الأستاذ` : `لا توجد وحدات مفتوحة بعد في ${effectiveGrade} · ${term}`}
+          </p>
+          <p className="relative mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+            {courses.length
+              ? `يوجد ${courses.length} وحدات في المنهاج — الأستاذ فتح ${openCount} منها. فعّل «عرض الوحدات المقفلة أيضاً» لرؤية خارطة الطريق، أو اضغط تحديث بعد حصة الأستاذ.`
+              : 'سيفتحها لك الأستاذ تباعاً كلما تقدمتم في المنهاج — تابع حصة الأستاذ.'}
+          </p>
+          <div className="relative mt-6 flex flex-wrap items-center justify-center gap-2">
+            <Button onClick={() => { loadCourses(); loadUnitTasks(); }} variant="primary" className="px-6 py-3"><RefreshCw size={15} /> تحديث الآن</Button>
+            {!showLocked && courses.length > 0 ? (
+              <Button onClick={() => setShowLocked(true)} variant="soft" className="px-6 py-3"><Eye size={15} /> عرض خارطة الوحدات</Button>
+            ) : null}
+          </div>
+          {soonCount > 0 ? <p className="relative mt-4 text-xs font-bold text-muted-foreground">منها {soonCount} وحدات قيد التجهيز «ستُنشر قريباً»</p> : null}
         </div>
       ) : (
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
           {visibleCourses.map((course, index) => {
-            const locked = course.locked || course.isEmpty;
+            const locked = isUnitLocked(course);
+            const progress = typeof course.progress === 'number' ? Math.max(0, Math.min(100, course.progress)) : 0;
+            const cHw = hwFor(course);
+            const cNb = nbFor(course);
+            const cEx = examsFor(course);
+            const cHwPend = cHw.filter(hwPending).length;
+            const cNbPend = cNb.filter(nbPending).length;
             return (
-              <div key={course.id} className={`group overflow-hidden rounded-3xl border border-border bg-card shadow-sm transition-all ${locked ? 'opacity-90' : 'hover:-translate-y-1 hover:shadow-xl'}`} data-testid={`card-course-detail-${course.id}`}>
-                <div className="relative h-40 overflow-hidden" style={{ backgroundColor: course.color || 'hsl(var(--primary))' }}>
+              <div key={course.id} className={`group relative overflow-hidden rounded-3xl border bg-card shadow-sm transition-all duration-300 animate-fade-up ${locked ? 'border-border opacity-95' : 'border-accent/40 hover:-translate-y-1.5 hover:shadow-2xl hover:border-accent'}`} style={{ animationDelay: `${Math.min(index, 8) * 0.05}s` }} data-testid={`card-course-detail-${course.id}`}>
+                {!locked ? <span className="pointer-events-none absolute inset-x-8 -top-px h-1 rounded-full bg-gradient-to-l from-accent via-accent/60 to-transparent" /> : null}
+                <div className="relative h-44 overflow-hidden" style={{ background: `linear-gradient(135deg, ${course.color || '#1a5c57'}, ${(course.color || '#1a5c57')}aa)` }}>
                   {course.coverUrl ? (
-                    <img src={course.coverUrl} alt={course.title} className={`h-full w-full object-cover ${locked ? 'grayscale' : ''}`} />
+                    <img src={course.coverUrl} alt={course.title} loading="lazy" className={`h-full w-full object-cover transition-transform duration-500 group-hover:scale-105 ${locked ? 'grayscale-[35%]' : ''}`} />
                   ) : (
                     <div className="absolute -left-5 -top-12 select-none font-display text-[10rem] leading-none text-white/10">ض</div>
                   )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent" />
-                  <div className="absolute right-4 top-4 flex items-center gap-2">
-                    <span className="rounded-lg bg-black/30 px-3 py-1 text-xs font-bold text-white backdrop-blur-sm">الوحدة {String(course.sort_order || index + 1).padStart(2, '0')}</span>
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
+                  <div className="absolute right-4 top-4 flex flex-wrap items-center gap-2">
+                    <span className="rounded-lg bg-black/35 px-3 py-1.5 text-xs font-extrabold text-white backdrop-blur-md">الوحدة {String(course.sort_order || index + 1).padStart(2, '0')}</span>
                     {course.isEmpty ? (
-                      <span className="rounded-lg bg-white/90 px-3 py-1 text-xs font-bold text-muted-foreground">قريباً</span>
-                    ) : course.locked ? (
-                      <span className="flex items-center gap-1 rounded-lg bg-black/50 px-3 py-1 text-xs font-bold text-white backdrop-blur-sm"><Lock size={12} /> مقفلة</span>
-                    ) : null}
+                      <span className="rounded-lg bg-white/95 px-3 py-1.5 text-xs font-extrabold text-muted-foreground shadow">قريباً ✨</span>
+                    ) : locked ? (
+                      <span className="flex items-center gap-1.5 rounded-lg bg-black/55 px-3 py-1.5 text-xs font-extrabold text-white backdrop-blur-md"><Lock size={12} /> مقفلة</span>
+                    ) : (
+                      <span className="flex items-center gap-1.5 rounded-lg bg-green-500/90 px-3 py-1.5 text-xs font-extrabold text-white shadow">متاحة الآن ✓</span>
+                    )}
                   </div>
+                  {locked ? (
+                    <span className="absolute inset-0 grid place-items-center"><span className="grid h-14 w-14 place-items-center rounded-2xl bg-black/45 text-white backdrop-blur-md"><Lock size={22} /></span></span>
+                  ) : null}
                   <div className="absolute bottom-3 right-4 left-4 flex items-end justify-between gap-3">
                     <div className="flex items-center gap-2.5">
                       {course.avatarUrl ? (
-                        <img src={course.avatarUrl} alt="" className="h-11 w-11 rounded-2xl border-2 border-white/60 object-cover shadow" />
+                        <img src={course.avatarUrl} alt="" className="h-11 w-11 rounded-2xl border-2 border-white/60 object-cover shadow-lg" />
                       ) : (
-                        <span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/20 text-white backdrop-blur-sm"><BookOpen size={20} /></span>
+                        <span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/20 text-white shadow backdrop-blur-md"><BookOpen size={20} /></span>
                       )}
                       <span className="text-xs font-bold text-white/90">{course.grade} · {course.term}</span>
                     </div>
-                    {typeof course.progress === 'number' && course.progress > 0 ? (
-                      <span className="rounded-full bg-accent px-2.5 py-1 text-[11px] font-bold text-accent-foreground">{course.progress}%</span>
+                    {progress > 0 ? (
+                      <span className="rounded-full bg-accent px-3 py-1.5 text-[11px] font-extrabold text-accent-foreground shadow">{progress}% منجز</span>
                     ) : null}
                   </div>
                 </div>
                 <div className="p-6">
-                  <h3 className="text-lg font-bold leading-tight text-primary">{course.title}</h3>
-                  <p className="mt-2 min-h-12 text-sm leading-6 text-muted-foreground">{course.description}</p>
-                  <div className="mt-5 flex items-center justify-between text-xs font-semibold text-muted-foreground">
-                    <span>{course.lessons} دروس تفاعلية</span>
-                    <span>{course.duration}</span>
+                  <h3 className="text-lg font-extrabold leading-tight text-primary">{course.title}</h3>
+                  <p className="mt-2 min-h-12 text-sm leading-6 text-muted-foreground line-clamp-2">{course.description || 'وحدة تفاعلية من المنهاج المعتمد — افتحها وابدأ الدروس.'}</p>
+                  <div className="mt-4 flex items-center justify-between text-xs font-bold text-muted-foreground">
+                    <span className="inline-flex items-center gap-1.5"><Library size={13} /> {course.lessons} دروس تفاعلية</span>
+                    <span className="inline-flex items-center gap-1.5"><Clock3 size={13} /> {course.duration || 'حسب الحصة'}</span>
                   </div>
-                  {typeof course.progress === 'number' ? (
-                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
-                      <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${course.progress}%` }} />
+                  {(cHw.length || cNb.length || cEx.length) ? (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {cHw.length ? (
+                        <span className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-extrabold ${cHwPend ? 'bg-destructive/10 text-destructive' : 'bg-green-500/10 text-green-800'}`}>
+                          <ClipboardCheck size={12} /> {cHw.length} واجب مطلوب{cHwPend ? ` · ${cHwPend} معلق` : ' ✓'}
+                        </span>
+                      ) : null}
+                      {cNb.length ? (
+                        <span className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-extrabold ${cNbPend ? 'bg-amber-500/15 text-amber-800' : 'bg-green-500/10 text-green-800'}`}>
+                          <NotebookPen size={12} /> دفتر مطلوب{cNbPend ? ` · ${cNbPend} معلق` : ' ✓'}
+                        </span>
+                      ) : null}
+                      {cEx.length ? (
+                        <span className="inline-flex items-center gap-1 rounded-lg bg-[#0d47a1]/10 px-2.5 py-1 text-[11px] font-extrabold text-[#0d47a1]">
+                          <Target size={12} /> {cEx.length} اختبارات
+                        </span>
+                      ) : null}
                     </div>
                   ) : null}
-                  <div className="mt-4 flex items-center justify-between">
-                    <span className="text-xs font-bold text-primary">{locked ? statusLabel(course.status, course.isEmpty) : 'متاحة الآن'}</span>
-                    <Button onClick={() => openCourse(course)} disabled={locked} variant={locked ? 'ghost' : 'soft'} className="px-3.5 py-2 text-xs" data-testid={`link-open-course-${course.id}`}>
+                  {progress > 0 ? (
+                    <div className="mt-3">
+                      <div className="mb-1.5 flex items-center justify-between text-[11px] font-bold"><span className="text-muted-foreground">تقدمك</span><span className="text-primary">{progress}%</span></div>
+                      <div className="h-2.5 overflow-hidden rounded-full bg-muted">
+                        <div className="h-full rounded-full bg-gradient-to-l from-[#17413f] to-[#2a9d8f] transition-all duration-700" style={{ width: `${progress}%` }} />
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className="mt-5 flex items-center justify-between gap-2 rounded-2xl bg-secondary/40 px-4 py-3">
+                    <span className={`text-xs font-extrabold ${locked ? 'text-muted-foreground' : 'text-green-800'}`}>{locked ? lockReasonText(course) : 'جاهزة — ادخل الدروس وابدأ 🎯'}</span>
+                    <Button onClick={() => openCourse(course)} disabled={locked} variant={locked ? 'ghost' : 'primary'} className="shrink-0 px-4 py-2.5 text-xs shadow-sm" data-testid={`link-open-course-${course.id}`}>
                       {course.isEmpty ? 'ستُنشر قريباً' : locked ? (<><Lock size={14} /> مقفلة</>) : (<>فتح الدروس <ArrowLeft size={14} /></>)}
                     </Button>
                   </div>
@@ -3932,7 +4590,7 @@ function StudentCoursesPage() {
       )}
 
       {selectedCourse && (
-        <Modal title={selectedCourse.title} eyebrow={`دروس الوحدة · ${selectedCourse.grade}`} onClose={() => { setSelectedCourse(null); setActiveLesson(null); }} maxWidth="max-w-2xl">
+        <Modal title={selectedCourse.title} eyebrow={`دروس الوحدة · ${selectedCourse.grade}`} onClose={() => { setSelectedCourse(null); setActiveLesson(null); }} maxWidth="max-w-3xl">
           {loadingLessons ? (
             <StateNotice type="loading" />
           ) : !lessons.length ? (
@@ -3940,44 +4598,196 @@ function StudentCoursesPage() {
           ) : (
             <div className="space-y-3">
               <p className="mb-4 text-xs leading-6 text-muted-foreground">{selectedCourse.description}</p>
+              {(() => {
+                const mHw = generalHw(selectedCourse);
+                const mNb = generalNb(selectedCourse);
+                const mEx = generalExams(selectedCourse);
+                if (!mHw.length && !mNb.length && !mEx.length) return null;
+                const pendCount = mHw.filter(hwPending).length + mNb.filter(nbPending).length;
+                return (
+                  <div className="mb-5 overflow-hidden rounded-3xl border-2 border-accent/40 bg-gradient-to-b from-accent/15 to-card">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedGeneral((v) => !v)}
+                      className="flex w-full items-center gap-2 bg-accent/20 px-5 py-3.5 text-sm font-extrabold text-primary transition-colors hover:bg-accent/30"
+                    >
+                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-accent text-[#3a2c07]">⭐</span>
+                      <span className="truncate">مهام عامة للوحدة (بلا درس محدد)</span>
+                      {pendCount ? <span className="shrink-0 animate-pulse rounded-full bg-destructive px-3 py-1 text-[11px] font-extrabold text-white">{pendCount} معلقة!</span> : null}
+                      <span className="mr-auto flex shrink-0 items-center gap-2">
+                        <span className="rounded-full bg-card px-3 py-1 text-[11px] font-bold text-muted-foreground">{mHw.length + mNb.length + mEx.length} مهام</span>
+                        <ChevronLeft size={18} className={`text-primary transition-transform duration-300 ${expandedGeneral ? '-rotate-90' : ''}`} />
+                      </span>
+                    </button>
+                    {expandedGeneral ? (
+                    <div className="space-y-2.5 p-4">
+                      {mHw.map((h: any) => {
+                        const pend = hwPending(h);
+                        return (
+                          <div key={`hw-${h.id}`} className={`flex flex-wrap items-center gap-3 rounded-2xl border bg-card p-3.5 ${pend ? 'border-destructive/30' : 'border-green-500/25'}`}>
+                            <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${pend ? 'bg-destructive/10 text-destructive' : 'bg-green-500/15 text-green-800'}`}><ClipboardCheck size={18} /></span>
+                            <div className="min-w-[160px] flex-1">
+                              <p className="text-sm font-extrabold text-primary">{h.title}</p>
+                              <p className="mt-0.5 text-[11px] font-bold text-muted-foreground">
+                                واجب مطلوب{h.dueDate ? ` · حتى ${h.dueDate}` : ''} · {h.points} نقاط
+                              </p>
+                            </div>
+                            <span className={`rounded-full px-3 py-1.5 text-[11px] font-extrabold ${pend ? 'bg-destructive/10 text-destructive' : 'bg-green-500/15 text-green-800'}`}>{pend ? 'لم يُسلَّم بعد' : h.status}</span>
+                            {pend ? (
+                              <button type="button" onClick={() => setQuickHw(h)} className="inline-flex shrink-0 items-center gap-1 rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-primary-foreground shadow-sm transition-transform hover:scale-105"><Upload size={13} /> رفع الواجب</button>
+                            ) : null}
+                            <Link href="/student/assignments" className="inline-flex shrink-0 items-center gap-1 rounded-xl bg-secondary px-4 py-2 text-xs font-extrabold text-primary transition-colors hover:bg-accent/40">القسم <ArrowLeft size={13} /></Link>
+                          </div>
+                        );
+                      })}
+                      {mNb.map((t: any) => {
+                        const pend = nbPending(t);
+                        return (
+                          <div key={`nb-${t.id}`} className={`flex flex-wrap items-center gap-3 rounded-2xl border bg-card p-3.5 ${pend ? 'border-amber-500/30' : 'border-green-500/25'}`}>
+                            <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${pend ? 'bg-amber-500/15 text-amber-800' : 'bg-green-500/15 text-green-800'}`}><NotebookPen size={18} /></span>
+                            <div className="min-w-[160px] flex-1">
+                              <p className="text-sm font-extrabold text-primary">{t.title}</p>
+                              <p className="mt-0.5 text-[11px] font-bold text-muted-foreground">مهمة دفتر مطلوبة{t.points ? ` · ${t.points} نقاط` : ''}</p>
+                            </div>
+                            <span className={`rounded-full px-3 py-1.5 text-[11px] font-extrabold ${pend ? 'bg-amber-500/15 text-amber-800' : 'bg-green-500/15 text-green-800'}`}>{pend ? 'لم تُسلَّم بعد' : t.myStatus}</span>
+                            {pend ? (
+                              <Link href={`/student/notebook?task=${t.id}`} className="inline-flex shrink-0 items-center gap-1 rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-primary-foreground shadow-sm transition-transform hover:scale-105"><Upload size={13} /> تسليم الدفتر</Link>
+                            ) : null}
+                            <Link href="/student/notebook" className="inline-flex shrink-0 items-center gap-1 rounded-xl bg-secondary px-4 py-2 text-xs font-extrabold text-primary transition-colors hover:bg-accent/40">القسم <ArrowLeft size={13} /></Link>
+                          </div>
+                        );
+                      })}
+                      {mEx.map((e: any) => (
+                        <div key={`ex-${e.id}`} className="flex flex-wrap items-center gap-3 rounded-2xl border border-[#0d47a1]/25 bg-card p-3.5">
+                          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#0d47a1]/10 text-[#0d47a1]"><Target size={18} /></span>
+                          <div className="min-w-[160px] flex-1">
+                            <p className="text-sm font-extrabold text-primary">{e.title}</p>
+                            <p className="mt-0.5 text-[11px] font-bold text-muted-foreground">اختبار الوحدة · {e.questions} أسئلة · {e.duration}</p>
+                          </div>
+                          <Link href="/student/assessments" className="inline-flex shrink-0 items-center gap-1 rounded-xl bg-[#0d47a1] px-4 py-2 text-xs font-extrabold text-white shadow-sm transition-transform hover:scale-105">ابدأ الاختبار <ArrowLeft size={13} /></Link>
+                          <Link href="/student/assessments" className="inline-flex shrink-0 items-center gap-1 rounded-xl bg-secondary px-4 py-2 text-xs font-extrabold text-primary transition-colors hover:bg-accent/40">القسم <ArrowLeft size={13} /></Link>
+                        </div>
+                      ))}
+                    </div>
+                    ) : null}
+                  </div>
+                );
+              })()}
               {lessons.filter((l) => l.isVisible).map((lesson) => {
                 const TypeIcon = lessonTypeIcon(lesson.lessonType);
                 const locked = lesson.locked;
+                const tHw = hwForLesson(lesson);
+                const tEx = examsForLesson(lesson);
+                const tNb = nbForLesson(lesson);
+                const tCount = tHw.length + tEx.length + tNb.length;
+                const tPend = tHw.some(hwPending) || tNb.some(nbPending);
+                const tOpen = !!expandedLessons[lesson.id];
                 return (
-                    <div key={lesson.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-background p-4 transition-colors ${locked ? 'opacity-60' : 'hover:border-primary/40'}`}>
-                    <div className="flex min-w-[200px] flex-1 items-center gap-3">
-                      {lesson.coverUrl ? (
-                        <img src={lesson.coverUrl} alt="" className="h-12 w-12 shrink-0 rounded-xl object-cover" />
-                      ) : (
-                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-secondary text-primary"><TypeIcon size={17} /></span>
-                      )}
-                      <div className="min-w-0">
-                        <p className="flex items-center gap-2 text-sm font-bold text-primary">
-                          <span className="truncate">{lesson.title}</span>
-                          {locked ? <Lock size={13} className="shrink-0 text-muted-foreground" /> : null}
-                        </p>
-                        <p className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                          <span className="rounded-md bg-secondary px-2 py-0.5 font-bold text-primary">{lesson.lessonType}</span>
-                          <span className="truncate">{lesson.description || 'شرح الدرس والتدريبات المرافقة'}</span>
-                        </p>
+                  <div key={lesson.id} className={`overflow-hidden rounded-2xl border bg-background transition-colors ${tOpen ? 'border-accent shadow-md' : 'border-border'} ${locked ? 'opacity-70' : ''}`}>
+                    <div className={`flex flex-wrap items-center justify-between gap-3 p-4 ${!locked ? 'hover:border-primary/40' : ''}`}>
+                      <div className="flex min-w-[200px] flex-1 items-center gap-3">
+                        {lesson.coverUrl ? (
+                          <img src={lesson.coverUrl} alt="" className="h-12 w-12 shrink-0 rounded-xl object-cover" />
+                        ) : (
+                          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-secondary text-primary"><TypeIcon size={17} /></span>
+                        )}
+                        <div className="min-w-0">
+                          <p className="flex items-center gap-2 text-sm font-bold text-primary">
+                            <span className="truncate">{lesson.title}</span>
+                            {locked ? <Lock size={13} className="shrink-0 text-muted-foreground" /> : null}
+                          </p>
+                          <p className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                            <span className="rounded-md bg-secondary px-2 py-0.5 font-bold text-primary">{lesson.lessonType}</span>
+                            <span className="truncate">{lesson.description || 'شرح الدرس والتدريبات المرافقة'}</span>
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                    <span className="flex shrink-0 items-center gap-1.5">
-                      {!locked ? (
-                        <Link href={`/student/courses/${selectedCourse.id}/lessons/${lesson.id}`} className="inline-flex items-center gap-1 rounded-xl bg-primary px-3 py-2 text-xs font-bold text-primary-foreground shadow-sm transition-transform hover:scale-105" data-testid={`link-lesson-page-${lesson.id}`}>
-                          صفحة كاملة <ArrowUpLeft size={14} />
-                        </Link>
-                      ) : null}
-                      <Button onClick={() => !locked && setActiveLesson(lesson)} disabled={locked} variant="outline" className="px-3 py-2 text-xs">
+                      <span className="flex shrink-0 items-center gap-1.5">
+                        {tCount > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleLessonTasks(lesson.id)}
+                            title={tOpen ? 'إخفاء مهام الدرس' : 'عرض مهام الدرس (واجبات ودفتر واختبارات)'}
+                            className={`relative inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-extrabold shadow-sm transition-all hover:scale-105 active:scale-95 ${tOpen ? 'bg-primary text-primary-foreground' : tPend ? 'animate-pulse bg-destructive text-white' : 'bg-accent text-[#3a2c07]'}`}
+                          >
+                            <ChevronLeft size={15} className={`transition-transform duration-300 ${tOpen ? '-rotate-90' : ''}`} />
+                            مهام الدرس
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold tabular-nums ${tOpen || tPend ? 'bg-white/25 text-white' : 'bg-black/15 text-[#3a2c07]'}`}>{tCount}</span>
+                            {tPend && !tOpen ? <span className="absolute -left-1 -top-1 h-3 w-3 animate-ping rounded-full bg-destructive" /> : null}
+                            {tPend && !tOpen ? <span className="absolute -left-1 -top-1 h-3 w-3 rounded-full bg-destructive" /> : null}
+                          </button>
+                        ) : null}
+                        {!locked ? (
+                          <Link href={`/student/courses/${selectedCourse.id}/lessons/${lesson.id}`} className="inline-flex items-center gap-1 rounded-xl bg-primary px-3 py-2 text-xs font-bold text-primary-foreground shadow-sm transition-transform hover:scale-105" data-testid={`link-lesson-page-${lesson.id}`}>
+                            صفحة كاملة <ArrowUpLeft size={14} />
+                          </Link>
+                        ) : null}
+                      <Button onClick={() => !locked && openLessonQuick(lesson)} disabled={locked} variant="outline" className="px-3 py-2 text-xs">
                         {locked ? 'مقفل' : (<>عرض سريع <BookOpen size={14} /></>)}
                       </Button>
-                    </span>
+                      </span>
+                    </div>
+                    {tOpen && tCount > 0 ? (
+                      <div className="space-y-2 border-t border-dashed border-border bg-secondary/30 p-3">
+                        {tHw.map((h: any) => {
+                          const pend = hwPending(h);
+                          return (
+                            <div key={`lh-${h.id}`} className={`flex flex-wrap items-center gap-2.5 rounded-xl border bg-card p-3 ${pend ? 'border-destructive/30' : 'border-green-500/25'}`}>
+                              <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${pend ? 'bg-destructive/10 text-destructive' : 'bg-green-500/15 text-green-800'}`}><ClipboardCheck size={16} /></span>
+                              <div className="min-w-[140px] flex-1">
+                                <p className="truncate text-[13px] font-extrabold text-primary">{h.title}</p>
+                                <p className="mt-0.5 text-[11px] font-bold text-muted-foreground">واجب مطلوب{h.dueDate ? ` · حتى ${h.dueDate}` : ''} · {pend ? 'لم يُسلَّم بعد' : h.status}</p>
+                              </div>
+                              {pend ? (
+                                <button type="button" onClick={() => setQuickHw(h)} className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-primary px-3.5 py-2 text-[11px] font-extrabold text-primary-foreground shadow-sm transition-transform hover:scale-105"><Upload size={13} /> رفع الواجب</button>
+                              ) : null}
+                              <Link href="/student/assignments" className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-secondary px-3.5 py-2 text-[11px] font-extrabold text-primary transition-colors hover:bg-accent/40">القسم <ArrowLeft size={12} /></Link>
+                            </div>
+                          );
+                        })}
+                        {tNb.map((t: any) => {
+                          const pend = nbPending(t);
+                          return (
+                            <div key={`ln-${t.id}`} className={`flex flex-wrap items-center gap-2.5 rounded-xl border bg-card p-3 ${pend ? 'border-amber-500/30' : 'border-green-500/25'}`}>
+                              <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${pend ? 'bg-amber-500/15 text-amber-800' : 'bg-green-500/15 text-green-800'}`}><NotebookPen size={16} /></span>
+                              <div className="min-w-[140px] flex-1">
+                                <p className="truncate text-[13px] font-extrabold text-primary">{t.title}</p>
+                                <p className="mt-0.5 text-[11px] font-bold text-muted-foreground">دفتر مطلوب · {pend ? 'لم تُسلَّم بعد' : t.myStatus}</p>
+                              </div>
+                              {pend ? (
+                                <Link href={`/student/notebook?task=${t.id}`} className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-primary px-3.5 py-2 text-[11px] font-extrabold text-primary-foreground shadow-sm transition-transform hover:scale-105"><Upload size={13} /> تسليم الدفتر</Link>
+                              ) : null}
+                              <Link href="/student/notebook" className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-secondary px-3.5 py-2 text-[11px] font-extrabold text-primary transition-colors hover:bg-accent/40">القسم <ArrowLeft size={12} /></Link>
+                            </div>
+                          );
+                        })}
+                        {tEx.map((e: any) => (
+                          <div key={`le-${e.id}`} className="flex flex-wrap items-center gap-2.5 rounded-xl border border-[#0d47a1]/25 bg-card p-3">
+                            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#0d47a1]/10 text-[#0d47a1]"><Target size={16} /></span>
+                            <div className="min-w-[140px] flex-1">
+                              <p className="truncate text-[13px] font-extrabold text-primary">{e.title}</p>
+                              <p className="mt-0.5 text-[11px] font-bold text-muted-foreground">اختبار · {e.questions} أسئلة · {e.duration}</p>
+                            </div>
+                            <Link href="/student/assessments" className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#0d47a1] px-3.5 py-2 text-[11px] font-extrabold text-white shadow-sm transition-transform hover:scale-105"><PlayCircle size={13} /> ابدأ الاختبار</Link>
+                            <Link href="/student/assessments" className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-secondary px-3.5 py-2 text-[11px] font-extrabold text-primary transition-colors hover:bg-accent/40">القسم <ArrowLeft size={12} /></Link>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 );
               })}
             </div>
           )}
         </Modal>
+      )}
+
+      {quickHw && (
+        <HwQuickSubmitModal
+          hw={quickHw}
+          onClose={() => setQuickHw(null)}
+          onSubmitted={() => { loadUnitTasks(); loadCourses(); }}
+        />
       )}
 
       {activeLesson && (
@@ -4025,7 +4835,7 @@ function StudentCoursesPage() {
 
 /* =========================================================================
    لوحة المعلم الجديدة — إدارة المنهاج الكاملة
-   (الصفوف × الوحدات × الدروس × الاختبارات × بوابة آخر ما وصلنا)
+   (الصفوف × الوحدات × الدروس × الاختبارات)
 ========================================================================= */
 
 function Field2({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
@@ -4080,7 +4890,7 @@ function ImageUrlField({ label, value, onChange, testId, folder = '/ard-al-lugha
   );
 }
 
-type ManagerTab = 'units' | 'exams' | 'assignments' | 'notes' | 'gates';
+type ManagerTab = 'units' | 'exams' | 'assignments' | 'notes';
 
 function CurriculumManagerPage({ onlyTab, hero }: {
   onlyTab?: ManagerTab;
@@ -4091,8 +4901,8 @@ function CurriculumManagerPage({ onlyTab, hero }: {
   const [tab, setTab] = useState<ManagerTab>(onlyTab || 'units');
   const splitMap = useSplitMap();
   const gradeSplit = splitMap[grade] === true;
-  // تبويب واحد فقط عند التضمين في صفحة مستقلة، وإلا: المنهاج والوحدات + آخر ما وصلنا
-  const visibleTabIds: ManagerTab[] = onlyTab ? [onlyTab] : ['units', 'gates'];
+  // تبويب واحد فقط عند التضمين في صفحة مستقلة، وإلا: تبويب الوحدات والدروس
+  const visibleTabIds: ManagerTab[] = onlyTab ? [onlyTab] : ['units'];
   // فلتر القسم (يظهر فقط للصف المقسّم)
   const [sectionFilter, setSectionFilter] = useState('الجميع');
   const [examSearch, setExamSearch] = useState('');
@@ -4125,6 +4935,15 @@ function CurriculumManagerPage({ onlyTab, hero }: {
   const [hwModal, setHwModal] = useState<null | { mode: 'create' } | { mode: 'edit'; item: any }>(null);
   const [hwForm, setHwForm] = useState<any>({});
   const [savingHw, setSavingHw] = useState(false);
+  const [hwImages, setHwImages] = useState<string[]>([]);
+  const [hwNewImageUrl, setHwNewImageUrl] = useState('');
+  const [uploadingHw, setUploadingHw] = useState(false);
+  const [hwImagesErr, setHwImagesErr] = useState('');
+  const [hwLessons, setHwLessons] = useState<any[]>([]);
+  const [hwReview, setHwReview] = useState<any | null>(null);
+  const [hwSubs, setHwSubs] = useState<any[]>([]);
+  const [loadingHwSubs, setLoadingHwSubs] = useState(false);
+  const [hwGrading, setHwGrading] = useState<Record<string, { score: string; feedback: string }>>({});
   const [examModal, setExamModal] = useState(false);
   const [examForm, setExamForm] = useState<any>({ title: '', description: '', courseId: '', lessonId: '', duration: '20 دقيقة', published: true, isVisible: true });
   const [examLessons, setExamLessons] = useState<any[]>([]);
@@ -4210,17 +5029,9 @@ function CurriculumManagerPage({ onlyTab, hero }: {
   const [noteForm, setNoteForm] = useState<any>({ title: '', body: '', type: 'إرشاد', audience: 'الجميع', targetGrade: 'الجميع', published: true });
   const [savingNote, setSavingNote] = useState(false);
 
-  const [gates, setGates] = useState<any[]>([]);
-  const [gateCourseId, setGateCourseId] = useState('');
-  const [gateLessonId, setGateLessonId] = useState('');
-  const [gateNote, setGateNote] = useState('');
-  const [savingGate, setSavingGate] = useState(false);
-  const [gateMsg, setGateMsg] = useState('');
-
   const [msg, setMsg] = useState('');
 
   const selectedCourse = courses.find((c) => c.id === selectedCourseId) || null;
-  const currentGate = gates.find((g) => g.grade === grade && g.term === term) || null;
 
   const loadCourses = async () => {
     setLoadingCourses(true);
@@ -4251,18 +5062,6 @@ function CurriculumManagerPage({ onlyTab, hero }: {
     } catch (e) { console.error(e); } finally { setLoadingExams(false); }
   };
 
-  const loadGates = async () => {
-    try {
-      const data = await jsonFetch('/api/curriculum/gates');
-      const list = Array.isArray(data) ? data : [];
-      setGates(list);
-      const cur = list.find((g: any) => g.grade === grade && g.term === term);
-      setGateCourseId(cur?.unlockedCourseId || '');
-      setGateLessonId(cur?.unlockedLessonId || '');
-      setGateNote(cur?.note || '');
-    } catch (e) { console.error(e); }
-  };
-
   const loadNotes = async () => {
     setLoadingNotes(true);
     try {
@@ -4279,26 +5078,42 @@ function CurriculumManagerPage({ onlyTab, hero }: {
     } catch { setHwItems([]); } finally { setLoadingHw(false); }
   };
 
-  useEffect(() => { loadCourses(); loadExams(); loadNotes(); loadHw(); loadGates(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [grade, term]);
+  useEffect(() => { loadCourses(); loadExams(); loadNotes(); loadHw(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [grade, term]);
 
   /* ---------- الواجبات ---------- */
   const openHwCreate = () => {
-    setHwForm({ title: '', description: '', unit: courses[0]?.title || '', dueDate: '', points: 20, published: true, section: 'الجميع' });
+    setHwForm({ title: '', description: '', courseId: courses[0]?.id || '', lessonId: '', unit: courses[0]?.title || '', images: [], dueDate: '', points: 20, published: true, section: 'الجميع' });
+    setHwImages([]);
+    setHwNewImageUrl('');
+    setHwImagesErr('');
     setHwModal({ mode: 'create' });
   };
   const openHwEdit = (item: any) => {
-    setHwForm({ title: item.title, description: item.description, unit: item.unit, dueDate: item.dueDate, points: item.points, published: item.published, section: item.section || 'الجميع' });
+    const linked = courses.find((c: any) => c.id === item.courseId || (item.unit && c.title === item.unit));
+    setHwForm({ title: item.title, description: item.description, courseId: item.courseId || linked?.id || '', lessonId: item.lessonId || '', unit: item.unit, dueDate: item.dueDate, points: item.points, published: item.published, section: item.section || 'الجميع' });
+    setHwImages(Array.isArray(item.images) ? [...item.images] : []);
+    setHwNewImageUrl('');
+    setHwImagesErr('');
     setHwModal({ mode: 'edit', item });
   };
+  // دروس الوحدة المختارة لربط الواجب بدرس محدد (اختياري)
+  useEffect(() => {
+    if (!hwModal || !hwForm.courseId) { setHwLessons([]); return; }
+    jsonFetch(`/api/curriculum/courses/${hwForm.courseId}/lessons`)
+      .then((d) => setHwLessons(Array.isArray(d) ? d : []))
+      .catch(() => setHwLessons([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hwModal, hwForm.courseId]);
   const saveHw = async (e: FormEvent) => {
     e.preventDefault();
     setSavingHw(true);
     try {
+      const body = { ...hwForm, images: hwImages, grade, section: gradeSplit ? (hwForm.section || 'الجميع') : 'الجميع' };
       if (hwModal?.mode === 'create') {
-        await jsonFetch('/api/teacher/assignments', { method: 'POST', body: { ...hwForm, grade, section: gradeSplit ? (hwForm.section || 'الجميع') : 'الجميع' } });
+        await jsonFetch('/api/teacher/assignments', { method: 'POST', body });
         flash('تمت إضافة الواجب بنجاح!');
       } else if (hwModal?.mode === 'edit') {
-        await jsonFetch(`/api/teacher/curriculum/assignments/${hwModal.item.id}`, { method: 'PATCH', body: { ...hwForm, grade, section: gradeSplit ? (hwForm.section || 'الجميع') : 'الجميع' } });
+        await jsonFetch(`/api/teacher/curriculum/assignments/${hwModal.item.id}`, { method: 'PATCH', body });
         flash('تم حفظ الواجب بنجاح!');
       }
       setHwModal(null);
@@ -4312,6 +5127,31 @@ function CurriculumManagerPage({ onlyTab, hero }: {
       loadHw();
       flash('تم حذف الواجب');
     } catch (e: any) { flash(e?.message || 'تعذر الحذف'); }
+  };
+  const openHwReview = async (item: any) => {
+    setHwReview(item);
+    setHwSubs([]);
+    setLoadingHwSubs(true);
+    try {
+      const data = await jsonFetch(`/api/teacher/curriculum/assignments/${item.id}/submissions`);
+      const list = Array.isArray(data) ? data : [];
+      setHwSubs(list);
+      const g: Record<string, { score: string; feedback: string }> = {};
+      for (const s of list) g[s.id] = { score: s.score ?? '', feedback: s.feedback || '' };
+      setHwGrading(g);
+    } catch { setHwSubs([]); } finally { setLoadingHwSubs(false); }
+  };
+  const saveHwGrade = async (sub: any) => {
+    try {
+      const g = hwGrading[sub.id] || { score: '', feedback: '' };
+      await jsonFetch(`/api/teacher/curriculum/assignment-submissions/${sub.id}`, {
+        method: 'PATCH',
+        body: { score: g.score === '' ? null : Number(g.score), feedback: g.feedback },
+      });
+      flash(`تم تقييم ${sub.student?.name || 'الطالب'} ✓`);
+      openHwReview(hwReview);
+      loadHw();
+    } catch (e: any) { flash(e?.message || 'تعذر حفظ التقييم'); }
   };
 
   const flash = (text: string) => { setMsg(text); setTimeout(() => setMsg(''), 3000); };
@@ -4353,6 +5193,8 @@ function CurriculumManagerPage({ onlyTab, hero }: {
   const quickToggleCourse = async (course: any, patch: any) => {
     try {
       await jsonFetch(`/api/teacher/curriculum/courses/${course.id}`, { method: 'PATCH', body: patch });
+      if (patch?.isLocked === false) flash(`تم فتح «${course.title}» للطلاب ✓`);
+      else if (patch?.isLocked === true) flash(`تم قفل «${course.title}» عن الطلاب 🔒`);
       loadCourses();
     } catch (e) { console.error(e); }
   };
@@ -4518,27 +5360,6 @@ function CurriculumManagerPage({ onlyTab, hero }: {
     } catch (e) { console.error(e); }
   };
 
-  /* ---------- البوابة ---------- */
-  const gateCourseLessons = lessons.filter((l) => l.course_id === gateCourseId || (selectedCourseId === gateCourseId));
-  const saveGate = async (quick?: 'open' | 'lock') => {
-    setSavingGate(true);
-    setGateMsg('');
-    try {
-      let payload: any;
-      if (quick === 'open') {
-        payload = { grade, term, unlockedCourseId: null, unlockedLessonId: null, unlockedUnitOrder: 99, note: 'مفتوح بالكامل' };
-      } else if (quick === 'lock') {
-        payload = { grade, term, unlockedCourseId: null, unlockedLessonId: null, unlockedUnitOrder: 0, note: 'مقفل بالكامل' };
-      } else {
-        const course = courses.find((c) => c.id === gateCourseId);
-        payload = { grade, term, unlockedCourseId: gateCourseId || null, unlockedLessonId: gateLessonId || null, unlockedUnitOrder: course ? course.sort_order : 99, note: gateNote };
-      }
-      const res = await jsonFetch('/api/teacher/gates', { method: 'PATCH', body: payload });
-      setGateMsg(res.message || 'تم الحفظ!');
-      loadGates();
-    } catch (e: any) { setGateMsg(e?.message || 'تعذر الحفظ'); } finally { setSavingGate(false); }
-  };
-
   // قوائم مفلترة حسب القسم — بعد كل تعريفات الحالة لتفادي خطأ التهيئة
   const matchSection = (s?: string) => sectionFilter === 'الجميع' || (s || 'الجميع') === sectionFilter;
   const activeTabList: any[] = tab === 'units' ? courses : tab === 'exams' ? exams : tab === 'assignments' ? hwItems : tab === 'notes' ? notes : [];
@@ -4558,7 +5379,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
       <SectionHero
         eyebrow={hero?.eyebrow || 'مكتبة المنهاج الكاملة'}
         title={hero?.title || 'إدارة المنهاج والوحدات'}
-        body={hero?.body || 'الوحدات بأغلفتها والدروس بصورها وملفات HTML، وبوابة «آخر ما وصلنا» التي تحدد ما يراه الطلاب.'}
+        body={hero?.body || 'الوحدات بأغلفتها والدروس بصورها وملفات HTML — ما تفتحه هنا يظهر للطلاب فوراً.'}
         tone="light"
         action={
           tab === 'units' ? (
@@ -4583,7 +5404,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
         <span className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-4 py-2.5 text-sm font-bold text-accent-foreground shadow-sm" title="الفصل المعتمد من الإعدادات">
           <BookOpen size={16} /> {term}
         </span>
-        {gradeSplit && tab !== 'gates' && (
+        {gradeSplit && (
           <>
             <span className="mx-1 hidden h-6 w-px bg-border sm:block" />
             <span className="text-xs font-extrabold text-[#6a1b9a]">القسم:</span>
@@ -4599,19 +5420,6 @@ function CurriculumManagerPage({ onlyTab, hero }: {
           </>
         )}
       </div>
-
-      {!onlyTab && (
-      <div className="mb-6 flex gap-1.5 overflow-auto rounded-2xl bg-muted p-1.5 shadow-inner sm:w-fit">
-        {[
-          { id: 'units' as ManagerTab, label: 'الوحدات والدروس', count: courses.length },
-          { id: 'gates' as ManagerTab, label: 'آخر ما وصلنا (تحكم الطلاب)', count: undefined },
-        ].filter((t) => visibleTabIds.includes(t.id)).map((t) => (
-          <button key={t.id} onClick={() => setTab(t.id)} className={`whitespace-nowrap rounded-xl px-5 py-2.5 text-sm font-bold transition-all ${tab === t.id ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground hover:text-primary'}`} data-testid={`button-content-tab-${t.id}`}>
-            {t.label} {t.count !== undefined ? <span className="mr-1.5 font-mono text-xs opacity-75">({t.count})</span> : null}
-          </button>
-        ))}
-      </div>
-      )}
 
       {tab === 'units' && (
         <>
@@ -4639,6 +5447,14 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                             {statusLabel(course.status, course.isEmpty)}
                           </span>
                         </div>
+                        {(() => {
+                          const visibleToStudents = !course.isLocked && (course.status || 'published') === 'published' && course.isVisible !== false && (course.lessons ?? 0) > 0;
+                          return (
+                            <p className={`mt-1.5 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold ${visibleToStudents ? 'bg-green-500/10 text-green-800' : 'bg-secondary/60 text-muted-foreground'}`}>
+                              {visibleToStudents ? (<><Eye size={12} /> الطلاب يرونها مفتوحة ✓</>) : (course.isLocked || course.status === 'locked') ? (<><Lock size={12} /> مقفلة عن الطلاب 🔒</>) : (<><EyeOff size={12} /> تحقق من الظهور والدروس</>)}
+                            </p>
+                          );
+                        })()}
                         <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{course.description}</p>
                         <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-muted-foreground">
                           <span>ترتيب {course.sort_order}</span>·<span>{course.lessons} دروس</span>·<span>{course.duration || 'بدون مدة'}</span>
@@ -4648,11 +5464,18 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 border-t border-border bg-secondary/30 px-4 py-3">
-                      <Button onClick={() => { if (active) { setSelectedCourseId(null); setLessons([]); } else { setSelectedCourseId(course.id); loadLessons(course.id); } }} variant={active ? 'primary' : 'soft'} className="px-3.5 py-2 text-xs" data-testid={`button-lessons-${course.id}`}>
-                        <Library size={14} /> {active ? 'إخفاء الدروس' : `الدروس (${course.lessons})`}
+                      <Button onClick={() => { setSelectedCourseId(course.id); loadLessons(course.id); }} variant="soft" className="px-3.5 py-2 text-xs" data-testid={`button-lessons-${course.id}`}>
+                        <Library size={14} /> {`الدروس (${course.lessons})`}
                       </Button>
-                      <button type="button" onClick={() => quickToggleCourse(course, { isLocked: !course.isLocked })} title={course.isLocked ? 'فتح الوحدة' : 'قفل الوحدة'} className={`rounded-lg p-2 transition-colors ${course.isLocked ? 'bg-destructive/10 text-destructive' : 'text-muted-foreground hover:bg-muted'}`} data-testid={`button-lock-${course.id}`}>
-                        {course.isLocked ? <Lock size={16} /> : <LockOpen size={16} />}
+                      <button type="button" onClick={() => {
+                        // توحيد القفل: الزر والحالة معاً حتى يعمل القفل دائماً عند الطلاب
+                        const locking = !course.isLocked;
+                        const patch: any = { isLocked: locking };
+                        if (locking && course.status !== 'empty') patch.status = 'locked';
+                        if (!locking && course.status === 'locked') patch.status = 'published';
+                        quickToggleCourse(course, patch);
+                      }} title={course.isLocked ? 'فتح الوحدة للطلاب' : 'قفل الوحدة عن الطلاب'} className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-extrabold transition-all ${course.isLocked ? 'bg-green-600 text-white shadow hover:bg-green-700' : 'bg-destructive/10 text-destructive hover:bg-destructive/20'}`} data-testid={`button-lock-${course.id}`}>
+                        {course.isLocked ? <><LockOpen size={15} /> فتح للطلاب</> : <><Lock size={15} /> قفل</>}
                       </button>
                       <button type="button" onClick={() => quickToggleCourse(course, { isVisible: !course.isVisible })} title={course.isVisible ? 'إخفاء عن الطلاب' : 'إظهار للطلاب'} className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted" data-testid={`button-visible-${course.id}`}>
                         {course.isVisible ? <Eye size={16} /> : <EyeOff size={16} />}
@@ -4662,50 +5485,69 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                         <Button onClick={() => deleteUnit(course)} variant="ghost" className="px-2 text-destructive" data-testid={`button-delete-${course.id}`}><Trash2 size={16} /></Button>
                       </span>
                     </div>
-                    {active && (
-                      <div className="border-t border-border bg-background p-4">
-                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                          <p className="min-w-0 flex-1 truncate text-sm font-bold text-primary">دروس {course.title} ({lessons.length})</p>
-                          <Button onClick={() => openLessonCreate(course.id)} variant="outline" className="shrink-0 px-3 py-1.5 text-xs" data-testid="button-add-lesson"><Plus size={14} /> إضافة درس</Button>
-                        </div>
-                        {loadingLessons ? <StateNotice type="loading" /> : !lessons.length ? (
-                          <p className="rounded-xl bg-secondary/50 px-4 py-5 text-center text-xs text-muted-foreground">الوحدة فارغة — أضف الدرس الأول (مطالعة/قواعد/بلاغة...) بزر «إضافة درس».</p>
-                        ) : (
-                          <div className="grid gap-2 xl:grid-cols-2">
-                            {lessons.map((lesson) => {
-                              const TypeIcon = lessonTypeIcon(lesson.lessonType);
-                              return (
-                                <div key={lesson.id} title={lesson.description || lesson.title} className="group flex items-center gap-2.5 rounded-2xl border border-border bg-card px-3 py-2.5 transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md">
-                                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-primary font-display text-xs font-extrabold text-primary-foreground">{lesson.position}</span>
-                                  {lesson.coverUrl ? <img src={lesson.coverUrl} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" /> : <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-secondary text-primary"><TypeIcon size={15} /></span>}
-                                  <div className="min-w-0 flex-1">
-                                    <p className="truncate text-[13px] font-extrabold leading-5 text-primary">{lesson.title || 'بدون عنوان'}</p>
-                                    <p className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                                      <span className="rounded bg-secondary px-1.5 py-px font-bold text-primary">{lesson.lessonType}</span>
-                                      {lesson.isLocked ? <span className="font-bold text-destructive">🔒</span> : null}
-                                      {!lesson.isVisible ? <span className="font-bold text-destructive">مخفي</span> : null}
-                                      {lesson.images?.length ? <span>· {lesson.images.length}📷</span> : null}
-                                      {lesson.htmlContent || lesson.htmlFileUrl ? <span>· HTML</span> : null}
-                                    </p>
-                                  </div>
-                                  <span className="flex shrink-0 items-center gap-0.5 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
-                                    <button type="button" onClick={() => setPreviewLesson(lesson)} title="معاينة كما يراها الطالب" className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-primary"><Eye size={14} /></button>
-                                    <button type="button" onClick={() => openLessonEdit(lesson)} title="تعديل الدرس" className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-primary"><Pencil size={14} /></button>
-                                    <button type="button" onClick={() => deleteLesson(lesson)} title="حذف الدرس" className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"><Trash2 size={14} /></button>
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </div>
                 );
               })}
             </div>
           )}
         </>
+      )}
+
+      {/* ---------- نافذة دروس الوحدة (منبثقة جميلة بدل التوسعة تحت البطاقة) ---------- */}
+      {selectedCourse && (
+        <Modal title={`دروس ${selectedCourse.title}`} eyebrow={`${grade} · ${term} · ${lessons.length} دروس`} onClose={() => { setSelectedCourseId(null); setLessons([]); }} maxWidth="max-w-3xl">
+          <div className="relative mb-5 overflow-hidden rounded-3xl shadow-lg" style={{ background: `linear-gradient(135deg, ${selectedCourse.color || '#1a5c57'}, ${(selectedCourse.color || '#1a5c57')}bb)` }}>
+            {selectedCourse.coverUrl ? <img src={selectedCourse.coverUrl} alt="" className="absolute inset-0 h-full w-full object-cover" /> : <span className="pointer-events-none absolute -left-4 -top-10 select-none font-display text-[7rem] leading-none text-white/10">ض</span>}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/15 to-transparent" />
+            <div className="relative flex flex-wrap items-center gap-4 p-5">
+              <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-white/20 text-white shadow-xl backdrop-blur-md"><Library size={26} /></span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-display text-lg font-extrabold text-white">{selectedCourse.title}</p>
+                <p className="mt-1 flex flex-wrap items-center gap-2 text-[11px] font-bold text-white/85">
+                  <span className="rounded-lg bg-black/30 px-2 py-0.5 backdrop-blur-sm">ترتيب {selectedCourse.sort_order}</span>
+                  <span className="rounded-lg bg-black/30 px-2 py-0.5 backdrop-blur-sm">{lessons.length} دروس</span>
+                  {(selectedCourse.isLocked || selectedCourse.status === 'locked') ? <span className="rounded-lg bg-destructive/80 px-2 py-0.5 text-white">مقفلة 🔒</span> : <span className="rounded-lg bg-green-500/85 px-2 py-0.5 text-white">مفتوحة ✓</span>}
+                </p>
+              </div>
+              <Button onClick={() => openLessonCreate(selectedCourse.id)} variant="soft" className="shrink-0 bg-white/95 px-4 py-2.5 text-xs font-extrabold shadow-lg" data-testid="button-add-lesson"><Plus size={15} /> إضافة درس</Button>
+            </div>
+          </div>
+          {loadingLessons ? <StateNotice type="loading" /> : !lessons.length ? (
+            <div className="rounded-3xl border border-dashed border-border bg-secondary/30 px-6 py-10 text-center">
+              <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-secondary text-primary"><BookOpen size={24} /></span>
+              <p className="font-display text-base font-bold text-primary">الوحدة فارغة بعد</p>
+              <p className="mt-1 text-sm text-muted-foreground">أضف الدرس الأول (مطالعة / قواعد / بلاغة...) بزر «إضافة درس» بالأعلى.</p>
+              <Button onClick={() => openLessonCreate(selectedCourse.id)} variant="primary" className="mt-4 px-6 py-3"><Plus size={16} /> إضافة أول درس</Button>
+            </div>
+          ) : (
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              {lessons.map((lesson) => {
+                const TypeIcon = lessonTypeIcon(lesson.lessonType);
+                return (
+                  <div key={lesson.id} title={lesson.description || lesson.title} className="flex items-center gap-2.5 rounded-2xl border border-border bg-card px-3 py-3 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md">
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-primary font-display text-xs font-extrabold text-primary-foreground">{lesson.position}</span>
+                    {lesson.coverUrl ? <img src={lesson.coverUrl} alt="" className="h-10 w-10 shrink-0 rounded-xl object-cover" /> : <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-secondary text-primary"><TypeIcon size={16} /></span>}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[13px] font-extrabold leading-5 text-primary">{lesson.title || 'بدون عنوان'}</p>
+                      <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+                        <span className="rounded bg-secondary px-1.5 py-px font-bold text-primary">{lesson.lessonType}</span>
+                        {lesson.isLocked ? <span className="font-bold text-destructive">🔒 مقفل</span> : null}
+                        {!lesson.isVisible ? <span className="font-bold text-destructive">مخفي</span> : null}
+                        {lesson.images?.length ? <span>· {lesson.images.length}📷</span> : null}
+                        {lesson.htmlContent || lesson.htmlFileUrl ? <span>· HTML</span> : null}
+                      </p>
+                    </div>
+                    <span className="flex shrink-0 items-center gap-1">
+                      <button type="button" onClick={() => setPreviewLesson(lesson)} title="معاينة كما يراها الطالب" className="rounded-xl bg-secondary/70 p-2.5 text-primary transition-colors hover:bg-secondary active:scale-95"><Eye size={16} /></button>
+                      <button type="button" onClick={() => openLessonEdit(lesson)} title="تعديل الدرس" className="rounded-xl bg-secondary/70 p-2.5 text-primary transition-colors hover:bg-secondary active:scale-95"><Pencil size={16} /></button>
+                      <button type="button" onClick={() => deleteLesson(lesson)} title="حذف الدرس" className="rounded-xl bg-destructive/10 p-2.5 text-destructive transition-colors hover:bg-destructive/20 active:scale-95"><Trash2 size={16} /></button>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Modal>
       )}
 
       {tab === 'exams' && (
@@ -4776,18 +5618,30 @@ function CurriculumManagerPage({ onlyTab, hero }: {
           ) : (
             <div className="grid gap-3 md:grid-cols-2">
               {shownHw.map((hw) => (
-                <div key={hw.id} className="flex items-center gap-4 rounded-2xl border border-border bg-card p-4 shadow-sm" data-testid={`row-hw-${hw.id}`}>
-                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-secondary text-primary"><ClipboardCheck size={20} /></span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate text-base font-bold text-primary">{hw.title}</p>
-                      {hw.section && hw.section !== 'الجميع' ? <span className="rounded-full bg-[#6a1b9a]/15 px-2.5 py-0.5 text-[11px] font-bold text-[#6a1b9a]">{hw.section === 'طالب' ? 'الطلاب فقط' : 'الطالبات فقط'}</span> : null}
-                      {!hw.published ? <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-bold text-muted-foreground">مسودة</span> : null}
+                <div key={hw.id} className="rounded-2xl border border-border bg-card p-4 shadow-sm" data-testid={`row-hw-${hw.id}`}>
+                  <div className="flex items-center gap-4">
+                    <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-secondary text-primary"><ClipboardCheck size={20} /></span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-base font-bold text-primary">{hw.title}</p>
+                        {(hw.submissionsCount || 0) > 0 ? (
+                          <span className="rounded-full bg-accent/25 px-2.5 py-0.5 text-[11px] font-extrabold text-accent-foreground">{hw.submissionsCount} تسليمات</span>
+                        ) : null}
+                        {hw.section && hw.section !== 'الجميع' ? <span className="rounded-full bg-[#6a1b9a]/15 px-2.5 py-0.5 text-[11px] font-bold text-[#6a1b9a]">{hw.section === 'طالب' ? 'الطلاب فقط' : 'الطالبات فقط'}</span> : null}
+                        {!hw.published ? <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-bold text-muted-foreground">مسودة</span> : null}
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">{hw.unit || 'عام'} {hw.dueDate ? `· حتى ${hw.dueDate}` : ''} · {hw.points} نقاط{Array.isArray(hw.images) && hw.images.length ? ` · ${hw.images.length}📷` : ''}</p>
                     </div>
-                    <p className="mt-1 text-xs text-muted-foreground">{hw.unit || 'عام'} {hw.dueDate ? `· حتى ${hw.dueDate}` : ''} · {hw.points} نقاط</p>
                   </div>
-                  <Button onClick={() => openHwEdit(hw)} variant="soft" className="px-3 py-2 text-xs"><Pencil size={14} /></Button>
-                  <Button onClick={() => deleteHw(hw)} variant="ghost" className="px-2 text-destructive"><Trash2 size={16} /></Button>
+                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
+                    <Button onClick={() => openHwReview(hw)} variant="primary" className="px-4 py-2 text-xs" data-testid={`button-hw-review-${hw.id}`}>
+                      <Eye size={14} /> مراجعة التسليمات ({hw.submissionsCount || 0})
+                    </Button>
+                    <span className="mr-auto flex items-center gap-1">
+                      <Button onClick={() => openHwEdit(hw)} variant="soft" className="px-3 py-2 text-xs"><Pencil size={14} /></Button>
+                      <Button onClick={() => deleteHw(hw)} variant="ghost" className="px-2 text-destructive"><Trash2 size={16} /></Button>
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -4830,66 +5684,6 @@ function CurriculumManagerPage({ onlyTab, hero }: {
         </>
       )}
 
-      {tab === 'gates' && (
-        <div className="grid gap-5 lg:grid-cols-[1fr_1fr]">
-          <div className="rounded-3xl border border-accent/40 bg-gradient-to-b from-accent/15 to-card p-6 shadow-sm">
-            <div className="flex items-center gap-3">
-              <span className="grid h-12 w-12 place-items-center rounded-2xl bg-accent text-accent-foreground"><ShieldCheck size={22} /></span>
-              <div>
-                <h3 className="text-lg font-bold text-primary">آخر ما وصلنا — {grade} · {term}</h3>
-                <p className="mt-0.5 text-xs text-muted-foreground">الطلاب يرون فقط الوحدات والدروس حتى هذه النقطة، والباقي مقفل.</p>
-              </div>
-            </div>
-            <div className="mt-5 space-y-4">
-              <Field2 label="آخر وحدة وصلها الطلاب">
-                <select value={gateCourseId} onChange={(e) => { setGateCourseId(e.target.value); setGateLessonId(''); if (e.target.value) loadLessons(e.target.value); }} className={inputCls} data-testid="select-gate-course">
-                  <option value="">الكل مفتوح — كل الوحدات ظاهرة</option>
-                  {courses.map((c) => <option key={c.id} value={c.id}>حتى الوحدة {c.sort_order}: {c.title}</option>)}
-                </select>
-              </Field2>
-              {gateCourseId ? (
-                <Field2 label="آخر درس داخل هذه الوحدة (اختياري)">
-                  <select value={gateLessonId} onChange={(e) => setGateLessonId(e.target.value)} className={inputCls} data-testid="select-gate-lesson">
-                    <option value="">كل دروس الوحدة مفتوحة</option>
-                    {(selectedCourseId === gateCourseId ? lessons : []).map((l: any) => <option key={l.id} value={l.id}>حتى الدرس {l.position}: {l.title}</option>)}
-                  </select>
-                </Field2>
-              ) : null}
-              <Field2 label="ملاحظة للمعلم (خاصة — لا يراها الطلاب)">
-                <input value={gateNote} onChange={(e) => setGateNote(e.target.value)} placeholder="مثال: توقفنا عند الحال (2) قبل الامتحان" className={inputCls} data-testid="input-gate-note" />
-              </Field2>
-              <div className="flex flex-wrap gap-2">
-                <Button onClick={() => saveGate()} disabled={savingGate} data-testid="button-save-gate"><Save size={16} /> {savingGate ? 'جارٍ الحفظ...' : 'حفظ نقطة الوصول'}</Button>
-                <Button onClick={() => saveGate('open')} variant="soft" className="text-xs">فتح الكل</Button>
-                <Button onClick={() => saveGate('lock')} variant="ghost" className="text-xs text-destructive">قفل الكل</Button>
-              </div>
-              {gateMsg ? <p className="rounded-xl bg-accent/20 px-4 py-2.5 text-sm font-bold text-accent-foreground">{gateMsg}</p> : null}
-            </div>
-          </div>
-          <div className="rounded-3xl border border-border bg-card p-6">
-            <h3 className="text-lg font-bold text-primary">الوضع الحالي للطلاب</h3>
-            {currentGate?.unlockedCourseId || (currentGate && currentGate.unlockedUnitOrder < 99) ? (
-              <div className="mt-4 space-y-2">
-                {courses.map((c) => {
-                  const open = currentGate.unlockedCourseId
-                    ? courses.find((x: any) => x.id === currentGate.unlockedCourseId)?.sort_order >= c.sort_order
-                    : c.sort_order <= (currentGate.unlockedUnitOrder ?? 99);
-                  return (
-                    <div key={c.id} className="flex items-center gap-3 rounded-xl border border-border px-3 py-2.5 text-sm">
-                      <span className={`grid h-8 w-8 place-items-center rounded-lg ${open ? 'bg-green-100 text-green-800' : 'bg-muted text-muted-foreground'}`}>{open ? <Check size={15} /> : <Lock size={14} />}</span>
-                      <span className={`flex-1 truncate font-semibold ${open ? 'text-primary' : 'text-muted-foreground'}`}>{c.sort_order}. {c.title}</span>
-                      <span className="text-xs font-bold text-muted-foreground">{open ? 'ظاهر' : 'مقفل'}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="mt-4 rounded-xl bg-green-500/10 px-4 py-3 text-sm font-semibold text-green-800">كل الوحدات مفتوحة حالياً لطلاب {grade} · {term}.</p>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* ---------- نافذة الوحدة (عريضة + معاينة حية) ---------- */}
       {unitModal && (
         <Modal title={unitModal.mode === 'create' ? 'إضافة وحدة جديدة' : 'تعديل الوحدة'} eyebrow={`${grade} · ${term}`} onClose={() => setUnitModal(null)} maxWidth="max-w-5xl">
@@ -4911,7 +5705,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                   <p className="mt-1 flex flex-wrap items-center gap-2 text-[11px] font-bold text-white/85">
                     <span className="rounded-lg bg-black/30 px-2 py-0.5 backdrop-blur-sm">ترتيب {unitForm.sortOrder || 1}</span>
                     <span>{unitForm.duration || 'بدون مدة'}</span>
-                    <span className="rounded-lg bg-accent px-2 py-0.5 text-[#3a2c07]">{unitForm.status === 'empty' ? 'قريباً' : unitForm.isLocked ? 'مقفلة' : 'مفتوحة'}</span>
+                    <span className="rounded-lg bg-accent px-2 py-0.5 text-[#3a2c07]">{unitForm.status === 'empty' ? 'قريباً' : (unitForm.isLocked || unitForm.status === 'locked' || unitForm.status === 'hidden') ? 'مقفلة 🔒' : 'مفتوحة ✓'}</span>
                   </p>
                 </div>
               </div>
@@ -5097,11 +5891,14 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                               // ترميز المحتوى base64 حتى لا يفحصه ImageKit ويرفضه (403) — يُفك الترميز عند العرض
                               const encoded = 'ARDB64\n' + btoa(unescape(encodeURIComponent(text)));
                               const txt = new File([encoded], f.name.replace(/\.html?$/i, '') + '.txt', { type: 'text/plain' });
-                              return uploadFileToCloud(txt, '/ard-al-lughah/html');
+                              return uploadFileToCloud(txt, '/ard-al-lughah/html').then((res) => ({ res, kb: htmlKb(text) }));
                             })
-                            .then((res) => {
-                              if (res?.url) setLessonForm((lf: any) => ({ ...lf, htmlFileUrl: res.url }));
-                              flash('تم رفع ملف HTML مشفّراً سحابياً ✓ (يعمل دائماً بلا 403 ولا يستهلك Supabase)');
+                            .then(({ res, kb }) => {
+                              if (res?.url) {
+                                setLessonForm((lf: any) => ({ ...lf, htmlFileUrl: res.url }));
+                                setShowHtmlPreview(true);
+                                flash(`تم رفع ملف HTML (${kb} ك.ب) سحابياً ✓ — المعاينة ظهرت بالأسفل، تأكد أن التصميم يعمل قبل الحفظ${kb > 600 ? ' — ملاحظة: ملف كبير قد يكون بطيئاً على الأجهزة الضعيفة' : ''}`);
+                              }
                             })
                             .catch((err: Error) => flash(err?.message || 'تعذر رفع ملف HTML'))
                             .finally(() => { setUploadingHtml(false); target.value = ''; });
@@ -5113,11 +5910,17 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                     </div>
                   </div>
                   <textarea value={lessonForm.htmlContent || ''} onChange={(e) => setLessonForm({ ...lessonForm, htmlContent: e.target.value })} rows={3} dir="ltr" placeholder="<h1>... كود HTML مضمّن (اختياري — يُحفظ كنص) ..." className={`${inputCls} font-mono text-xs`} />
+                  {(lessonForm.htmlContent || '').length > 0 ? (
+                    <p className={`mt-2 text-[11px] font-bold leading-5 ${(lessonForm.htmlContent || '').length * 2 / 1024 > 250 ? 'text-amber-800' : 'text-muted-foreground'}`}>
+                      حجم الكود الملصق: {htmlKb(lessonForm.htmlContent)} ك.ب
+                      {(lessonForm.htmlContent || '').length * 2 / 1024 > 250 ? ' — كبير نسبياً: الأفضل رفعه كملف بزر «ارفع ملف HTML» بدل اللصق.' : ''}
+                    </p>
+                  ) : null}
                   <p className="mt-2 text-[11px] leading-5 text-muted-foreground">ملف HTML يُرمَّز ويُرفع كنص مشفّر على ImageKit — يعمل دائماً بلا 403 وبلا أي استهلاك من Supabase. (الملفات المرفوعة سابقاً بصيغة خام تحتاج إعادة رفع من جهازك).</p>
                   <div className="mt-2 flex items-center gap-2">
                     <input value={lessonForm.htmlFileUrl || ''} onChange={(e) => setLessonForm({ ...lessonForm, htmlFileUrl: e.target.value })} placeholder="رابط خارجي فقط (مثال: Google Sites) — اتركه فارغاً للمحتوى الداخلي" dir="ltr" className={`${inputCls} font-mono text-xs`} data-testid="input-lesson-html-url" />
                   </div>
-                  {showHtmlPreview && lessonForm.htmlContent ? <iframe title="معاينة HTML" sandbox="allow-same-origin" srcDoc={lessonForm.htmlContent} className="mt-3 h-64 w-full rounded-xl border border-border bg-white" /> : null}
+                  {showHtmlPreview && (lessonForm.htmlContent || lessonForm.htmlFileUrl) ? <HtmlPreviewFrame content={lessonForm.htmlContent} fileUrl={lessonForm.htmlFileUrl} /> : null}
                 </div>
               </div>
               <div className="grid gap-4 sm:grid-cols-3">
@@ -5346,8 +6149,65 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                 <p className="flex items-center gap-2 text-sm font-extrabold text-primary"><ClipboardCheck size={16} /> تفاصيل الواجب</p>
                 <Field2 label="عنوان الواجب"><input value={hwForm.title || ''} onChange={(e) => setHwForm({ ...hwForm, title: e.target.value })} required placeholder="مثال: أعرب الجمل التالية" className={inputCls} data-testid="input-hw-title" /></Field2>
                 <Field2 label="التعليمات والوصف"><textarea value={hwForm.description || ''} onChange={(e) => setHwForm({ ...hwForm, description: e.target.value })} rows={4} placeholder="اشرح المطلوب بالتفصيل..." className={`${inputCls} resize-none leading-6`} /></Field2>
+                <div className="rounded-2xl border border-dashed border-border p-4">
+                  <p className="mb-3 text-sm font-semibold">صور الواجب التوضيحية ({hwImages.length}) — تظهر للطالب مع التعليمات</p>
+                  {hwImages.length ? (
+                    <div className="mb-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                      {hwImages.map((src, i) => (
+                        <div key={i} className="group relative overflow-hidden rounded-xl border border-border">
+                          <img src={src} alt={`صورة ${i + 1}`} className="h-20 w-full object-cover" />
+                          <button type="button" onClick={() => setHwImages((imgs) => imgs.filter((_, x) => x !== i))} className="absolute left-1 top-1 rounded-lg bg-black/60 p-1 text-white opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"><X size={13} /></button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {hwImagesErr ? <p className="mb-2 text-xs font-bold text-destructive">{hwImagesErr}</p> : null}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input value={hwNewImageUrl} onChange={(e) => setHwNewImageUrl(e.target.value)} placeholder="الصق رابط صورة ثم اضغط إضافة" dir="ltr" className={`${inputCls} font-mono text-xs`} />
+                    <Button type="button" onClick={() => { if (hwNewImageUrl.trim()) { setHwImages((imgs) => [...imgs, hwNewImageUrl.trim()]); setHwNewImageUrl(''); } }} variant="soft" className="px-3 py-2 text-xs"><Plus size={14} /> إضافة الرابط</Button>
+                    <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-secondary px-3 py-2 text-xs font-bold text-primary hover:bg-accent/40 ${uploadingHw ? 'opacity-60' : ''}`}>
+                      {uploadingHw ? <RefreshCw size={13} className="animate-spin" /> : <Upload size={13} />} {uploadingHw ? 'جارٍ الرفع...' : 'رفع من الجهاز'}
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        const target = e.target;
+                        if (!f || uploadingHw) return;
+                        setHwImagesErr('');
+                        setUploadingHw(true);
+                        uploadFileToCloud(f, '/ard-al-lughah/assignments')
+                          .then((res) => { if (res?.url) setHwImages((imgs) => [...imgs, res.url]); })
+                          .catch((err: any) => setHwImagesErr(err?.message || 'تعذر رفع الصورة'))
+                          .finally(() => { setUploadingHw(false); target.value = ''; });
+                      }} />
+                    </label>
+                  </div>
+                </div>
                 <div className="grid gap-4 sm:grid-cols-3">
-                  <Field2 label="الوحدة"><input value={hwForm.unit || ''} onChange={(e) => setHwForm({ ...hwForm, unit: e.target.value })} placeholder="مثال: الوحدة الأولى" className={inputCls} /></Field2>
+                  <Field2 label="الوحدة المرتبطة (يظهر الواجب تحتها كتكليف مطلوب)">
+                    <select
+                      value={hwForm.courseId || ''}
+                      onChange={(e) => {
+                        const c = courses.find((x: any) => x.id === e.target.value);
+                        setHwForm({ ...hwForm, courseId: e.target.value, lessonId: '', unit: c ? c.title : '' });
+                      }}
+                      className={inputCls}
+                      data-testid="select-hw-unit"
+                    >
+                      <option value="">عام — بلا وحدة محددة</option>
+                      {courses.map((c: any) => <option key={c.id} value={c.id}>الوحدة {c.sort_order}: {c.title}</option>)}
+                    </select>
+                  </Field2>
+                  <Field2 label="الدرس المستهدف (اختياري — يظهر الواجب تحت هذا الدرس بسهم)">
+                    <select
+                      value={hwForm.lessonId || ''}
+                      onChange={(e) => setHwForm({ ...hwForm, lessonId: e.target.value })}
+                      className={inputCls}
+                      disabled={!hwForm.courseId}
+                      data-testid="select-hw-lesson"
+                    >
+                      <option value="">{hwForm.courseId ? 'كل دروس الوحدة' : 'اختر الوحدة أولاً'}</option>
+                      {hwLessons.map((l: any) => <option key={l.id} value={l.id}>{l.position}. {l.title}</option>)}
+                    </select>
+                  </Field2>
                   <Field2 label="آخر موعد"><input type="date" value={hwForm.dueDate || ''} onChange={(e) => setHwForm({ ...hwForm, dueDate: e.target.value })} className={inputCls} /></Field2>
                   <Field2 label="النقاط"><input type="number" min={1} value={hwForm.points || 20} onChange={(e) => setHwForm({ ...hwForm, points: Number(e.target.value) })} className={inputCls} /></Field2>
                 </div>
@@ -5363,6 +6223,47 @@ function CurriculumManagerPage({ onlyTab, hero }: {
               <Button type="submit" disabled={savingHw} variant="primary" className="px-8 py-3 shadow-md" data-testid="button-save-hw">{savingHw ? 'جارٍ الحفظ...' : 'حفظ الواجب ✓'}</Button>
             </div>
           </form>
+        </Modal>
+      )}
+
+      {/* ---------- نافذة مراجعة تسليمات الواجب (حلول الطلاب + العلامات) ---------- */}
+      {hwReview && (
+        <Modal title={hwReview.title} eyebrow={`تسليمات الطلاب · ${hwSubs.length} تسليمات · ${hwReview.points} نقاط`} onClose={() => setHwReview(null)} maxWidth="max-w-3xl">
+          {loadingHwSubs ? <StateNotice type="loading" /> : !hwSubs.length ? (
+            <p className="rounded-2xl bg-secondary/50 px-4 py-8 text-center text-sm text-muted-foreground">لم يسلّم أي طالب هذا الواجب بعد — سيظهرون هنا فور التسليم.</p>
+          ) : (
+            <div className="space-y-4">
+              {hwSubs.map((sub) => (
+                <div key={sub.id} className="rounded-2xl border border-border bg-background p-4">
+                  <div className="flex items-center gap-3">
+                    <Avatar name={sub.student?.name} src={sub.student?.avatarUrl} size="sm" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-primary">{sub.student?.name || 'طالب'}</p>
+                      <p className="text-xs text-muted-foreground">{[sub.student?.grade, sub.student?.school].filter(Boolean).join(' · ')}{sub.submittedAt ? ` · سُلّم ${String(sub.submittedAt).slice(0, 10)}` : ''}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-bold ${sub.status === 'تم التقييم' ? 'bg-green-500/15 text-green-800' : 'bg-accent/25 text-accent-foreground'}`}>{sub.status}</span>
+                  </div>
+                  {sub.answer ? (
+                    <p className="mt-3 whitespace-pre-line rounded-xl bg-secondary/40 p-3.5 text-sm leading-7 text-primary">{sub.answer}</p>
+                  ) : null}
+                  {Array.isArray(sub.photos) && sub.photos.length ? (
+                    <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                      {sub.photos.map((src: string, i: number) => (
+                        <a key={i} href={src} target="_blank" rel="noreferrer" className="group overflow-hidden rounded-xl border border-border" title="اضغط للعرض بالحجم الكامل">
+                          <img src={src} alt={`حل ${sub.student?.name} — صورة ${i + 1}`} loading="lazy" className="h-28 w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                        </a>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="mt-3 grid gap-2 rounded-2xl bg-secondary/40 p-3 sm:grid-cols-[110px_1fr_auto]">
+                    <input type="number" min={0} max={hwReview.points || 100} value={hwGrading[sub.id]?.score ?? ''} onChange={(e) => setHwGrading((g) => ({ ...g, [sub.id]: { score: e.target.value, feedback: g[sub.id]?.feedback ?? '' } }))} placeholder={`العلامة / ${hwReview.points}`} className={`${inputCls} py-2 text-sm`} />
+                    <input value={hwGrading[sub.id]?.feedback ?? ''} onChange={(e) => setHwGrading((g) => ({ ...g, [sub.id]: { score: g[sub.id]?.score ?? '', feedback: e.target.value } }))} placeholder="ملاحظتك على الحل..." className={`${inputCls} py-2 text-sm`} />
+                    <Button onClick={() => saveHwGrade(sub)} variant="primary" className="px-4 py-2 text-xs"><Save size={14} /> حفظ التقييم</Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </Modal>
       )}
 
@@ -5433,7 +6334,6 @@ function StudentDashboardNew() {
   const announcementsQuery = useListAnnouncements();
   const assessmentsQuery = useListAssessments();
   const [gradeNotes, setGradeNotes] = useState<any[] | null>(null);
-  const [sumCount, setSumCount] = useState<number | null>(null);
   const [nbPending, setNbPending] = useState<number | null>(null);
 
   const dashGrade = query.data?.student?.grade;
@@ -5447,9 +6347,6 @@ function StudentDashboardNew() {
     if (dashId) params.set('student_id', dashId);
     jsonFetch(`/api/curriculum/announcements?${params.toString()}`)
       .then((d) => { if (Array.isArray(d) && d.length) setGradeNotes(d); })
-      .catch(() => undefined);
-    jsonFetch(`/api/curriculum/summaries?grade=${encodeURIComponent(dashGrade)}`)
-      .then((d) => { if (Array.isArray(d)) setSumCount(d.length); })
       .catch(() => undefined);
     if (dashId) {
       jsonFetch(`/api/curriculum/notebooks?grade=${encodeURIComponent(dashGrade)}&student_id=${dashId}`)
@@ -5469,7 +6366,7 @@ function StudentDashboardNew() {
       <SectionHero
         eyebrow={`مرحباً بك يا ${firstName} ✨`}
         title="واصل رحلتك مع لغة الضاد"
-        body="خطوة جادة اليوم تصنع تفوقك — وحداتك وملخصاتك ودفترك واختباراتك كلها في مكان واحد."
+        body="خطوة جادة اليوم تصنع تفوقك — وحداتك ودفترك وواجباتك واختباراتك كلها في مكان واحد."
         action={
           <Link href="/student/courses" className="inline-flex items-center gap-2 rounded-2xl bg-accent px-6 py-3.5 text-sm font-extrabold text-[#3a2c07] shadow-lg shadow-accent/30 transition-all hover:-translate-y-0.5 hover:shadow-xl" data-testid="button-learning-plan">
             <CalendarDays size={17} /> تصفح خطتي الدراسية
@@ -5488,9 +6385,9 @@ function StudentDashboardNew() {
         <>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <QuickTile icon={BookOpen} title="وحداتي التعليمية" body="الدروس التي وصلتم إليها مع الأستاذ" href="/student/courses" badge={`${data.nextUp?.length ?? 0} وحدات`} color="#17413f" />
-            <QuickTile icon={NotebookText} title="ملخصاتي" body="بطاقات مراجعة وخرائط ذهنية مركزة" href="/student/summaries" badge={sumCount !== null ? `${sumCount} ملخصات` : 'جديد'} color="#8a508f" />
             <QuickTile icon={NotebookPen} title="دفتري" body="صوّر دفترك وسلّمه للأستاذ" href="/student/notebook" badge={nbPending ? `${nbPending} بانتظارك` : 'محدّث'} color="#b7791f" />
             <QuickTile icon={Target} title="اختباراتي" body="قياس فهمك أولاً بأول" href="/student/assessments" badge={`${assessmentsQuery.data?.length ?? 0} اختبارات`} color="#0d47a1" />
+            <QuickTile icon={ClipboardCheck} title="واجباتي" body="تكليفات الأستاذ المطلوبة منك" href="/student/assignments" badge="مطلوبة" color="#2f7772" />
           </div>
 
           {student?.book ? (
@@ -5564,12 +6461,13 @@ function KpiGradient({ label, value, icon: Icon, from, to, testId }: { label: st
 function TeacherDashboardNew() {
   const query = useGetTeacherDashboard();
   const d = query.data;
+  const identity = usePlatformIdentity();
 
   return (
     <Shell mode="teacher">
       <SectionHero
         eyebrow="لوحة المتابعة الإدارية"
-        title="مرحباً بالأستاذ أحمد يحيى الأسطل"
+        title={`مرحباً بـ${identity.teacherName}`}
         body="نبض منصة أرض اللغة: الطلاب والوحدات والملخصات والدفاتر والاختبارات — كلها تحت عينك."
         action={
           <Link href="/teacher/content" className="inline-flex items-center gap-2 rounded-2xl bg-accent px-6 py-3.5 text-sm font-extrabold text-[#3a2c07] shadow-lg shadow-accent/30 transition-all hover:-translate-y-0.5 hover:shadow-xl" data-testid="button-teacher-action">
@@ -5594,7 +6492,7 @@ function TeacherDashboardNew() {
           </div>
 
           <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <QuickTile icon={Library} title="المنهاج والوحدات" body="الوحدات والدروس وبوابة آخر ما وصلنا" href="/teacher/content" badge={`${d.stats.units} وحدات`} color="#17413f" />
+            <QuickTile icon={Library} title="المنهاج والوحدات" body="الوحدات والدروس والتحكم بظهورها للطلاب" href="/teacher/content" badge={`${d.stats.units} وحدات`} color="#17413f" />
             <QuickTile icon={Target} title="الاختبارات" body="بنك الاختبارات وباني الأسئلة" href="/teacher/exams" badge={`${d.stats.assessments} اختبارات`} color="#0d47a1" />
             <QuickTile icon={ClipboardCheck} title="الواجبات" body="تكليفات الصفوف ومواعيدها" href="/teacher/assignments" badge={`${d.stats.assignments} واجبات`} color="#2f7772" />
             <QuickTile icon={Bell} title="الإعلانات" body="رسائلك وتوجيهاتك للطلاب" href="/teacher/announcements" badge="نشر" color="#b7791f" />
@@ -5690,7 +6588,7 @@ function TeacherDashboardNew() {
 }
 
 /* =========================================================================
-   الملخصات — طالب ومعلم
+   مهام الدفتر — طالب ومعلم
 ========================================================================= */
 
 function summaryTypeColor(type: string) {
@@ -5700,101 +6598,6 @@ function summaryTypeColor(type: string) {
     case 'بطاقة مراجعة': return '#b7791f';
     default: return '#2e7d32';
   }
-}
-
-function StudentSummariesPage() {
-  const { grade: effectiveGrade, term, split, gender, studentId } = useStudentGradeTerm();
-  const [typeFilter, setTypeFilter] = useState('الكل');
-  const [items, setItems] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [active, setActive] = useState<any | null>(null);
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({ grade: effectiveGrade, term });
-      if (studentId) params.set('student_id', studentId);
-      const data = await jsonFetch(`/api/curriculum/summaries?${params.toString()}`);
-      setItems(Array.isArray(data) ? data : []);
-    } catch { setItems([]); } finally { setLoading(false); }
-  };
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [effectiveGrade, term, studentId]);
-
-  const filtered = typeFilter === 'الكل' ? items : items.filter((s) => s.summaryType === typeFilter);
-
-  return (
-    <Shell mode="student">
-      <SectionHero
-        eyebrow="راجع بذكاء"
-        title="ملخصاتك المركزة"
-        body={`بطاقات مراجعة وخرائط ذهنية وأوراق عمل لـ ${effectiveGrade} · ${term} — خلاصة المنهاج في دقائق.`}
-        stats={[
-          { value: items.length, label: 'ملخص متاح' },
-          { value: new Set(items.map((s) => s.summaryType)).size, label: 'أنواع' },
-          { value: new Set(items.map((s) => s.unitTitle).filter(Boolean)).size, label: 'وحدات مغطاة' },
-        ]}
-      />
-      <GradeTermBadge grade={effectiveGrade} term={term} split={split} gender={gender} />
-      <div className="mb-6 flex flex-wrap gap-2">
-        {['الكل', ...SUMMARY_TYPES].map((t) => (
-          <button key={t} type="button" onClick={() => setTypeFilter(t)} className={`rounded-full px-4 py-2 text-xs font-bold transition-all ${typeFilter === t ? 'bg-primary text-primary-foreground shadow-md' : 'bg-secondary text-muted-foreground hover:text-primary'}`}>{t}</button>
-        ))}
-      </div>
-
-      {loading ? <StateNotice type="loading" /> : !filtered.length ? (
-        <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-14 text-center">
-          <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-secondary text-primary"><NotebookText size={24} /></span>
-          <p className="font-display text-lg font-bold text-primary">لا توجد ملخصات هنا بعد</p>
-          <p className="mt-1 text-sm text-muted-foreground">الأستاذ يجهّز لك ملخصات هذا القسم — عُد قريباً.</p>
-        </div>
-      ) : (
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((s) => {
-            const color = summaryTypeColor(s.summaryType);
-            return (
-              <div key={s.id} className="group overflow-hidden rounded-[1.8rem] border border-border bg-card shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl" data-testid={`card-summary-${s.id}`}>
-                <div className="relative h-36 overflow-hidden" style={{ background: `linear-gradient(135deg, ${color}, ${color}bb)` }}>
-                  {s.coverUrl ? <img src={s.coverUrl} alt="" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" /> : <div className="absolute -left-4 -top-10 select-none font-display text-[8rem] leading-none text-white/15">خ</div>}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
-                  <span className="absolute right-4 top-4 rounded-full bg-white/90 px-3 py-1 text-[11px] font-extrabold" style={{ color }}>{s.summaryType}</span>
-                  <p className="absolute bottom-3 right-4 left-4 truncate text-sm font-bold text-white">{s.unitTitle || s.grade}</p>
-                </div>
-                <div className="p-5">
-                  <h3 className="font-display text-base font-bold leading-snug text-primary">{s.title}</h3>
-                  <p className="mt-2 line-clamp-2 min-h-10 text-xs leading-6 text-muted-foreground">{s.description}</p>
-                  <div className="mt-4 flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground">{s.fileUrl ? <><FileText size={13} /> مرفق قابل للتحميل</> : <><BookOpen size={13} /> قراءة مباشرة</>}</span>
-                    <Button onClick={() => setActive(s)} variant="soft" className="px-4 py-2 text-xs">افتح الملخص <ArrowLeft size={14} /></Button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {active && (
-        <Modal title={active.title} eyebrow={`${active.summaryType} · ${active.unitTitle || active.grade}`} onClose={() => setActive(null)} maxWidth="max-w-2xl">
-          <div className="space-y-5" dir="rtl">
-            {active.coverUrl ? <img src={active.coverUrl} alt={active.title} className="max-h-64 w-full rounded-2xl border border-border object-cover" /> : null}
-            {active.description ? <p className="text-sm leading-7 text-muted-foreground">{active.description}</p> : null}
-            {active.content ? (
-              <div className="rounded-2xl border border-accent/30 bg-accent/10 p-5">
-                <h4 className="mb-2 flex items-center gap-2 text-sm font-bold text-primary"><Sparkles size={15} /> خلاصة الملخص</h4>
-                <p className="whitespace-pre-line text-sm leading-8 text-primary/90">{active.content}</p>
-              </div>
-            ) : null}
-            {active.fileUrl ? (
-              <a href={active.fileUrl} target="_blank" rel="noreferrer" download className="flex items-center justify-between gap-3 rounded-2xl bg-primary p-4 text-sm font-bold text-primary-foreground shadow-md transition-transform hover:-translate-y-0.5" data-testid="link-summary-file">
-                <span className="flex items-center gap-2"><Download size={18} /> تحميل المرفق (PDF / صورة)</span>
-                <ArrowLeft size={16} />
-              </a>
-            ) : null}
-          </div>
-        </Modal>
-      )}
-    </Shell>
-  );
 }
 
 function TeacherSummariesPage() {
@@ -5984,7 +6787,9 @@ function StudentNotebookPage() {
   const [uploading, setUploading] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState('');
+  const [msgOk, setMsgOk] = useState(true);
   const [mine, setMine] = useState<any | null>(null);
+  const [deepOpened, setDeepOpened] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -5996,6 +6801,20 @@ function StudentNotebookPage() {
     } catch { setTasks([]); } finally { setLoading(false); }
   };
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [effectiveGrade, term, student?.id]);
+
+  // فتح مهمة محددة من رابط الوحدة: /student/notebook?task=ID
+  useEffect(() => {
+    if (deepOpened || loading || !tasks.length || active) return;
+    try {
+      const tid = new URLSearchParams(window.location.search).get('task');
+      if (tid) {
+        const t = tasks.find((x: any) => x.id === tid);
+        if (t) openTask(t);
+      }
+    } catch { /* تجاهل */ }
+    setDeepOpened(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks, loading]);
 
   const openTask = (task: any) => {
     setActive(task);
@@ -6012,14 +6831,17 @@ function StudentNotebookPage() {
 
   const pickPhotos = (files: File[]) => {
     if (!files.length || uploading) return;
+    setMsg(''); setMsgOk(true);
     setUploading(files.length);
     (async () => {
       for (const f of files) {
         try {
           const res = await uploadStudentPhoto(f);
           if (res?.url) setPhotos((p) => [...p, res.url]);
+          else { setMsgOk(false); setMsg('تعذر رفع صورة — تحقق من الاتصال وحاول مجدداً'); }
         } catch (e: any) {
-          setMsg(e?.message || 'تعذر رفع صورة');
+          setMsgOk(false);
+          setMsg(e?.message || 'تعذر رفع الصورة — تحقق من الاتصال وحاول مجدداً');
         } finally {
           setUploading((n) => Math.max(n - 1, 0));
         }
@@ -6036,10 +6858,12 @@ function StudentNotebookPage() {
         method: 'POST',
         body: { userId: student.id, photos, note },
       });
+      setMsgOk(true);
       setMsg(res.message || 'تم التسليم!');
       load();
       setTimeout(() => { setActive(null); setMsg(''); }, 2000);
     } catch (e: any) {
+      setMsgOk(false);
       setMsg(e?.message || 'تعذر التسليم');
     } finally {
       setSubmitting(false);
@@ -6174,7 +6998,7 @@ function StudentNotebookPage() {
                 ) : null}
                 <label className={`inline-flex cursor-pointer items-center gap-2 rounded-xl bg-secondary px-4 py-2.5 text-sm font-bold text-primary hover:bg-accent/40 ${uploading ? 'opacity-60' : ''}`}>
                   {uploading ? <RefreshCw size={15} className="animate-spin" /> : <Camera size={15} />} {uploading ? `جارٍ الرفع (${uploading})...` : 'التقط / اختر صور الدفتر'}
-                  <input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={(e) => {
+                  <input type="file" accept="image/*,.heic,.heif" multiple className="hidden" onChange={(e) => {
                     const files = Array.from(e.target.files || []);
                     e.target.value = '';
                     pickPhotos(files);
@@ -6185,7 +7009,7 @@ function StudentNotebookPage() {
               <Field2 label="ملاحظة للأستاذ (اختياري)">
                 <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثال: أكملت حتى درس الحال" className={inputCls} />
               </Field2>
-              {msg ? <p className="rounded-xl bg-accent/20 px-4 py-2.5 text-center text-sm font-bold text-accent-foreground">{msg}</p> : null}
+              {msg ? <p className={`rounded-xl px-4 py-2.5 text-center text-sm font-bold ${msgOk ? 'bg-accent/20 text-accent-foreground' : 'bg-destructive/10 text-destructive'}`}>{msg}</p> : null}
               <div className="flex items-center justify-end gap-3">
                 <Button onClick={() => setActive(null)} variant="ghost">إغلاق</Button>
                 <Button type="submit" disabled={submitting || !photos.length} variant="primary" className="px-6 py-2.5" data-testid="button-submit-notebook">
@@ -6728,6 +7552,7 @@ function StudentLessonPage() {
 
 function Router() {
   const [location] = useLocation();
+  useIdentityHead();
   return (
     <ErrorBoundary resetKey={location}>
       <Switch>
@@ -6739,7 +7564,6 @@ function Router() {
         <Route path="/student" component={StudentDashboardNew} />
         <Route path="/student/courses" component={StudentCoursesPage} />
         <Route path="/student/courses/:courseId/lessons/:lessonId" component={StudentLessonPage} />
-        <Route path="/student/summaries" component={StudentSummariesPage} />
         <Route path="/student/notebook" component={StudentNotebookPage} />
         <Route path="/student/assignments" component={AssignmentsPage} />
         <Route path="/student/assessments" component={AssessmentsPage} />

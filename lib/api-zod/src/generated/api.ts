@@ -166,8 +166,16 @@ export const ListAssignmentsResponseItem = zod.object({
   "title": zod.string(),
   "description": zod.string(),
   "unit": zod.string(),
+  // ترقيع يدوي إضافي (الملف مولّد): ربط الواجب بالوحدة لعرضه تحتها
+  "courseId": zod.string().nullable().optional(),
+  // ترقيع يدوي إضافي (الملف مولّد): الدرس المستهدف من الواجب لعرضه تحته
+  "lessonId": zod.string().nullable().optional(),
+  // ترقيع يدوي إضافي (الملف مولّد): صور الأستاذ التوضيحية على الواجب
+  "images": zod.array(zod.string()).optional(),
   "dueDate": zod.string(),
   "status": zod.string(),
+  // ترقيع يدوي إضافي (الملف مولّد): علامة الطالب في الواجب لعرضها في القائمة
+  "score": zod.number().nullable().optional(),
   "points": zod.number().int(),
   "grade": zod.string().optional(),
   "section": zod.string().optional()

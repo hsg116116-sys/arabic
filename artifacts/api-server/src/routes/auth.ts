@@ -145,6 +145,7 @@ function setSessionCookies(
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
+      path: "/",
       maxAge: 60 * 60 * 1000,
     });
   }
@@ -153,8 +154,30 @@ function setSessionCookies(
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
+      path: "/",
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
+  }
+}
+
+/** تجديد الجلسة صامتاً عبر refresh_token (تدوير تلقائي من Supabase).
+ *  يُبقي المستخدم مسجلاً حتى 30 يوماً دون إعادة تسجيل الدخول. */
+async function trySilentRefresh(
+  req: { cookies?: Record<string, unknown> },
+  res: Parameters<Parameters<IRouter["post"]>[1]>[1],
+): Promise<string | null> {
+  try {
+    const refreshToken = req.cookies?.supabase_refresh_token;
+    if (typeof refreshToken !== "string" || !refreshToken) return null;
+    const { response, data } = await supabaseRequest("token?grant_type=refresh_token", {
+      refresh_token: refreshToken,
+    });
+    if (!response.ok || typeof data.access_token !== "string") return null;
+    setSessionCookies(res, data);
+    return data.access_token;
+  } catch (err) {
+    logger.warn({ err }, "Silent session refresh failed");
+    return null;
   }
 }
 
@@ -383,18 +406,29 @@ router.post("/auth/exchange", async (req, res): Promise<void> => {
   }
 });
 
-/** حالة الجلسة الحالية + هل يحتاج إكمال الحساب */
+/** حالة الجلسة الحالية + هل يحتاج إكمال الحساب (مع تجديد صامت عند انتهاء التوكن) */
 router.get("/auth/me", async (req, res) => {
-  const accessToken = req.cookies?.supabase_access_token;
+  let accessToken = req.cookies?.supabase_access_token;
   if (!accessToken) {
-    res.json({ authenticated: false });
-    return;
+    accessToken = await trySilentRefresh(req, res);
+    if (!accessToken) {
+      res.json({ authenticated: false });
+      return;
+    }
   }
 
-  const user = await getSupabaseUser(accessToken);
+  let user = await getSupabaseUser(accessToken);
   if (!user) {
-    res.clearCookie("supabase_access_token");
-    res.clearCookie("supabase_refresh_token");
+    // التوكن منتهٍ؟ جرّب التجديد الصامت قبل رمي الجلسة
+    const refreshed = await trySilentRefresh(req, res);
+    if (refreshed) {
+      accessToken = refreshed;
+      user = await getSupabaseUser(accessToken);
+    }
+  }
+  if (!user) {
+    res.clearCookie("supabase_access_token", { path: "/" });
+    res.clearCookie("supabase_refresh_token", { path: "/" });
     res.json({ authenticated: false });
     return;
   }
@@ -491,10 +525,20 @@ router.post("/auth/complete-profile", async (req, res): Promise<void> => {
   });
 });
 
+/** تجديد صريح للجلسة — تناديه الواجهة دورياً (كل ~45 دقيقة) لإبقاء الدخول */
+router.post("/auth/refresh", async (req, res): Promise<void> => {
+  const accessToken = await trySilentRefresh(req, res);
+  if (!accessToken) {
+    res.status(401).json({ authenticated: false, error: "انتهت الجلسة. سجل الدخول من جديد." });
+    return;
+  }
+  res.json({ authenticated: true });
+});
+
 router.post("/auth/logout", (_req, res) => {
-  res.clearCookie("supabase_access_token");
-  res.clearCookie("supabase_refresh_token");
-  res.clearCookie("supabase_pkce_verifier");
+  res.clearCookie("supabase_access_token", { path: "/" });
+  res.clearCookie("supabase_refresh_token", { path: "/" });
+  res.clearCookie("supabase_pkce_verifier", { path: "/" });
   res.json(LogoutAccountResponse.parse({ message: "تم تسجيل الخروج." }));
 });
 
