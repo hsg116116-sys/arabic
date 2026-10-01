@@ -28,8 +28,8 @@ CREATE TABLE IF NOT EXISTS public.books (
 
 -- إدراج الكتب الأربعة (الصفان التاسع والعاشر × الفصلان الأول والثاني)
 INSERT INTO public.books (id, grade, term, title, cover_url, pdf_url, sort_order) VALUES
-('book-9-term1', 'الصف التاسع', 'الفصل الأول', 'كتاب اللغة العربية - الصف التاسع · الفصل الأول', '/books/arabic-9-term1.jpg', '/books/arabic-9-term1.pdf', 1),
-('book-10-term1', 'الصف العاشر', 'الفصل الأول', 'كتاب اللغة العربية - الصف العاشر · الفصل الأول', '/books/arabic-10-term1.jpg', '/books/arabic-10-term1.pdf', 2),
+('book-9-term1', 'الصف التاسع', 'الفصل الأول', 'كتاب اللغة العربية - الصف التاسع · الفصل الأول', '/books/arabic-9-term1.jpg', '/books/arabic-9-term1-v2.pdf', 1),
+('book-10-term1', 'الصف العاشر', 'الفصل الأول', 'كتاب اللغة العربية - الصف العاشر · الفصل الأول', '/books/arabic-10-term1.jpg', '/books/arabic-10-term1-v2.pdf', 2),
 ('book-9-term2', 'الصف التاسع', 'الفصل الثاني', 'كتاب اللغة العربية - الصف التاسع · الفصل الثاني', '/books/arabic-9-term2.png', '/books/arabic-9-term2.pdf', 3),
 ('book-10-term2', 'الصف العاشر', 'الفصل الثاني', 'كتاب اللغة العربية - الصف العاشر · الفصل الثاني', '/books/arabic-10-term2.png', '/books/arabic-10-term2.pdf', 4)
 ON CONFLICT (id) DO UPDATE SET
