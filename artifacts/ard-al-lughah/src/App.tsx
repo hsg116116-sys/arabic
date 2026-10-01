@@ -192,6 +192,7 @@ const navStudent = [
   { href: '/student/notebook', label: 'دفتري', icon: NotebookPen },
   { href: '/student/assessments', label: 'التقييمات', icon: Target },
   { href: '/student/assignments', label: 'الواجبات', icon: ClipboardCheck },
+  { href: '/student/announcements', label: 'الإعلانات', icon: Bell },
   { href: '/student/profile', label: 'ملفي الشخصي', icon: UserRound },
 ];
 
@@ -211,6 +212,7 @@ const navTeacher = [
    منظومة المنهاج — ثوابت مشتركة (صفوف × فصول × أنواع الدروس)
 ========================================================================= */
 const GRADES = ['الصف الثامن', 'الصف التاسع', 'الصف العاشر'];
+const SCHOOLS = ['مدرسة وايلد', 'مبادرة أهرامات الأمل'];
 const TERMS = ['الفصل الأول', 'الفصل الثاني'];
 const LESSON_TYPES = ['مطالعة', 'قراءة', 'استماع', 'شعر', 'قواعد', 'بلاغة', 'عروض', 'إملاء', 'خط', 'تعبير', 'تقويم'];
 const UNIT_STATUSES = [
@@ -1631,12 +1633,22 @@ function ensureRefreshLoop() {
   }, 45 * 60 * 1000);
 }
 
+// ذاكرة الإشعارات لجلسة التصفح — جلب واحد بدل جلب مع كل صفحة
+let notifCache: { at: number; items: any[] } | null = null;
+
 function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: ReactNode }) {
   const [location, setLocation] = useLocation();
   const [mobileMenu, setMobileMenu] = useState(false);
   const [profileMenu, setProfileMenu] = useState(false);
-  // إغلاق قائمة الجوال تلقائياً عند التنقل — حتى لا تغطي المحتوى والنوافذ
-  useEffect(() => { setMobileMenu(false); setProfileMenu(false); }, [location]);
+  // الإشعارات: إعلانات الأستاذ — تُجلب مرة واحدة وتُحدَّث عند الفتح
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifs, setNotifs] = useState<any[]>(() => notifCache?.items || []);
+  const [notifLoading, setNotifLoading] = useState(false);
+  const [seenIds, setSeenIds] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('ard-ann-seen') || '[]'); } catch { return []; }
+  });
+  // إغلاق القوائم تلقائياً عند التنقل — حتى لا تغطي المحتوى والنوافذ
+  useEffect(() => { setMobileMenu(false); setProfileMenu(false); setNotifOpen(false); }, [location]);
   const logout = useLogoutAccount();
   const studentDash = useGetStudentDashboard();
   // صورة الحساب (صورة Google إن سجل بها) — للطالب والمعلم
@@ -1698,6 +1710,41 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
   }, [mode, setLocation]);
 
   const studentName = studentDash.data?.student?.name || '';
+  const studentId = (studentDash.data as any)?.student?.id || '';
+  const studentGrade = (studentDash.data as any)?.student?.grade || '';
+
+  const fetchNotifs = async (markRead: boolean) => {
+    setNotifLoading(true);
+    try {
+      const p = new URLSearchParams();
+      if (mode === 'student') {
+        if (studentGrade) p.set('grade', studentGrade);
+        if (studentId) p.set('student_id', studentId);
+      }
+      const d = await jsonFetch(`/api/curriculum/announcements?${p.toString()}`);
+      const list = Array.isArray(d) ? d : [];
+      notifCache = { at: Date.now(), items: list };
+      setNotifs(list);
+      if (markRead && list.length) {
+        setSeenIds((prev) => {
+          const ids = [...new Set([...prev, ...list.map((n: any) => n.id)])].slice(-120);
+          try { localStorage.setItem('ard-ann-seen', JSON.stringify(ids)); } catch { /* تجاهل */ }
+          return ids;
+        });
+      }
+    } catch { /* تجاهل — يبقى الجرس صامتاً بدل كسر الصفحة */ } finally { setNotifLoading(false); }
+  };
+  useEffect(() => {
+    if (!notifCache || Date.now() - notifCache.at > 2 * 60 * 1000) fetchNotifs(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const unreadCount = notifs.filter((n) => !seenIds.includes(n.id)).length;
+  const toggleNotifs = () => {
+    const next = !notifOpen;
+    setNotifOpen(next);
+    setProfileMenu(false);
+    if (next) fetchNotifs(true);
+  };
   const studentSubtitle = [studentDash.data?.student?.grade, studentDash.data?.student?.school].filter(Boolean).join(' · ');
 
   const links = mode === 'student' ? navStudent : navTeacher;
@@ -1790,10 +1837,52 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
             </div>
           </div>
           <div className="relative flex items-center gap-2">
-            <button className="relative rounded-xl p-2.5 text-muted-foreground transition-colors hover:bg-muted hover:text-primary" data-testid="button-notifications">
+            <button onClick={toggleNotifs} title="الإشعارات — إعلانات الأستاذ" className={`relative rounded-xl p-2.5 transition-colors hover:bg-muted hover:text-primary ${notifOpen ? 'bg-muted text-primary' : 'text-muted-foreground'}`} data-testid="button-notifications" aria-label="الإشعارات">
               <Bell size={19} />
-              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-accent" />
+              {unreadCount > 0 ? (
+                <span className="absolute right-1.5 top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-destructive px-1 text-[9px] font-extrabold text-white">{unreadCount > 9 ? '9+' : unreadCount}</span>
+              ) : (
+                <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-accent" />
+              )}
             </button>
+            {notifOpen && (
+              <>
+                <button aria-label="إغلاق الإشعارات" onClick={() => setNotifOpen(false)} className="fixed inset-0 z-40 cursor-default" />
+                <div className="absolute left-0 top-14 z-50 w-[22rem] max-w-[86vw] overflow-hidden rounded-3xl border border-border bg-card shadow-2xl animate-rise">
+                  <div className="flex items-center justify-between bg-gradient-to-l from-[#0d2926] to-[#25655f] px-5 py-4 text-white">
+                    <p className="flex items-center gap-2 text-sm font-extrabold"><Bell size={16} /> إعلانات الأستاذ</p>
+                    {unreadCount > 0 ? <span className="rounded-full bg-accent px-2.5 py-0.5 text-[11px] font-extrabold text-[#3a2c07]">{unreadCount} جديدة</span> : null}
+                  </div>
+                  <div className="max-h-[46vh] overflow-y-auto p-3">
+                    {notifLoading && !notifs.length ? (
+                      <p className="flex items-center gap-2 px-3 py-6 text-xs font-bold text-muted-foreground"><RefreshCw size={14} className="animate-spin" /> جارٍ تحميل الإعلانات...</p>
+                    ) : !notifs.length ? (
+                      <p className="px-3 py-8 text-center text-xs leading-6 text-muted-foreground">لا إعلانات بعد — كل جديد من الأستاذ سيظهر هنا فور نشره.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {notifs.slice(0, 6).map((n: any) => {
+                          const fresh = !seenIds.includes(n.id);
+                          return (
+                            <div key={n.id} className={`rounded-2xl border p-3.5 transition-colors ${fresh ? 'border-accent/50 bg-accent/10' : 'border-border bg-background'}`}>
+                              <div className="flex items-center gap-2">
+                                <span className="rounded-md bg-secondary px-2 py-0.5 text-[10px] font-extrabold text-primary">{n.type || 'إعلان'}</span>
+                                {fresh ? <span className="h-2 w-2 rounded-full bg-destructive" /> : null}
+                                <span className="mr-auto text-[10px] font-bold text-muted-foreground">{n.date}</span>
+                              </div>
+                              <p className="mt-1.5 truncate text-sm font-extrabold text-primary">{n.title}</p>
+                              <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground">{n.body}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                  <Link href={mode === 'student' ? '/student/announcements' : '/teacher/announcements'} onClick={() => setNotifOpen(false)} className="flex items-center justify-center gap-2 border-t border-border bg-secondary/40 px-4 py-3.5 text-xs font-extrabold text-primary transition-colors hover:bg-secondary" data-testid="link-all-notifications">
+                    عرض كل الإعلانات <ArrowLeft size={14} />
+                  </Link>
+                </div>
+              </>
+            )}
             <button onClick={() => setProfileMenu((open) => !open)} className="flex items-center gap-2 rounded-xl p-1.5 pl-2.5 ring-2 ring-accent/50 transition-all hover:bg-muted hover:ring-accent sm:pl-3" data-testid="button-profile-menu" aria-label="القائمة الشخصية">
               <Avatar name={mode === 'student' ? studentName : 'أ'} src={avatarSrc} size="sm" />
               <span className="hidden text-sm font-semibold sm:block">{mode === 'student' ? studentName.split(' ')[0] : 'الأستاذ أحمد'}</span>
@@ -3440,7 +3529,9 @@ function StudentsPage() {
                 <input value={editForm.phone || ''} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} placeholder="059xxxxxxx" dir="ltr" className={`${inputCls} text-left`} data-testid="input-edit-student-phone" />
               </Field2>
               <Field2 label="المدرسة">
-                <input value={editForm.school || ''} onChange={(e) => setEditForm({ ...editForm, school: e.target.value })} placeholder="اسم المدرسة" className={inputCls} />
+                <select value={SCHOOLS.includes(editForm.school) ? editForm.school : SCHOOLS[0]} onChange={(e) => setEditForm({ ...editForm, school: e.target.value })} className={inputCls} data-testid="select-edit-student-school">
+                  {[...new Set([editForm.school || SCHOOLS[0], ...SCHOOLS])].map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
               </Field2>
             </div>
             <Field2 label="الصف الدراسي">
@@ -3448,16 +3539,11 @@ function StudentsPage() {
                 {GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
               </select>
             </Field2>
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               <Field2 label="الجنس">
                 <select value={editForm.gender || 'طالب'} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })} className={inputCls}>
                   <option value="طالب">طالب</option>
                   <option value="طالبة">طالبة</option>
-                </select>
-              </Field2>
-              <Field2 label="الفرع الدراسي">
-                <select value={editForm.branch || 'المسار الأكاديمي'} onChange={(e) => setEditForm({ ...editForm, branch: e.target.value })} className={inputCls} data-testid="select-edit-student-branch">
-                  {['المسار الأكاديمي', 'الفرع العلمي', 'الفرع الأدبي', 'الفرع التجاري', 'الفرع الصناعي', 'الفرع الزراعي', 'الفرع الفندقي'].map((b) => <option key={b} value={b}>{b}</option>)}
                 </select>
               </Field2>
               <Field2 label="الحالة">
@@ -3494,11 +3580,15 @@ function StudentsPage() {
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block text-sm font-semibold">
                 <span className="mb-2 block">المدرسة</span>
-                <input value={newStudent.school} onChange={(e) => setNewStudent({ ...newStudent, school: e.target.value })} className="w-full rounded-xl border border-input bg-background p-3 text-sm outline-none" />
+                <select value={newStudent.school} onChange={(e) => setNewStudent({ ...newStudent, school: e.target.value })} className="w-full rounded-xl border border-input bg-background p-3 text-sm outline-none">
+                  {SCHOOLS.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
               </label>
               <label className="block text-sm font-semibold">
                 <span className="mb-2 block">الصف</span>
-                <input value={newStudent.grade} onChange={(e) => setNewStudent({ ...newStudent, grade: e.target.value })} className="w-full rounded-xl border border-input bg-background p-3 text-sm outline-none" />
+                <select value={newStudent.grade} onChange={(e) => setNewStudent({ ...newStudent, grade: e.target.value })} className="w-full rounded-xl border border-input bg-background p-3 text-sm outline-none">
+                  {GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
+                </select>
               </label>
             </div>
             {addMsg && <p className="text-sm font-bold text-accent-foreground">{addMsg}</p>}
@@ -7006,6 +7096,82 @@ function TeacherSummariesPage() {
    تكملة الدفتر — طالب ومعلم (تصوير الدفاتر)
 ========================================================================= */
 
+/* =========================================================================
+   إعلانات الأستاذ — صفحة الطالب الكاملة (كل ما ينشره الأستاذ)
+========================================================================= */
+function StudentAnnouncementsPage() {
+  const { grade: effectiveGrade, term, split, gender, student } = useStudentGradeTerm();
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [typeFilter, setTypeFilter] = useState('الكل');
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (effectiveGrade) params.set('grade', effectiveGrade);
+      if (student?.id) params.set('student_id', student.id);
+      const data = await jsonFetch(`/api/curriculum/announcements?${params.toString()}`);
+      setItems(Array.isArray(data) ? data : []);
+    } catch { setItems([]); } finally { setLoading(false); }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [effectiveGrade, student?.id]);
+
+  const types = ['الكل', ...([...new Set(items.map((a: any) => a.type).filter(Boolean))] as string[])];
+  const shown = typeFilter === 'الكل' ? items : items.filter((a) => a.type === typeFilter);
+  const typeColor = (t: string) =>
+    t.includes('اختبار') ? 'bg-[#0d47a1]/10 text-[#0d47a1]'
+    : t.includes('تكليف') || t.includes('واجب') ? 'bg-amber-500/15 text-amber-800'
+    : t.includes('محتوى') || t.includes('جديد') ? 'bg-green-500/15 text-green-800'
+    : 'bg-secondary text-primary';
+
+  return (
+    <Shell mode="student">
+      <SectionHero
+        eyebrow="رسائل الأستاذ إليك"
+        title="الإعلانات والتوجيهات"
+        body={`كل ما ينشره الأستاذ لصفك في ${effectiveGrade} — مواعيد، تذكيرات، ومحتوى جديد أولاً بأول.`}
+        tone="light"
+        stats={[
+          { value: items.length, label: 'إعلانات' },
+          { value: types.length - 1, label: 'تصنيفات' },
+        ]}
+      />
+      <GradeTermBadge grade={effectiveGrade} term={term} split={split} gender={gender} />
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        {types.map((t) => (
+          <button key={t} type="button" onClick={() => setTypeFilter(t)} className={`rounded-full px-4 py-2 text-xs font-bold transition-all ${typeFilter === t ? 'bg-primary text-primary-foreground shadow-md' : 'bg-secondary text-muted-foreground hover:text-primary'}`}>{t}</button>
+        ))}
+        <button type="button" onClick={load} className="mr-auto inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-4 py-2 text-xs font-bold text-primary shadow-sm hover:shadow-md">
+          <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> تحديث
+        </button>
+      </div>
+      {loading ? <StateNotice type="loading" /> : !shown.length ? (
+        <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-14 text-center">
+          <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-secondary text-primary"><Bell size={24} /></span>
+          <p className="font-display text-lg font-bold text-primary">لا إعلانات هنا بعد</p>
+          <p className="mt-1 text-sm text-muted-foreground">عندما ينشر الأستاذ شيئاً سيصلك تنبيه بالجرس أعلى الصفحة.</p>
+        </div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2">
+          {shown.map((a: any, i: number) => (
+            <div key={a.id} className="group relative overflow-hidden rounded-[1.8rem] border border-border bg-card p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl animate-fade-up" style={{ animationDelay: `${Math.min(i, 8) * 0.05}s` }} data-testid={`card-announcement-${a.id}`}>
+              <div className="pointer-events-none absolute -left-10 -top-10 h-32 w-32 rounded-full bg-accent/15 blur-2xl" />
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded-full px-3 py-1 text-[11px] font-extrabold ${typeColor(a.type || '')}`}>{a.type || 'إعلان'}</span>
+                <span className="rounded-full bg-secondary px-3 py-1 text-[11px] font-bold text-muted-foreground">{a.grade || effectiveGrade}</span>
+                <span className="mr-auto text-[11px] font-bold text-muted-foreground">{a.date}</span>
+              </div>
+              <h3 className="mt-3 font-display text-lg font-bold leading-snug text-primary">{a.title}</h3>
+              <p className="mt-2 whitespace-pre-line text-sm leading-7 text-muted-foreground">{a.body}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </Shell>
+  );
+}
+
 function StudentNotebookPage() {
   const { grade: effectiveGrade, term, split, gender, student } = useStudentGradeTerm();
   const [tasks, setTasks] = useState<any[]>([]);
@@ -7948,6 +8114,7 @@ function Router() {
         <Route path="/student/courses/:courseId/lessons/:lessonId" component={StudentLessonPage} />
         <Route path="/student/notebook" component={StudentNotebookPage} />
         <Route path="/student/assignments" component={AssignmentsPage} />
+        <Route path="/student/announcements" component={StudentAnnouncementsPage} />
         <Route path="/student/assessments" component={AssessmentsPage} />
         <Route path="/student/profile" component={ProfilePage} />
         <Route path="/teacher" component={TeacherDashboardNew} />
