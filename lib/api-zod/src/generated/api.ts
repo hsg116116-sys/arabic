@@ -265,6 +265,8 @@ export const ListStudentsResponseItem = zod.object({
   "grade": zod.string(),
   "section": zod.string(),
   "gender": zod.string(),
+  // ترقيع يدوي إضافي (الملف مولّد): رقم هاتف الطالب للتعديل الكامل
+  "phone": zod.string().optional(),
   "progress": zod.number().int(),
   "status": zod.string(),
   "avatarUrl": zod.string()

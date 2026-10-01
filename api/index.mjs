@@ -34418,6 +34418,8 @@ var ListStudentsResponseItem = objectType({
   "grade": stringType(),
   "section": stringType(),
   "gender": stringType(),
+  // ترقيع يدوي إضافي (الملف مولّد): رقم هاتف الطالب للتعديل الكامل
+  "phone": stringType().optional(),
   "progress": numberType().int(),
   "status": stringType(),
   "avatarUrl": stringType()
@@ -34485,6 +34487,7 @@ init_supabase();
 init_auth();
 init_logger();
 var router3 = (0, import_express3.Router)();
+var SUPABASE_URL2 = process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co";
 async function resolveProfileFromSession(accessToken) {
   if (!accessToken) return null;
   try {
@@ -34527,6 +34530,7 @@ function toStudentShape(profile, progress) {
     grade: profile.grade || "",
     section: profile.section || "",
     gender: profile.gender || "",
+    phone: profile.phone || "",
     progress,
     status: profile.status || "\u0646\u0634\u0637",
     avatarUrl: profile.avatar_url || ""
@@ -35313,6 +35317,57 @@ router3.post("/teacher/students", requireAdmin, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0637\u0627\u0644\u0628" });
   }
 });
+router3.patch("/teacher/students/:id", requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (b.name !== void 0 && !String(b.name).trim()) {
+      res.status(400).json({ error: "\u0627\u0633\u0645 \u0627\u0644\u0637\u0627\u0644\u0628 \u0645\u0637\u0644\u0648\u0628" });
+      return;
+    }
+    const full = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+    if (b.name !== void 0) full.full_name = String(b.name).trim();
+    if (b.email !== void 0) full.email = String(b.email || "").trim();
+    if (b.school !== void 0) full.school = String(b.school || "").trim();
+    if (b.branch !== void 0) full.branch = String(b.branch || "").trim();
+    if (b.grade !== void 0) full.grade = b.grade;
+    if (b.section !== void 0) full.section = String(b.section || "").trim();
+    if (b.gender !== void 0) full.gender = b.gender;
+    if (b.phone !== void 0) full.phone = String(b.phone || "").trim();
+    if (b.status !== void 0) full.status = b.status;
+    if (b.avatarUrl !== void 0 || b.avatar_url !== void 0) full.avatar_url = b.avatarUrl ?? b.avatar_url ?? "";
+    const { error } = await supabaseQuery(`profiles?id=eq.${encodeURIComponent(String(req.params.id))}`, {
+      method: "PATCH",
+      body: full
+    });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0637\u0627\u0644\u0628 \u0628\u0646\u062C\u0627\u062D!" });
+  } catch (err) {
+    logger.error({ err }, "Error in PATCH /teacher/students/:id");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0637\u0627\u0644\u0628" });
+  }
+});
+router3.delete("/teacher/students/:id", requireAdmin, async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const { error } = await supabaseQuery(`profiles?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (error) throw new Error(String(error));
+    try {
+      const base = SUPABASE_URL2.replace(/\/+$/, "");
+      const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || "";
+      if (key) {
+        await fetch(`${base}/auth/v1/admin/users/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          headers: { apikey: key, Authorization: `Bearer ${key}` }
+        });
+      }
+    } catch {
+    }
+    res.json({ success: true, message: "\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u0637\u0627\u0644\u0628 \u0648\u0628\u064A\u0627\u0646\u0627\u062A\u0647!" });
+  } catch (err) {
+    logger.error({ err }, "Error in DELETE /teacher/students/:id");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0637\u0627\u0644\u0628" });
+  }
+});
 router3.post("/teacher/courses", requireAdmin, async (req, res) => {
   try {
     const { title, description, lessons, duration, color } = req.body;
@@ -35952,12 +36007,12 @@ init_logger();
 init_supabase();
 var router6 = (0, import_express6.Router)();
 var authUnavailableMessage = "\u062E\u062F\u0645\u0629 \u0627\u0644\u0645\u0635\u0627\u062F\u0642\u0629 \u063A\u064A\u0631 \u0645\u062A\u0627\u062D\u0629 \u0645\u0624\u0642\u062A\u064B\u0627. \u062D\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649 \u0628\u0639\u062F \u0642\u0644\u064A\u0644.";
-var SUPABASE_URL2 = process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co";
+var SUPABASE_URL3 = process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co";
 var SUPABASE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SECRET_KEY || "sb_publishable_kPG7zfG0FFZpRTkNnHhO1Q_oXoOq8fg";
 async function supabaseRequest(path, body) {
   let response;
   try {
-    const targetUrl = `${SUPABASE_URL2.replace(/\/+$/, "")}/auth/v1/${path}`;
+    const targetUrl = `${SUPABASE_URL3.replace(/\/+$/, "")}/auth/v1/${path}`;
     response = await fetch(targetUrl, {
       method: "POST",
       headers: {
@@ -36206,7 +36261,7 @@ router6.get("/auth/google", (req, res) => {
       code_challenge_method: "s256",
       access_type: "offline"
     });
-    const url = `${SUPABASE_URL2.replace(/\/+$/, "")}/auth/v1/authorize?${params.toString()}`;
+    const url = `${SUPABASE_URL3.replace(/\/+$/, "")}/auth/v1/authorize?${params.toString()}`;
     res.json({ url });
   } catch (err) {
     logger.error({ err }, "Google OAuth URL generation failed");
@@ -36224,7 +36279,7 @@ router6.post("/auth/exchange", async (req, res) => {
   const callbackUrl = callbackUrlFromRequest(req);
   try {
     const response = await fetch(
-      `${SUPABASE_URL2.replace(/\/+$/, "")}/auth/v1/token?grant_type=pkce`,
+      `${SUPABASE_URL3.replace(/\/+$/, "")}/auth/v1/token?grant_type=pkce`,
       {
         method: "POST",
         headers: {
@@ -36349,7 +36404,7 @@ router6.post("/auth/complete-profile", async (req, res) => {
     return;
   }
   try {
-    await fetch(`${SUPABASE_URL2.replace(/\/+$/, "")}/auth/v1/user`, {
+    await fetch(`${SUPABASE_URL3.replace(/\/+$/, "")}/auth/v1/user`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",

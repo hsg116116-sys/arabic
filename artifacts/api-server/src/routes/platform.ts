@@ -18,6 +18,8 @@ import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
+const SUPABASE_URL = process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co";
+
 // ============================================================================
 // Helpers (بيانات حقيقية فقط من قاعدة البيانات - بلا قيم وهمية صلبة)
 // ============================================================================
@@ -69,6 +71,7 @@ function toStudentShape(profile: any, progress: number): any {
     grade: profile.grade || "",
     section: profile.section || "",
     gender: profile.gender || "",
+    phone: profile.phone || "",
     progress,
     status: profile.status || "نشط",
     avatarUrl: profile.avatar_url || "",
@@ -981,6 +984,65 @@ router.post("/teacher/students", requireAdmin, async (req, res) => {
   } catch (err: any) {
     logger.error({ err }, "Error in POST /teacher/students");
     res.status(500).json({ error: "تعذر إضافة الطالب" });
+  }
+});
+
+// 9.2 Edit Student — تعديل كامل لبيانات الطالب
+router.patch("/teacher/students/:id", requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (b.name !== undefined && !String(b.name).trim()) {
+      res.status(400).json({ error: "اسم الطالب مطلوب" });
+      return;
+    }
+    const full: Record<string, any> = { updated_at: new Date().toISOString() };
+    if (b.name !== undefined) full.full_name = String(b.name).trim();
+    if (b.email !== undefined) full.email = String(b.email || "").trim();
+    if (b.school !== undefined) full.school = String(b.school || "").trim();
+    if (b.branch !== undefined) full.branch = String(b.branch || "").trim();
+    if (b.grade !== undefined) full.grade = b.grade;
+    if (b.section !== undefined) full.section = String(b.section || "").trim();
+    if (b.gender !== undefined) full.gender = b.gender;
+    if (b.phone !== undefined) full.phone = String(b.phone || "").trim();
+    if (b.status !== undefined) full.status = b.status;
+    if (b.avatarUrl !== undefined || b.avatar_url !== undefined) full.avatar_url = b.avatarUrl ?? b.avatar_url ?? "";
+    const { error } = await supabaseQuery(`profiles?id=eq.${encodeURIComponent(String(req.params.id))}`, {
+      method: "PATCH",
+      body: full,
+    });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "تم حفظ بيانات الطالب بنجاح!" });
+  } catch (err: any) {
+    logger.error({ err }, "Error in PATCH /teacher/students/:id");
+    res.status(500).json({ error: "تعذر حفظ بيانات الطالب" });
+  }
+});
+
+// 9.3 Delete Student — حذف الطالب وبياناته (وحساب دخوله إن أمكن)
+router.delete("/teacher/students/:id", requireAdmin, async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const { error } = await supabaseQuery(`profiles?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (error) throw new Error(String(error));
+    // محاولة حذف حساب الدخول من المصادقة (best-effort — لا تفشل الحذف إن تعذر)
+    try {
+      const base = SUPABASE_URL.replace(/\/+$/, "");
+      const key =
+        process.env.SUPABASE_SECRET_KEY ||
+        process.env.SUPABASE_SERVICE_ROLE_KEY ||
+        process.env.SUPABASE_KEY ||
+        "";
+      if (key) {
+        await fetch(`${base}/auth/v1/admin/users/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          headers: { apikey: key, Authorization: `Bearer ${key}` },
+        });
+      }
+    } catch { /* تجاهل — المهم حذف الملف */ }
+    res.json({ success: true, message: "تم حذف الطالب وبياناته!" });
+  } catch (err: any) {
+    logger.error({ err }, "Error in DELETE /teacher/students/:id");
+    res.status(500).json({ error: "تعذر حذف الطالب" });
   }
 });
 

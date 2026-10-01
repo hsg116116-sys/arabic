@@ -3262,6 +3262,11 @@ function StudentsPage() {
   const [newStudent, setNewStudent] = useState({ name: '', email: '', school: 'مدرسة وايلد', grade: 'الصف العاشر', section: 'أ', gender: 'طالب', phone: '' });
   const [adding, setAdding] = useState(false);
   const [addMsg, setAddMsg] = useState('');
+  const [editItem, setEditItem] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState<any>({});
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [opMsg, setOpMsg] = useState('');
+  const [opOk, setOpOk] = useState(true);
 
   const students = useMemo(
     () => (query.data ?? []).filter((s) =>
@@ -3297,9 +3302,56 @@ function StudentsPage() {
     }
   };
 
+  const openEdit = (s: any) => {
+    setEditForm({
+      name: s.name || '',
+      email: s.email || '',
+      phone: s.phone || '',
+      school: s.school || '',
+      branch: s.branch || 'المسار الأكاديمي',
+      grade: s.grade || 'الصف العاشر',
+      section: s.section || 'أ',
+      gender: s.gender === 'طالبة' ? 'طالبة' : 'طالب',
+      status: s.status || 'نشط',
+    });
+    setEditItem(s);
+  };
+  const saveEdit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!editItem) return;
+    setSavingEdit(true);
+    try {
+      await jsonFetch(`/api/teacher/students/${editItem.id}`, { method: 'PATCH', body: editForm });
+      setOpOk(true);
+      setOpMsg(`تم حفظ بيانات ${editForm.name} بنجاح ✓`);
+      setEditItem(null);
+      query.refetch();
+      setTimeout(() => setOpMsg(''), 3000);
+    } catch (e: any) {
+      setOpOk(false);
+      setOpMsg(e?.message || 'تعذر حفظ بيانات الطالب');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+  const deleteStudent = async (s: any) => {
+    if (!window.confirm(`حذف الطالب "${s.name}" نهائياً مع كل بياناته (التسليمات والتقدم)؟ لا يمكن التراجع.`)) return;
+    try {
+      await jsonFetch(`/api/teacher/students/${s.id}`, { method: 'DELETE' });
+      setOpOk(true);
+      setOpMsg(`تم حذف ${s.name} نهائياً`);
+      query.refetch();
+      setTimeout(() => setOpMsg(''), 3000);
+    } catch (e: any) {
+      setOpOk(false);
+      setOpMsg(e?.message || 'تعذر حذف الطالب');
+    }
+  };
+
   return (
     <Shell mode="teacher">
       <PageHeading eyebrow="سجل الطلاب" title="إدارة ومتابعة الطلاب" body="استعرض سجل الطلاب المسجلين بالمنصة، تابع نسب تقدمهم، أو أضف طالباً جديداً." action={<Button onClick={() => setShowAdd(true)} data-testid="button-add-student"><Plus size={17} /> إضافة طالب جديد</Button>} />
+      {opMsg ? <p className={`mb-4 rounded-xl px-4 py-3 text-sm font-bold ${opOk ? 'bg-green-500/15 text-green-800' : 'bg-destructive/10 text-destructive'}`}>{opMsg}</p> : null}
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-3 rounded-2xl border border-border bg-card px-4 py-2.5 shadow-sm sm:max-w-md flex-1">
           <Search size={18} className="text-muted-foreground" />
@@ -3321,23 +3373,28 @@ function StudentsPage() {
         <StateNotice type="empty" />
       ) : (
         <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
-          <div className="hidden grid-cols-[1.4fr_1fr_.75fr_.75fr_.5fr] gap-4 border-b border-border bg-secondary/40 px-6 py-4 text-xs font-bold text-muted-foreground md:grid">
+          <div className="hidden grid-cols-[1.4fr_1fr_.75fr_.75fr_.5fr_.5fr] gap-4 border-b border-border bg-secondary/40 px-6 py-4 text-xs font-bold text-muted-foreground md:grid">
             <span>الطالب</span>
             <span>المدرسة</span>
             <span>الصف الدراسي</span>
             <span>نسبة الإنجاز</span>
             <span>الحالة</span>
+            <span>إجراءات</span>
           </div>
           {students.map((s) => (
-            <div key={s.id} className="grid gap-3 border-b border-border px-5 py-4 last:border-0 md:grid-cols-[1.4fr_1fr_.75fr_.75fr_.5fr] md:items-center md:gap-4 md:px-6" data-testid={`row-student-${s.id}`}>
+            <div key={s.id} className="grid gap-3 border-b border-border px-5 py-4 last:border-0 md:grid-cols-[1.4fr_1fr_.75fr_.75fr_.5fr_.5fr] md:items-center md:gap-4 md:px-6" data-testid={`row-student-${s.id}`}>
               <div className="flex items-center gap-3">
                 <Avatar name={s.name} src={s.avatarUrl} size="sm" />
                 <div className="min-w-0">
                   <p className="font-bold text-primary text-sm truncate">{s.name}</p>
-                  <p className="text-xs text-muted-foreground truncate">{s.email}</p>
+                  <p className="text-xs text-muted-foreground truncate" dir="ltr">{s.email}</p>
+                  {s.phone ? <p className="text-xs font-bold text-primary/80 truncate" dir="ltr">{s.phone}</p> : null}
                 </div>
               </div>
-              <p className="text-sm text-muted-foreground font-medium">{s.school}</p>
+              <div className="min-w-0">
+                <p className="text-sm text-muted-foreground font-medium truncate">{s.school}</p>
+                {s.section ? <span className="mt-1 inline-block rounded-md bg-secondary px-2 py-0.5 text-[11px] font-bold text-primary">شعبة {s.section}</span> : null}
+              </div>
               <p className="text-sm text-muted-foreground font-medium">{s.grade} · <span className={`font-bold ${s.gender === 'طالبة' ? 'text-[#8a508f]' : 'text-primary'}`}>{s.gender || '—'}</span></p>
               <div>
                 <div className="flex items-center justify-between text-xs font-bold mb-1">
@@ -3347,10 +3404,85 @@ function StudentsPage() {
                   <div className="h-full rounded-full bg-accent" style={{ width: `${s.progress}%` }} />
                 </div>
               </div>
-              <span className="rounded-full bg-secondary px-3 py-1 text-xs font-bold text-primary w-fit">{s.status}</span>
+              <span className={`rounded-full px-3 py-1 text-xs font-bold w-fit ${s.status === 'نشط' ? 'bg-green-500/15 text-green-800' : 'bg-secondary text-muted-foreground'}`}>{s.status}</span>
+              <span className="flex items-center gap-1.5">
+                <button type="button" onClick={() => openEdit(s)} title="تعديل بيانات الطالب" className="inline-flex items-center gap-1 rounded-xl bg-secondary px-3.5 py-2 text-xs font-extrabold text-primary transition-all hover:bg-accent/40 active:scale-95" data-testid={`button-edit-student-${s.id}`}>
+                  <Pencil size={14} /> تعديل
+                </button>
+                <button type="button" onClick={() => deleteStudent(s)} title="حذف الطالب نهائياً" className="rounded-xl bg-destructive/10 p-2.5 text-destructive transition-all hover:bg-destructive/20 active:scale-95" data-testid={`button-delete-student-${s.id}`}>
+                  <Trash2 size={15} />
+                </button>
+              </span>
             </div>
           ))}
         </div>
+      )}
+
+      {/* Edit Student Modal — تعديل كامل لكل بيانات الطالب */}
+      {editItem && (
+        <Modal title="تعديل بيانات الطالب" eyebrow={editItem.grade || 'سجل الطلاب'} onClose={() => setEditItem(null)} maxWidth="max-w-2xl">
+          <div className="mb-5 flex items-center gap-4 rounded-3xl bg-gradient-to-l from-[#0d2926] via-[#17413f] to-[#25655f] p-5 shadow-lg">
+            <Avatar name={editForm.name || editItem.name} src={editItem.avatarUrl} size="lg" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-display text-xl font-extrabold text-white">{editForm.name || 'اسم الطالب...'}</p>
+              <p className="mt-1 text-xs font-bold text-white/75">{editForm.grade || ''}{editForm.section ? ` · شعبة ${editForm.section}` : ''} · {editForm.school || ''}</p>
+            </div>
+            <span className={`shrink-0 rounded-full px-3 py-1.5 text-[11px] font-extrabold ${editForm.status === 'نشط' ? 'bg-green-500/25 text-white' : 'bg-white/15 text-white/80'}`}>{editForm.status || 'نشط'}</span>
+          </div>
+          <form onSubmit={saveEdit} className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field2 label="الاسم الكامل">
+                <input value={editForm.name || ''} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} required placeholder="الاسم الثلاثي أو الرباعي" className={inputCls} data-testid="input-edit-student-name" />
+              </Field2>
+              <Field2 label="البريد الإلكتروني">
+                <input type="email" value={editForm.email || ''} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} placeholder="student@example.com" dir="ltr" className={`${inputCls} text-left`} />
+              </Field2>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field2 label="رقم الهاتف">
+                <input value={editForm.phone || ''} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} placeholder="059xxxxxxx" dir="ltr" className={`${inputCls} text-left`} data-testid="input-edit-student-phone" />
+              </Field2>
+              <Field2 label="المدرسة">
+                <input value={editForm.school || ''} onChange={(e) => setEditForm({ ...editForm, school: e.target.value })} placeholder="اسم المدرسة" className={inputCls} />
+              </Field2>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field2 label="الصف الدراسي">
+                <select value={editForm.grade || 'الصف العاشر'} onChange={(e) => setEditForm({ ...editForm, grade: e.target.value })} className={inputCls} data-testid="select-edit-student-grade">
+                  {GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
+                </select>
+              </Field2>
+              <Field2 label="الشعبة">
+                <input value={editForm.section || ''} onChange={(e) => setEditForm({ ...editForm, section: e.target.value })} placeholder="مثال: أ" className={inputCls} />
+              </Field2>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field2 label="الجنس">
+                <select value={editForm.gender || 'طالب'} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })} className={inputCls}>
+                  <option value="طالب">طالب</option>
+                  <option value="طالبة">طالبة</option>
+                </select>
+              </Field2>
+              <Field2 label="الفرع">
+                <input value={editForm.branch || ''} onChange={(e) => setEditForm({ ...editForm, branch: e.target.value })} placeholder="المسار الأكاديمي" className={inputCls} />
+              </Field2>
+              <Field2 label="الحالة">
+                <select value={editForm.status || 'نشط'} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} className={inputCls}>
+                  <option value="نشط">نشط</option>
+                  <option value="يحتاج متابعة">يحتاج متابعة</option>
+                  <option value="موقوف">موقوف</option>
+                </select>
+              </Field2>
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+              <Button type="button" onClick={() => editItem && deleteStudent(editItem)} variant="ghost" className="text-destructive"><Trash2 size={15} /> حذف الطالب</Button>
+              <span className="flex items-center gap-3">
+                <Button onClick={() => setEditItem(null)} variant="ghost">إلغاء</Button>
+                <Button type="submit" disabled={savingEdit} variant="primary" className="px-8 py-3 shadow-md" data-testid="button-save-student">{savingEdit ? 'جارٍ الحفظ...' : 'حفظ التعديلات ✓'}</Button>
+              </span>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {/* Add Student Modal */}
