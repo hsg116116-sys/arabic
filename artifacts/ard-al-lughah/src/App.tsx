@@ -271,9 +271,16 @@ function readTextFile(file: File): Promise<string> {
   });
 }
 
-/** رفع ملف إلى التخزين السحابي (ImageKit) — النص فقط يبقى في Supabase */
+/** رفع ملف إلى التخزين السحابي (ImageKit) — النص فقط يبقى في Supabase.
+ *  الصور تُضغط تلقائياً أولاً (حد Vercel للإنتاج 4.5MB — بدونه تفشل الصور الكبيرة على الموقع وتنجح محلياً). */
 async function uploadFileToCloud(file: File, folder: string): Promise<any> {
-  const dataUrl = await fileToDataUrl(file);
+  const isImage = file.type.startsWith('image/');
+  const dataUrl = isImage ? await compressImageFile(file) : await fileToDataUrl(file);
+  if (!dataUrl) throw new Error('تعذر قراءة الملف — حاول مجدداً');
+  // حارس الحجم: لا ترسل طلباً سيفشل حتماً على الإنتاج — رسالة واضحة بدل خطأ مبهم
+  if (dataUrl.length > 3_200_000) {
+    throw new Error('الصورة كبيرة جداً حتى بعد الضغط — اختر صورة أصغر أو التقط بجودة أقل');
+  }
   return jsonFetch('/api/teacher/upload', {
     method: 'POST',
     body: { file: dataUrl, fileName: file.name, folder },
