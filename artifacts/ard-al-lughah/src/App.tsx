@@ -3391,10 +3391,7 @@ function StudentsPage() {
                   {s.phone ? <p className="text-xs font-bold text-primary/80 truncate" dir="ltr">{s.phone}</p> : null}
                 </div>
               </div>
-              <div className="min-w-0">
-                <p className="text-sm text-muted-foreground font-medium truncate">{s.school}</p>
-                {s.section ? <span className="mt-1 inline-block rounded-md bg-secondary px-2 py-0.5 text-[11px] font-bold text-primary">شعبة {s.section}</span> : null}
-              </div>
+              <p className="text-sm text-muted-foreground font-medium truncate">{s.school}</p>
               <p className="text-sm text-muted-foreground font-medium">{s.grade} · <span className={`font-bold ${s.gender === 'طالبة' ? 'text-[#8a508f]' : 'text-primary'}`}>{s.gender || '—'}</span></p>
               <div>
                 <div className="flex items-center justify-between text-xs font-bold mb-1">
@@ -3425,7 +3422,7 @@ function StudentsPage() {
             <Avatar name={editForm.name || editItem.name} src={editItem.avatarUrl} size="lg" />
             <div className="min-w-0 flex-1">
               <p className="truncate font-display text-xl font-extrabold text-white">{editForm.name || 'اسم الطالب...'}</p>
-              <p className="mt-1 text-xs font-bold text-white/75">{editForm.grade || ''}{editForm.section ? ` · شعبة ${editForm.section}` : ''} · {editForm.school || ''}</p>
+              <p className="mt-1 text-xs font-bold text-white/75">{editForm.grade || ''} · {editForm.school || ''}</p>
             </div>
             <span className={`shrink-0 rounded-full px-3 py-1.5 text-[11px] font-extrabold ${editForm.status === 'نشط' ? 'bg-green-500/25 text-white' : 'bg-white/15 text-white/80'}`}>{editForm.status || 'نشط'}</span>
           </div>
@@ -3446,16 +3443,11 @@ function StudentsPage() {
                 <input value={editForm.school || ''} onChange={(e) => setEditForm({ ...editForm, school: e.target.value })} placeholder="اسم المدرسة" className={inputCls} />
               </Field2>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field2 label="الصف الدراسي">
-                <select value={editForm.grade || 'الصف العاشر'} onChange={(e) => setEditForm({ ...editForm, grade: e.target.value })} className={inputCls} data-testid="select-edit-student-grade">
-                  {GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
-                </select>
-              </Field2>
-              <Field2 label="الشعبة">
-                <input value={editForm.section || ''} onChange={(e) => setEditForm({ ...editForm, section: e.target.value })} placeholder="مثال: أ" className={inputCls} />
-              </Field2>
-            </div>
+            <Field2 label="الصف الدراسي">
+              <select value={editForm.grade || 'الصف العاشر'} onChange={(e) => setEditForm({ ...editForm, grade: e.target.value })} className={inputCls} data-testid="select-edit-student-grade">
+                {GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </Field2>
             <div className="grid gap-4 sm:grid-cols-3">
               <Field2 label="الجنس">
                 <select value={editForm.gender || 'طالب'} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })} className={inputCls}>
@@ -3463,8 +3455,10 @@ function StudentsPage() {
                   <option value="طالبة">طالبة</option>
                 </select>
               </Field2>
-              <Field2 label="الفرع">
-                <input value={editForm.branch || ''} onChange={(e) => setEditForm({ ...editForm, branch: e.target.value })} placeholder="المسار الأكاديمي" className={inputCls} />
+              <Field2 label="الفرع الدراسي">
+                <select value={editForm.branch || 'المسار الأكاديمي'} onChange={(e) => setEditForm({ ...editForm, branch: e.target.value })} className={inputCls} data-testid="select-edit-student-branch">
+                  {['المسار الأكاديمي', 'الفرع العلمي', 'الفرع الأدبي', 'الفرع التجاري', 'الفرع الصناعي', 'الفرع الزراعي', 'الفرع الفندقي'].map((b) => <option key={b} value={b}>{b}</option>)}
+                </select>
               </Field2>
               <Field2 label="الحالة">
                 <select value={editForm.status || 'نشط'} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} className={inputCls}>
