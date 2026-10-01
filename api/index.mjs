@@ -34488,6 +34488,24 @@ init_auth();
 init_logger();
 var router3 = (0, import_express3.Router)();
 var SUPABASE_URL2 = process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co";
+function serviceKey() {
+  return process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || "";
+}
+async function getAdminEmails() {
+  const list = [];
+  const push = (v) => {
+    const s = String(v || "").trim().toLowerCase();
+    if (s && s.includes("@") && !list.includes(s)) list.push(s);
+  };
+  const env = process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || "";
+  for (const e of env.split(",")) push(e);
+  try {
+    const { data } = await supabaseQuery("platform_settings?select=admin_email&limit=1");
+    push(data?.[0]?.admin_email);
+  } catch {
+  }
+  return list;
+}
 async function resolveProfileFromSession(accessToken) {
   if (!accessToken) return null;
   try {
@@ -35417,6 +35435,146 @@ router3.patch("/teacher/students/:id/password", requireAdmin, async (req, res) =
     res.status(500).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u062A\u063A\u064A\u064A\u0631 \u0643\u0644\u0645\u0629 \u0627\u0644\u0633\u0631" });
   }
 });
+router3.get("/teacher/account", requireAdmin, async (req, res) => {
+  try {
+    const auth = req.auth;
+    let adminEmail = "";
+    try {
+      const { data } = await supabaseQuery("platform_settings?select=admin_email&limit=1");
+      adminEmail = String(data?.[0]?.admin_email || "").trim();
+    } catch {
+    }
+    let googleLinked = null;
+    try {
+      const key = serviceKey();
+      if (key) {
+        const r = await fetch(`${SUPABASE_URL2.replace(/\/+$/, "")}/auth/v1/admin/users/${encodeURIComponent(auth.userId)}`, {
+          headers: { apikey: key, Authorization: `Bearer ${key}` }
+        });
+        if (r.ok) {
+          const u = await r.json().catch(() => ({}));
+          const ids = Array.isArray(u?.identities) ? u.identities : [];
+          googleLinked = ids.some((i) => String(i?.provider || "").toLowerCase() === "google");
+        }
+      }
+    } catch {
+    }
+    res.json({ email: auth.email || "", adminEmail, googleLinked });
+  } catch (err) {
+    logger.error({ err }, "Error in GET /teacher/account");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u062D\u0633\u0627\u0628" });
+  }
+});
+router3.patch("/teacher/account/password", requireAdmin, async (req, res) => {
+  try {
+    const auth = req.auth;
+    const currentPassword = String(req.body?.currentPassword || "");
+    const newPassword = String(req.body?.newPassword || "");
+    if (newPassword.length < 6) {
+      res.status(400).json({ error: "\u0643\u0644\u0645\u0629 \u0627\u0644\u0633\u0631 \u0627\u0644\u062C\u062F\u064A\u062F\u0629 6 \u0623\u062D\u0631\u0641 \u0639\u0644\u0649 \u0627\u0644\u0623\u0642\u0644" });
+      return;
+    }
+    if (!auth.email) {
+      res.status(400).json({ error: "\u0644\u0627 \u064A\u0648\u062C\u062F \u0628\u0631\u064A\u062F \u0645\u0631\u062A\u0628\u0637 \u0628\u062D\u0633\u0627\u0628\u0643" });
+      return;
+    }
+    const anon = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SECRET_KEY || "";
+    const verify = await fetch(`${SUPABASE_URL2.replace(/\/+$/, "")}/auth/v1/token?grant_type=password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: anon, Authorization: `Bearer ${anon}` },
+      body: JSON.stringify({ email: auth.email, password: currentPassword })
+    });
+    if (!verify.ok) {
+      res.status(401).json({ error: "\u0643\u0644\u0645\u0629 \u0627\u0644\u0633\u0631 \u0627\u0644\u062D\u0627\u0644\u064A\u0629 \u063A\u064A\u0631 \u0635\u062D\u064A\u062D\u0629" });
+      return;
+    }
+    const key = serviceKey();
+    if (!key) {
+      res.status(500).json({ error: "\u0645\u0641\u062A\u0627\u062D \u0627\u0644\u062E\u062F\u0645\u0629 \u063A\u064A\u0631 \u0645\u0647\u064A\u0623 \u0641\u064A \u0627\u0644\u0633\u064A\u0631\u0641\u0631 (SUPABASE_SECRET_KEY)" });
+      return;
+    }
+    const upd = await fetch(`${SUPABASE_URL2.replace(/\/+$/, "")}/auth/v1/admin/users/${encodeURIComponent(auth.userId)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", apikey: key, Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ password: newPassword })
+    });
+    if (!upd.ok) throw new Error(`Auth error ${upd.status}`);
+    res.json({ success: true, message: "\u062A\u0645 \u062A\u063A\u064A\u064A\u0631 \u0643\u0644\u0645\u0629 \u0633\u0631\u0643 \u0628\u0646\u062C\u0627\u062D!" });
+  } catch (err) {
+    logger.error({ err }, "Error in PATCH /teacher/account/password");
+    res.status(500).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u062A\u063A\u064A\u064A\u0631 \u0643\u0644\u0645\u0629 \u0627\u0644\u0633\u0631" });
+  }
+});
+router3.patch("/teacher/account/email", requireAdmin, async (req, res) => {
+  try {
+    const adminEmail = String(req.body?.adminEmail || "").trim().toLowerCase();
+    if (!adminEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) {
+      res.status(400).json({ error: "\u0627\u0643\u062A\u0628 \u0628\u0631\u064A\u062F Gmail \u0635\u062D\u064A\u062D\u0627\u064B" });
+      return;
+    }
+    let cleanedProfiles = 0;
+    let cleanedAuth = 0;
+    try {
+      const { data: dupes } = await supabaseQuery(
+        `profiles?email=eq.${encodeURIComponent(adminEmail)}&select=id,role&limit=50`
+      );
+      for (const d of dupes || []) {
+        if (String(d.role || "").toLowerCase() === "student") {
+          const r = await supabaseQuery(`profiles?id=eq.${encodeURIComponent(d.id)}`, { method: "DELETE" });
+          if (!r.error) cleanedProfiles++;
+        }
+      }
+      const key = serviceKey();
+      if (key) {
+        try {
+          const lr = await fetch(
+            `${SUPABASE_URL2.replace(/\/+$/, "")}/auth/v1/admin/users?per_page=200`,
+            { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+          );
+          if (lr.ok) {
+            const lu = await lr.json().catch(() => ({}));
+            const users = Array.isArray(lu?.users) ? lu.users : [];
+            for (const u of users) {
+              if (String(u?.email || "").toLowerCase() === adminEmail) {
+                const dr = await fetch(
+                  `${SUPABASE_URL2.replace(/\/+$/, "")}/auth/v1/admin/users/${encodeURIComponent(String(u.id))}`,
+                  { method: "DELETE", headers: { apikey: key, Authorization: `Bearer ${key}` } }
+                );
+                if (dr.ok) cleanedAuth++;
+              }
+            }
+          }
+        } catch {
+        }
+      }
+    } catch (err) {
+      logger.warn({ err }, "Admin email cleanup partial failure");
+    }
+    const { error } = await supabaseQuery("platform_settings?id=eq.true", {
+      method: "PATCH",
+      body: { admin_email: adminEmail, updated_at: (/* @__PURE__ */ new Date()).toISOString() }
+    });
+    if (error) {
+      const msg = String(error);
+      if (/column|schema cache|Could not find/i.test(msg)) {
+        res.status(500).json({
+          error: `\u0646\u064F\u0638\u0641\u062A \u0627\u0644\u062D\u0633\u0627\u0628\u0627\u062A \u0627\u0644\u0645\u0643\u0631\u0631\u0629 (${cleanedProfiles}) \u0644\u0643\u0646 \u062D\u0641\u0638 \u0627\u0644\u0628\u0631\u064A\u062F \u064A\u062D\u062A\u0627\u062C \u062A\u0646\u0641\u064A\u0630 \u0645\u0644\u0641 sql_admin_account.sql \u0623\u0648\u0644\u0627\u064B`
+        });
+        return;
+      }
+      throw new Error(msg);
+    }
+    res.json({
+      success: true,
+      message: `\u062A\u0645 \u0627\u0639\u062A\u0645\u0627\u062F ${adminEmail} \u0628\u0631\u064A\u062F\u0627\u064B \u0644\u0644\u0625\u062F\u0627\u0631\u0629 \u2713 \u0648\u062D\u064F\u0630\u0641 ${cleanedProfiles} \u062D\u0633\u0627\u0628 \u0637\u0627\u0644\u0628 \u0648${cleanedAuth} \u062D\u0633\u0627\u0628 \u062F\u062E\u0648\u0644 \u0628\u0646\u0641\u0633 \u0627\u0644\u0628\u0631\u064A\u062F \u2014 \u0633\u062C\u0651\u0644 \u0628\u0647 \u0639\u0628\u0631 Google \u0644\u062A\u062F\u062E\u0644 \u0643\u0645\u0639\u0644\u0645 \u0645\u0628\u0627\u0634\u0631\u0629.`,
+      cleanedProfiles,
+      cleanedAuth
+    });
+  } catch (err) {
+    logger.error({ err }, "Error in PATCH /teacher/account/email");
+    res.status(500).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0628\u0631\u064A\u062F \u0627\u0644\u0625\u062F\u0627\u0631\u0629" });
+  }
+});
 router3.post("/teacher/courses", requireAdmin, async (req, res) => {
   try {
     const { title, description, lessons, duration, color } = req.body;
@@ -36190,6 +36348,14 @@ router6.post("/auth/register", async (req, res) => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+  try {
+    const adminList = await getAdminEmails().catch(() => []);
+    if (adminList.includes(String(parsed.data.email || "").trim().toLowerCase())) {
+      res.status(400).json({ error: "\u0647\u0630\u0627 \u0627\u0644\u0628\u0631\u064A\u062F \u0645\u062D\u062C\u0648\u0632 \u0644\u062D\u0633\u0627\u0628 \u0627\u0644\u0625\u062F\u0627\u0631\u0629 \u2014 \u0633\u062C\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0628\u0647 \u0639\u0628\u0631 Google." });
+      return;
+    }
+  } catch {
+  }
   const { fullName } = parsed.data;
   const { response, data } = await supabaseRequest("signup", {
     email: parsed.data.email,
@@ -36355,13 +36521,40 @@ router6.post("/auth/exchange", async (req, res) => {
     }
     setSessionCookies(res, data);
     const userId = String(data.user?.id ?? "");
+    const userEmail = String(data.user?.email ?? "").trim().toLowerCase();
+    const adminList = await getAdminEmails().catch(() => []);
+    const isAdminEmail = !!userEmail && adminList.includes(userEmail);
     if (userId) {
       const profile = await fetchProfileById(userId);
       const meta = data.user?.user_metadata ?? {};
       await syncGoogleAvatar(userId, meta);
+      if (isAdminEmail && profile?.role !== "admin") {
+        if (profile) {
+          await supabaseQuery(`profiles?id=eq.${encodeURIComponent(userId)}`, {
+            method: "PATCH",
+            body: { role: "admin", status: "\u0646\u0634\u0637", updated_at: (/* @__PURE__ */ new Date()).toISOString() }
+          });
+        } else {
+          await supabaseQuery("profiles", {
+            method: "POST",
+            body: [{
+              id: userId,
+              email: userEmail,
+              full_name: String(meta.full_name ?? meta.name ?? "\u0627\u0644\u0645\u0639\u0644\u0645"),
+              role: "admin",
+              grade: "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
+              school: "",
+              status: "\u0646\u0634\u0637"
+            }],
+            headers: { Prefer: "resolution=merge-duplicates" }
+          });
+        }
+        res.json({ authenticated: true, needsSetup: false, user: authUser(data) });
+        return;
+      }
       res.json({
         authenticated: true,
-        needsSetup: profileNeedsSetup(profile),
+        needsSetup: isAdminEmail ? false : profileNeedsSetup(profile),
         user: authUser(data)
       });
     } else {

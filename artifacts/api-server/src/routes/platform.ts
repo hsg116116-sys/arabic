@@ -20,6 +20,31 @@ const router: IRouter = Router();
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co";
 
+function serviceKey(): string {
+  return (
+    process.env.SUPABASE_SECRET_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_KEY ||
+    ""
+  );
+}
+
+/** بريد الإدارة المعتمد (من البيئة أو قاعدة البيانات) — الدخول به = معلم */
+async function getAdminEmails(): Promise<string[]> {
+  const list: string[] = [];
+  const push = (v: unknown) => {
+    const s = String(v || "").trim().toLowerCase();
+    if (s && s.includes("@") && !list.includes(s)) list.push(s);
+  };
+  const env = process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || "";
+  for (const e of env.split(",")) push(e);
+  try {
+    const { data } = await supabaseQuery<any[]>("platform_settings?select=admin_email&limit=1");
+    push(data?.[0]?.admin_email);
+  } catch { /* العمود قد لا يكون موجوداً بعد — نفّذ sql_admin_account.sql */ }
+  return list;
+}
+
 // ============================================================================
 // Helpers (بيانات حقيقية فقط من قاعدة البيانات - بلا قيم وهمية صلبة)
 // ============================================================================
@@ -1101,6 +1126,159 @@ router.patch("/teacher/students/:id/password", requireAdmin, async (req, res) =>
   }
 });
 
+// ───────────────────────────── حساب دخول المعلم ─────────────────────────────
+
+// حالة الحساب: البريد + بريد الإدارة + هل Google مربوط؟
+router.get("/teacher/account", requireAdmin, async (req, res) => {
+  try {
+    const auth = (req as AuthedRequest).auth!;
+    let adminEmail = "";
+    try {
+      const { data } = await supabaseQuery<any[]>("platform_settings?select=admin_email&limit=1");
+      adminEmail = String(data?.[0]?.admin_email || "").trim();
+    } catch { /* العمود غير موجود بعد — نفّذ sql_admin_account.sql */ }
+    let googleLinked: boolean | null = null;
+    try {
+      const key = serviceKey();
+      if (key) {
+        const r = await fetch(`${SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/admin/users/${encodeURIComponent(auth.userId)}`, {
+          headers: { apikey: key, Authorization: `Bearer ${key}` },
+        });
+        if (r.ok) {
+          const u = (await r.json().catch(() => ({}))) as any;
+          const ids = Array.isArray(u?.identities) ? u.identities : [];
+          googleLinked = ids.some((i: any) => String(i?.provider || "").toLowerCase() === "google");
+        }
+      }
+    } catch { /* تجاهل */ }
+    res.json({ email: auth.email || "", adminEmail, googleLinked });
+  } catch (err: any) {
+    logger.error({ err }, "Error in GET /teacher/account");
+    res.status(500).json({ error: "تعذر جلب بيانات الحساب" });
+  }
+});
+
+// تغيير كلمة سر المعلم نفسه (يشترط الحالية)
+router.patch("/teacher/account/password", requireAdmin, async (req, res) => {
+  try {
+    const auth = (req as AuthedRequest).auth!;
+    const currentPassword = String(req.body?.currentPassword || "");
+    const newPassword = String(req.body?.newPassword || "");
+    if (newPassword.length < 6) {
+      res.status(400).json({ error: "كلمة السر الجديدة 6 أحرف على الأقل" });
+      return;
+    }
+    if (!auth.email) {
+      res.status(400).json({ error: "لا يوجد بريد مرتبط بحسابك" });
+      return;
+    }
+    // تحقق من الحالية بتسجيل دخول تجريبي
+    const anon =
+      process.env.SUPABASE_PUBLISHABLE_KEY ||
+      process.env.SUPABASE_ANON_KEY ||
+      process.env.SUPABASE_SECRET_KEY ||
+      "";
+    const verify = await fetch(`${SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/token?grant_type=password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: anon, Authorization: `Bearer ${anon}` },
+      body: JSON.stringify({ email: auth.email, password: currentPassword }),
+    });
+    if (!verify.ok) {
+      res.status(401).json({ error: "كلمة السر الحالية غير صحيحة" });
+      return;
+    }
+    const key = serviceKey();
+    if (!key) {
+      res.status(500).json({ error: "مفتاح الخدمة غير مهيأ في السيرفر (SUPABASE_SECRET_KEY)" });
+      return;
+    }
+    const upd = await fetch(`${SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/admin/users/${encodeURIComponent(auth.userId)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", apikey: key, Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ password: newPassword }),
+    });
+    if (!upd.ok) throw new Error(`Auth error ${upd.status}`);
+    res.json({ success: true, message: "تم تغيير كلمة سرك بنجاح!" });
+  } catch (err: any) {
+    logger.error({ err }, "Error in PATCH /teacher/account/password");
+    res.status(500).json({ error: err?.message || "تعذر تغيير كلمة السر" });
+  }
+});
+
+// حفظ بريد الإدارة + حذف أي حساب طالب سابق بنفس البريد (Google للمعلم فقط)
+router.patch("/teacher/account/email", requireAdmin, async (req, res) => {
+  try {
+    const adminEmail = String(req.body?.adminEmail || "").trim().toLowerCase();
+    if (!adminEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) {
+      res.status(400).json({ error: "اكتب بريد Gmail صحيحاً" });
+      return;
+    }
+    let cleanedProfiles = 0;
+    let cleanedAuth = 0;
+    try {
+      // 1) احذف بروفايلات الطلاب بنفس البريد
+      const { data: dupes } = await supabaseQuery<any[]>(
+        `profiles?email=eq.${encodeURIComponent(adminEmail)}&select=id,role&limit=50`,
+      );
+      for (const d of dupes || []) {
+        if (String(d.role || "").toLowerCase() === "student") {
+          const r = await supabaseQuery(`profiles?id=eq.${encodeURIComponent(d.id)}`, { method: "DELETE" });
+          if (!r.error) cleanedProfiles++;
+        }
+      }
+      // 2) احذف حسابات الدخول بنفس البريد (best-effort)
+      const key = serviceKey();
+      if (key) {
+        try {
+          const lr = await fetch(
+            `${SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/admin/users?per_page=200`,
+            { headers: { apikey: key, Authorization: `Bearer ${key}` } },
+          );
+          if (lr.ok) {
+            const lu = (await lr.json().catch(() => ({}))) as any;
+            const users = Array.isArray(lu?.users) ? lu.users : [];
+            for (const u of users) {
+              if (String(u?.email || "").toLowerCase() === adminEmail) {
+                const dr = await fetch(
+                  `${SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/admin/users/${encodeURIComponent(String(u.id))}`,
+                  { method: "DELETE", headers: { apikey: key, Authorization: `Bearer ${key}` } },
+                );
+                if (dr.ok) cleanedAuth++;
+              }
+            }
+          }
+        } catch { /* تجاهل */ }
+      }
+    } catch (err) {
+      logger.warn({ err }, "Admin email cleanup partial failure");
+    }
+    // 3) احفظ بريد الإدارة
+    const { error } = await supabaseQuery("platform_settings?id=eq.true", {
+      method: "PATCH",
+      body: { admin_email: adminEmail, updated_at: new Date().toISOString() },
+    });
+    if (error) {
+      const msg = String(error);
+      if (/column|schema cache|Could not find/i.test(msg)) {
+        res.status(500).json({
+          error: `نُظفت الحسابات المكررة (${cleanedProfiles}) لكن حفظ البريد يحتاج تنفيذ ملف sql_admin_account.sql أولاً`,
+        });
+        return;
+      }
+      throw new Error(msg);
+    }
+    res.json({
+      success: true,
+      message: `تم اعتماد ${adminEmail} بريداً للإدارة ✓ وحُذف ${cleanedProfiles} حساب طالب و${cleanedAuth} حساب دخول بنفس البريد — سجّل به عبر Google لتدخل كمعلم مباشرة.`,
+      cleanedProfiles,
+      cleanedAuth,
+    });
+  } catch (err: any) {
+    logger.error({ err }, "Error in PATCH /teacher/account/email");
+    res.status(500).json({ error: err?.message || "تعذر حفظ بريد الإدارة" });
+  }
+});
+
 // 10. Teacher Content Creation
 router.post("/teacher/courses", requireAdmin, async (req, res) => {
   try {
@@ -1215,4 +1393,5 @@ router.patch("/student/profile", requireAuth, async (req, res) => {
   }
 });
 
+export { getAdminEmails };
 export default router;

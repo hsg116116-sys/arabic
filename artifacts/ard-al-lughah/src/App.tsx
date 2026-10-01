@@ -4007,10 +4007,122 @@ function SettingsPage() {
                 <input type="file" accept="image/png,image/jpeg" onChange={upload} className="hidden" data-testid="input-teacher-image" />
               </label>
             </div>
+            <AccountSecurityCard />
           </div>
         </div>
       )}
     </Shell>
+  );
+}
+
+/* =========================================================================
+   حساب دخول المعلم — كلمة السر + بريد الإدارة + ربط Google
+========================================================================= */
+function AccountSecurityCard() {
+  const [info, setInfo] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [cur, setCur] = useState('');
+  const [nw, setNw] = useState('');
+  const [nw2, setNw2] = useState('');
+  const [adminMail, setAdminMail] = useState('');
+  const [busy, setBusy] = useState<'pwd' | 'mail' | null>(null);
+  const [msg, setMsg] = useState('');
+  const [ok, setOk] = useState(true);
+  const google = useGetGoogleAuthUrl({ query: { enabled: false, queryKey: getGetGoogleAuthUrlQueryKey() } });
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const d = await jsonFetch('/api/teacher/account');
+      setInfo(d);
+      setAdminMail(d.adminEmail || '');
+    } catch { setInfo(null); } finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const savePwd = async (e: FormEvent) => {
+    e.preventDefault();
+    if (nw !== nw2) { setOk(false); setMsg('تأكيد كلمة السر غير مطابق'); return; }
+    setBusy('pwd');
+    setMsg('');
+    try {
+      const r = await jsonFetch('/api/teacher/account/password', { method: 'PATCH', body: { currentPassword: cur, newPassword: nw } });
+      setOk(true);
+      setMsg(r.message || 'تم تغيير كلمة سرك بنجاح!');
+      setCur(''); setNw(''); setNw2('');
+    } catch (e: any) {
+      setOk(false);
+      setMsg(e?.message || 'تعذر تغيير كلمة السر');
+    } finally { setBusy(null); }
+  };
+
+  const saveMail = async () => {
+    setBusy('mail');
+    setMsg('');
+    try {
+      const r = await jsonFetch('/api/teacher/account/email', { method: 'PATCH', body: { adminEmail: adminMail.trim() } });
+      setOk(true);
+      setMsg(r.message || 'تم الحفظ!');
+      load();
+    } catch (e: any) {
+      setOk(false);
+      setMsg(e?.message || 'تعذر الحفظ');
+    } finally { setBusy(null); }
+  };
+
+  const linkGoogle = async () => {
+    const r = await google.refetch();
+    if (r.data?.url) window.location.assign(r.data.url);
+    else { setOk(false); setMsg('تعذر بدء ربط Google الآن'); }
+  };
+
+  return (
+    <div className="mt-8 overflow-hidden rounded-3xl border-2 border-primary/20 bg-gradient-to-b from-primary/[0.04] to-card">
+      <div className="flex items-center gap-3 p-6 pb-4">
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-lg"><ShieldCheck size={22} /></span>
+        <div>
+          <p className="font-display text-lg font-bold text-primary">حساب الدخول والأمان 🔐</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">كلمة سرك + بريد الإدارة + ربط Google — لك وحدك كمعلم.</p>
+        </div>
+      </div>
+      {loading ? <StateNotice type="loading" /> : (
+        <div className="space-y-4 p-6 pt-2">
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-secondary/50 px-4 py-3 text-xs font-bold">
+            <span className="text-muted-foreground">دخولك الحالي:</span>
+            <span className="text-primary" dir="ltr">{info?.email || '—'}</span>
+            {info?.googleLinked === true ? (
+              <span className="mr-auto rounded-full bg-green-500/15 px-3 py-1 text-[11px] font-extrabold text-green-800">مربوط بـ Google ✓</span>
+            ) : info?.googleLinked === false ? (
+              <span className="mr-auto rounded-full bg-muted px-3 py-1 text-[11px] font-bold text-muted-foreground">غير مربوط بـ Google</span>
+            ) : null}
+          </div>
+
+          <form onSubmit={savePwd} className="rounded-2xl border border-border bg-background/60 p-4">
+            <p className="mb-3 text-sm font-extrabold text-primary">تغيير كلمة سرك</p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="block text-xs font-bold">الحالية<input type="password" value={cur} onChange={(e) => setCur(e.target.value)} required className={`${inputCls} py-2.5 text-sm`} data-testid="input-current-password" /></label>
+              <label className="block text-xs font-bold">الجديدة (6+ أحرف)<input type="password" value={nw} onChange={(e) => setNw(e.target.value)} required minLength={6} className={`${inputCls} py-2.5 text-sm`} data-testid="input-new-password" /></label>
+              <label className="block text-xs font-bold">تأكيد الجديدة<input type="password" value={nw2} onChange={(e) => setNw2(e.target.value)} required className={`${inputCls} py-2.5 text-sm`} /></label>
+            </div>
+            <Button type="submit" disabled={busy === 'pwd'} variant="soft" className="mt-3 px-5 py-2 text-xs">{busy === 'pwd' ? 'جارٍ التغيير...' : 'تغيير كلمة السر ✓'}</Button>
+          </form>
+
+          <div className="rounded-2xl border border-border bg-background/60 p-4">
+            <p className="mb-1 text-sm font-extrabold text-primary">بريد الإدارة (Gmail) — للدخول عبر Google كمعلم</p>
+            <p className="mb-3 text-[11px] leading-5 text-muted-foreground">احفظ بريدك هنا: أي حساب <b>طالب</b> سابق بنفس البريد يُحذف تلقائياً، وبعده سجّل بهذا البريد عبر Google لتدخل كمعلم مباشرة — ويُمنع إنشاء حسابات طلاب جديدة به.</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <input value={adminMail} onChange={(e) => setAdminMail(e.target.value)} placeholder="you@gmail.com" dir="ltr" className={`${inputCls} min-w-52 flex-1 py-2.5 text-left text-sm`} data-testid="input-admin-email" />
+              <Button type="button" onClick={saveMail} disabled={busy === 'mail'} variant="primary" className="px-5 py-2 text-xs">{busy === 'mail' ? 'جارٍ الحفظ والتنظيف...' : 'اعتماد وتنظيف ✓'}</Button>
+            </div>
+            <Button type="button" onClick={linkGoogle} variant="soft" className="mt-3 w-full py-2.5 text-xs">
+              <span className="grid h-5 w-5 place-items-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">G</span> تسجيل الدخول بهذا البريد عبر Google للربط
+            </Button>
+          </div>
+
+          {msg ? <p className={`rounded-xl px-4 py-3 text-xs font-bold leading-6 ${ok ? 'bg-green-500/15 text-green-800' : 'bg-destructive/10 text-destructive'}`}>{msg}</p> : null}
+        </div>
+      )}
+    </div>
   );
 }
 

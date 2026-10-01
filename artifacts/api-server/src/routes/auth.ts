@@ -11,6 +11,7 @@ import {
 } from "@workspace/api-zod";
 import { logger } from "../lib/logger";
 import { getSupabaseUser, supabaseQuery } from "../lib/supabase";
+import { getAdminEmails } from "./platform";
 
 const router: IRouter = Router();
 const authUnavailableMessage = "خدمة المصادقة غير متاحة مؤقتًا. حاول مرة أخرى بعد قليل.";
@@ -187,6 +188,15 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+
+  // بريد الإدارة محجوز — لا يُنشأ به حساب طالب
+  try {
+    const adminList = await getAdminEmails().catch(() => [] as string[]);
+    if (adminList.includes(String(parsed.data.email || "").trim().toLowerCase())) {
+      res.status(400).json({ error: "هذا البريد محجوز لحساب الإدارة — سجل الدخول به عبر Google." });
+      return;
+    }
+  } catch { /* تجاهل */ }
 
   const { fullName } = parsed.data;
   const { response, data } = await supabaseRequest("signup", {
@@ -384,13 +394,41 @@ router.post("/auth/exchange", async (req, res): Promise<void> => {
     setSessionCookies(res, data);
 
     const userId = String((data.user as Record<string, unknown>)?.id ?? "");
+    const userEmail = String((data.user as Record<string, unknown>)?.email ?? "").trim().toLowerCase();
+    // بريد الإدارة (Gmail المعتمد) يدخل كمعلم دائماً — ولو كان مسجلاً طالباً سابقاً يُرقّى
+    const adminList = await getAdminEmails().catch(() => [] as string[]);
+    const isAdminEmail = !!userEmail && adminList.includes(userEmail);
     if (userId) {
       const profile = await fetchProfileById(userId);
       const meta = ((data.user as Record<string, unknown>)?.user_metadata ?? {}) as Record<string, unknown>;
       await syncGoogleAvatar(userId, meta);
+      if (isAdminEmail && profile?.role !== "admin") {
+        if (profile) {
+          await supabaseQuery(`profiles?id=eq.${encodeURIComponent(userId)}`, {
+            method: "PATCH",
+            body: { role: "admin", status: "نشط", updated_at: new Date().toISOString() },
+          });
+        } else {
+          await supabaseQuery("profiles", {
+            method: "POST",
+            body: [{
+              id: userId,
+              email: userEmail,
+              full_name: String(meta.full_name ?? meta.name ?? "المعلم"),
+              role: "admin",
+              grade: "الصف العاشر",
+              school: "",
+              status: "نشط",
+            }],
+            headers: { Prefer: "resolution=merge-duplicates" },
+          });
+        }
+        res.json({ authenticated: true, needsSetup: false, user: authUser(data) });
+        return;
+      }
       res.json({
         authenticated: true,
-        needsSetup: profileNeedsSetup(profile),
+        needsSetup: isAdminEmail ? false : profileNeedsSetup(profile),
         user: authUser(data),
       });
     } else {
