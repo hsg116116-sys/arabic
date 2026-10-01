@@ -738,7 +738,24 @@ function PublicHeader() {
   );
 }
 
+// توجيه فوري: من دخل الموقع وهو مسجل يُنقل لحسابه علطول (رئيسية/دخول/تسجيل)
+function useRedirectIfAuthenticated() {
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    let cancelled = false;
+    fetchAuthMe()
+      .then((me) => {
+        if (cancelled || !me?.authenticated) return;
+        if (me.needsSetup) { setLocation('/auth/complete'); return; }
+        setLocation(me.role === 'admin' ? '/teacher' : '/student');
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [setLocation]);
+}
+
 function Home() {
+  useRedirectIfAuthenticated();
   const overview = useGetPlatformOverview();
   const platform = overview.data;
   // الهوية الحية من الإعدادات أولاً (تتحدث فور حفظ الأستاذ)، ثم نظرة المنصة، ثم الثوابت
@@ -1209,6 +1226,7 @@ function AuthLayout({ children, title, eyebrow }: { children: ReactNode; title: 
 
 function Login() {
   const [, setLocation] = useLocation();
+  useRedirectIfAuthenticated();
   const login = useLoginAccount();
   const reset = useRequestPasswordReset();
   const google = useGetGoogleAuthUrl({ query: { enabled: false, queryKey: getGetGoogleAuthUrlQueryKey() } });
@@ -1292,6 +1310,7 @@ function Login() {
 
 function Register() {
   const [, setLocation] = useLocation();
+  useRedirectIfAuthenticated();
   const register = useRegisterAccount();
   const google = useGetGoogleAuthUrl({ query: { enabled: false, queryKey: getGetGoogleAuthUrlQueryKey() } });
   const [message, setMessage] = useState('');
