@@ -852,6 +852,87 @@ router.patch("/teacher/settings", requireAdmin, async (req, res) => {
   }
 });
 
+// 8.5 إدارة الكتب المدرسية (المعلم يحدد كل شيء: الصف/الفصل/الغلاف/الملف)
+router.get("/teacher/books", requireAdmin, async (_req, res) => {
+  try {
+    const { data, error } = await supabaseQuery<any[]>("books?order=sort_order.asc&limit=50");
+    if (error) throw new Error(String(error));
+    res.json(
+      (data || []).map((b) => ({
+        id: b.id,
+        grade: b.grade || "",
+        term: b.term || "",
+        title: b.title || "",
+        coverUrl: b.cover_url || "",
+        pdfUrl: b.pdf_url || "",
+        sortOrder: b.sort_order ?? 1,
+      })),
+    );
+  } catch (err: any) {
+    logger.error({ err }, "Error in GET /teacher/books");
+    res.status(500).json({ error: "تعذر جلب الكتب" });
+  }
+});
+
+router.post("/teacher/books", requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!b.title?.trim()) {
+      res.status(400).json({ error: "عنوان الكتاب مطلوب" });
+      return;
+    }
+    const id = String(b.id || `book-${Date.now()}`).slice(0, 60);
+    const full = {
+      id,
+      grade: b.grade || "الصف الثامن",
+      term: b.term || "الفصل الأول",
+      title: String(b.title).slice(0, 200),
+      cover_url: b.coverUrl || b.cover_url || "",
+      pdf_url: b.pdfUrl || b.pdf_url || "",
+      sort_order: Number(b.sortOrder ?? b.sort_order) || 1,
+    };
+    const { error } = await supabaseQuery("books", { method: "POST", body: [full] });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "تمت إضافة الكتاب!", id });
+  } catch (err: any) {
+    logger.error({ err }, "Error in POST /teacher/books");
+    res.status(500).json({ error: "تعذر إضافة الكتاب" });
+  }
+});
+
+router.patch("/teacher/books/:id", requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const full: Record<string, any> = {};
+    if (b.title !== undefined) full.title = String(b.title).slice(0, 200);
+    if (b.grade !== undefined) full.grade = b.grade;
+    if (b.term !== undefined) full.term = b.term;
+    if (b.coverUrl !== undefined || b.cover_url !== undefined) full.cover_url = b.coverUrl ?? b.cover_url ?? "";
+    if (b.pdfUrl !== undefined || b.pdf_url !== undefined) full.pdf_url = b.pdfUrl ?? b.pdf_url ?? "";
+    if (b.sortOrder !== undefined || b.sort_order !== undefined) full.sort_order = Number(b.sortOrder ?? b.sort_order) || 1;
+    const { error } = await supabaseQuery(`books?id=eq.${encodeURIComponent(String(req.params.id))}`, {
+      method: "PATCH",
+      body: full,
+    });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "تم حفظ الكتاب!" });
+  } catch (err: any) {
+    logger.error({ err }, "Error in PATCH /teacher/books");
+    res.status(500).json({ error: "تعذر حفظ الكتاب" });
+  }
+});
+
+router.delete("/teacher/books/:id", requireAdmin, async (req, res) => {
+  try {
+    const { error } = await supabaseQuery(`books?id=eq.${encodeURIComponent(String(req.params.id))}`, { method: "DELETE" });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "تم حذف الكتاب!" });
+  } catch (err: any) {
+    logger.error({ err }, "Error in DELETE /teacher/books");
+    res.status(500).json({ error: "تعذر حذف الكتاب" });
+  }
+});
+
 // 9. Teacher Students
 router.get("/teacher/students", requireAdmin, async (_req, res) => {
   try {

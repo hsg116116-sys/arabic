@@ -35196,6 +35196,82 @@ router3.patch("/teacher/settings", requireAdmin, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u0645\u0646\u0635\u0629" });
   }
 });
+router3.get("/teacher/books", requireAdmin, async (_req, res) => {
+  try {
+    const { data, error } = await supabaseQuery("books?order=sort_order.asc&limit=50");
+    if (error) throw new Error(String(error));
+    res.json(
+      (data || []).map((b) => ({
+        id: b.id,
+        grade: b.grade || "",
+        term: b.term || "",
+        title: b.title || "",
+        coverUrl: b.cover_url || "",
+        pdfUrl: b.pdf_url || "",
+        sortOrder: b.sort_order ?? 1
+      }))
+    );
+  } catch (err) {
+    logger.error({ err }, "Error in GET /teacher/books");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u0643\u062A\u0628" });
+  }
+});
+router3.post("/teacher/books", requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!b.title?.trim()) {
+      res.status(400).json({ error: "\u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u0643\u062A\u0627\u0628 \u0645\u0637\u0644\u0648\u0628" });
+      return;
+    }
+    const id = String(b.id || `book-${Date.now()}`).slice(0, 60);
+    const full = {
+      id,
+      grade: b.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u062B\u0627\u0645\u0646",
+      term: b.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
+      title: String(b.title).slice(0, 200),
+      cover_url: b.coverUrl || b.cover_url || "",
+      pdf_url: b.pdfUrl || b.pdf_url || "",
+      sort_order: Number(b.sortOrder ?? b.sort_order) || 1
+    };
+    const { error } = await supabaseQuery("books", { method: "POST", body: [full] });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "\u062A\u0645\u062A \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0643\u062A\u0627\u0628!", id });
+  } catch (err) {
+    logger.error({ err }, "Error in POST /teacher/books");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0643\u062A\u0627\u0628" });
+  }
+});
+router3.patch("/teacher/books/:id", requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const full = {};
+    if (b.title !== void 0) full.title = String(b.title).slice(0, 200);
+    if (b.grade !== void 0) full.grade = b.grade;
+    if (b.term !== void 0) full.term = b.term;
+    if (b.coverUrl !== void 0 || b.cover_url !== void 0) full.cover_url = b.coverUrl ?? b.cover_url ?? "";
+    if (b.pdfUrl !== void 0 || b.pdf_url !== void 0) full.pdf_url = b.pdfUrl ?? b.pdf_url ?? "";
+    if (b.sortOrder !== void 0 || b.sort_order !== void 0) full.sort_order = Number(b.sortOrder ?? b.sort_order) || 1;
+    const { error } = await supabaseQuery(`books?id=eq.${encodeURIComponent(String(req.params.id))}`, {
+      method: "PATCH",
+      body: full
+    });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u0643\u062A\u0627\u0628!" });
+  } catch (err) {
+    logger.error({ err }, "Error in PATCH /teacher/books");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0643\u062A\u0627\u0628" });
+  }
+});
+router3.delete("/teacher/books/:id", requireAdmin, async (req, res) => {
+  try {
+    const { error } = await supabaseQuery(`books?id=eq.${encodeURIComponent(String(req.params.id))}`, { method: "DELETE" });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u0643\u062A\u0627\u0628!" });
+  } catch (err) {
+    logger.error({ err }, "Error in DELETE /teacher/books");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0643\u062A\u0627\u0628" });
+  }
+});
 router3.get("/teacher/students", requireAdmin, async (_req, res) => {
   try {
     const [{ data }, progressAvg] = await Promise.all([

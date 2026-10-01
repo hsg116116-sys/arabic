@@ -199,6 +199,7 @@ const navTeacher = [
   { href: '/teacher', label: 'لوحة المتابعة', icon: LayoutDashboard },
   { href: '/teacher/students', label: 'الطلاب', icon: UsersRound },
   { href: '/teacher/content', label: 'المنهاج والوحدات', icon: Library },
+  { href: '/teacher/books', label: 'الكتب المدرسية', icon: BookOpen },
   { href: '/teacher/exams', label: 'الاختبارات', icon: Target },
   { href: '/teacher/assignments', label: 'الواجبات', icon: ClipboardCheck },
   { href: '/teacher/notebooks', label: 'مهام الدفتر', icon: NotebookPen },
@@ -841,7 +842,7 @@ function Home() {
                     <Avatar key={letter} name={letter} size="sm" />
                   ))}
                 </div>
-                <span>محتوى مرتب للصفين التاسع والعاشر</span>
+                <span>محتوى مرتب للصفوف الثامن والتاسع والعاشر</span>
                 <span className="hidden h-1 w-1 rounded-full bg-accent sm:block" />
                 <span className="flex items-center gap-1.5 font-semibold text-primary">
                   <CheckCircle2 size={16} className="text-accent-foreground" /> تعلّم بثقة
@@ -870,7 +871,7 @@ function Home() {
                 تستحق أن تُفتح كل يوم.
               </h2>
               <p className="mt-5 max-w-md text-base leading-8 text-muted-foreground">
-                سلسلة اللغة العربية للصفين التاسع والعاشر في {semester}، مرتبة لتقرأ وتفهم وتطبّق بثقة — ويمكنك تحميل كل كتاب بنسخته الرقمية.
+                سلسلة اللغة العربية للصفوف الثامن والتاسع والعاشر في {semester}، مرتبة لتقرأ وتفهم وتطبّق بثقة — ويمكنك تحميل كل كتاب بنسخته الرقمية.
               </p>
               <div className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-accent/45 bg-card px-3 py-1 text-xs font-bold text-primary shadow-sm" data-testid="badge-books-semester">
                 <BookOpen size={13} className="text-accent-foreground" /> كتب {semester} المعتمدة
@@ -879,19 +880,41 @@ function Home() {
                 ابدأ مع كتبك <ArrowLeft size={17} />
               </Link>
             </div>
-            <div className="grid gap-5 sm:grid-cols-2">
-              {grade9Book && grade10Book ? (
-                <>
-                  <HomeBookCard book={grade9Book} tone="purple" />
-                  <HomeBookCard book={grade10Book} tone="rose" />
-                </>
-              ) : (
-                <>
-                  <BookCover image={bookNineUrl} grade="الجزء الأول · ٠٩" title="اللغة العربية" subtitle="المسار الأكاديمي" tone="purple" />
-                  <BookCover image={bookTenUrl} grade="الجزء الأول · ١٠" title="اللغة العربية" subtitle="المسار الأكاديمي" tone="rose" />
-                </>
-              )}
-            </div>
+            {/* سلسلة الكتب الثلاثة المائلة — الثامن والتاسع والعاشر.
+                كتاب الثامن يظهر من ملفات الموقع مباشرة حتى قبل إضافته للقاعدة. */}
+            {(() => {
+              const withPdf = (g: string) => currentTermBooks.find((b) => b.grade === g && b.pdfUrl);
+              const static8 = semester === 'الفصل الأول'
+                ? { id: 'static-8', grade: 'الصف الثامن', term: semester, title: 'كتاب اللغة العربية - الصف الثامن', coverUrl: '/books/arabic-8-term1.jpg', pdfUrl: '/books/arabic-8-term1.pdf' }
+                : null;
+              const show8 = withPdf('الصف الثامن') || static8;
+              const show9 = withPdf('الصف التاسع');
+              const show10 = withPdf('الصف العاشر');
+              if (!show8 && !show9 && !show10) {
+                return (
+                  <div className="grid gap-6 sm:grid-cols-3 sm:gap-4 lg:gap-5">
+                    {semester === 'الفصل الأول' ? (
+                      <div className="-rotate-3 transition-transform duration-300 hover:rotate-0"><BookCover image="/books/arabic-8-term1.jpg" grade="الصف الثامن" title="اللغة العربية" subtitle="المسار الأكاديمي" tone="gold" /></div>
+                    ) : null}
+                    <div className="sm:-translate-y-2"><BookCover image={bookNineUrl} grade="الجزء الأول · ٠٩" title="اللغة العربية" subtitle="المسار الأكاديمي" tone="purple" /></div>
+                    <div className="rotate-3 transition-transform duration-300 hover:rotate-0"><BookCover image={bookTenUrl} grade="الجزء الأول · ١٠" title="اللغة العربية" subtitle="المسار الأكاديمي" tone="rose" /></div>
+                  </div>
+                );
+              }
+              return (
+                <div className="grid gap-6 sm:grid-cols-3 sm:gap-4 lg:gap-5">
+                  {show8 ? (
+                    <div className="-rotate-3 transition-transform duration-300 hover:rotate-0"><HomeBookCard book={show8} tone="gold" /></div>
+                  ) : null}
+                  {show9 ? (
+                    <div className="sm:-translate-y-2 transition-transform duration-300"><HomeBookCard book={show9} tone="purple" /></div>
+                  ) : null}
+                  {show10 ? (
+                    <div className="rotate-3 transition-transform duration-300 hover:rotate-0"><HomeBookCard book={show10} tone="rose" /></div>
+                  ) : null}
+                </div>
+              );
+            })()}
           </div>
         </section>
 
@@ -1039,7 +1062,7 @@ function Home() {
               <div>
                 <p className="text-sm font-bold text-accent-foreground">لا تتعلم وحدك</p>
                 <h2 className="mt-3 font-display text-3xl font-bold text-primary sm:text-4xl">مواعيد واجباتك القادمة.</h2>
-                <p className="mt-4 max-w-2xl leading-8 text-muted-foreground">واجبات حقيقية على المنصة بتواريخ استحقاق واضحة، لتبقى متابعة لصفّيك التاسع والعاشر بلا أوراق ضائعة.</p>
+                <p className="mt-4 max-w-2xl leading-8 text-muted-foreground">واجبات حقيقية على المنصة بتواريخ استحقاق واضحة، لتبقى متابعة لصفوفك الثامن والتاسع والعاشر بلا أوراق ضائعة.</p>
               </div>
               <span className="inline-flex w-fit items-center gap-2 rounded-full border border-accent/40 bg-card px-4 py-2 text-xs font-bold text-primary"><ClipboardCheck size={15} className="text-accent-foreground" /> جدول حي من المنصة</span>
             </div>
@@ -1157,10 +1180,11 @@ function BookCover({ image, grade, title, subtitle, tone }: { image: string; gra
   );
 }
 
-function HomeBookCard({ book, tone }: { book: any; tone: 'purple' | 'rose' }) {
+function HomeBookCard({ book, tone }: { book: any; tone: 'purple' | 'rose' | 'gold' }) {
   const tones = {
     purple: 'from-[#2d2040]/80 via-transparent',
     rose: 'from-[#3d263f]/80 via-transparent',
+    gold: 'from-[#382b13]/85 via-transparent',
   };
   return (
     <div className="group relative overflow-hidden rounded-[1.8rem] border border-primary/15 bg-primary p-3 shadow-md transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl" data-testid={`card-book-${book.grade}`}>
@@ -7405,6 +7429,159 @@ function TeacherNotebooksPage() {
 }
 
 /* =========================================================================
+   الكتب المدرسية — الإداري يحدد كل شيء: الصف/الفصل/الغلاف/ملف PDF
+========================================================================= */
+function TeacherBooksPage() {
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState<null | { mode: 'create' } | { mode: 'edit'; item: any }>(null);
+  const [form, setForm] = useState<any>({});
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [uploading, setUploading] = useState<'cover' | 'pdf' | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const d = await jsonFetch('/api/teacher/books');
+      setItems(Array.isArray(d) ? d : []);
+    } catch { setItems([]); } finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const openCreate = () => {
+    setForm({ title: '', grade: 'الصف الثامن', term: 'الفصل الأول', coverUrl: '', pdfUrl: '', sortOrder: items.length + 1 });
+    setModal({ mode: 'create' });
+  };
+  const openEdit = (item: any) => {
+    setForm({ title: item.title, grade: item.grade, term: item.term, coverUrl: item.coverUrl || '', pdfUrl: item.pdfUrl || '', sortOrder: item.sortOrder ?? 1 });
+    setModal({ mode: 'edit', item });
+  };
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      if (modal?.mode === 'create') await jsonFetch('/api/teacher/books', { method: 'POST', body: form });
+      else if (modal?.mode === 'edit') await jsonFetch(`/api/teacher/books/${modal.item.id}`, { method: 'PATCH', body: form });
+      setModal(null);
+      load();
+      setMsg('تم حفظ الكتاب ✓ — ظهر فوراً في الرئيسية');
+      setTimeout(() => setMsg(''), 3000);
+    } catch (e: any) { setMsg(e?.message || 'تعذر الحفظ'); } finally { setSaving(false); }
+  };
+  const remove = async (item: any) => {
+    if (!window.confirm(`حذف كتاب "${item.title}"؟`)) return;
+    try {
+      await jsonFetch(`/api/teacher/books/${item.id}`, { method: 'DELETE' });
+      load();
+    } catch (e: any) { setMsg(e?.message || 'تعذر الحذف'); }
+  };
+  const uploadPdf = (f: File | undefined) => {
+    if (!f || uploading) return;
+    if (f.size > 3_200_000) {
+      setMsg('ملف PDF كبير للرفع المباشر — ارفعه على استضافة خارجية والصق رابطه، أو صغّره أولاً');
+      return;
+    }
+    setUploading('pdf');
+    uploadFileToCloud(f, '/ard-al-lughah/books')
+      .then((res) => { if (res?.url) setForm((x: any) => ({ ...x, pdfUrl: res.url })); })
+      .catch((e: any) => setMsg(e?.message || 'تعذر رفع الملف'))
+      .finally(() => setUploading(null));
+  };
+
+  return (
+    <Shell mode="teacher">
+      <SectionHero
+        eyebrow="المكتبة الرقمية"
+        title="الكتب المدرسية"
+        body="أنت تحدد كل شيء: الصف والفصل والغلاف وملف PDF — ما تحفظه يظهر فوراً في الصفحة الرئيسية."
+        tone="light"
+        action={<Button onClick={openCreate} data-testid="button-add-book"><Plus size={17} /> إضافة كتاب</Button>}
+      />
+      {msg ? <p className="mb-4 rounded-xl bg-accent/20 px-4 py-3 text-sm font-bold text-accent-foreground">{msg}</p> : null}
+      {loading ? <StateNotice type="loading" /> : !items.length ? (
+        <div className="rounded-2xl border border-dashed border-border bg-card px-6 py-12 text-center">
+          <p className="font-semibold">لا توجد كتب بعد</p>
+          <p className="mt-1 text-sm text-muted-foreground">اضغط «إضافة كتاب» وأدخل الصف والفصل والملف.</p>
+        </div>
+      ) : (
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {items.map((b) => (
+            <div key={b.id} className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm" data-testid={`row-book-${b.id}`}>
+              <div className="flex gap-4 p-4">
+                {b.coverUrl ? (
+                  <img src={b.coverUrl} alt="" className="h-28 w-20 shrink-0 rounded-2xl border border-border object-cover" />
+                ) : (
+                  <span className="grid h-28 w-20 shrink-0 place-items-center rounded-2xl bg-secondary text-muted-foreground"><BookOpen size={26} /></span>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-base font-bold text-primary">{b.title}</p>
+                  <p className="mt-1 text-xs font-bold text-muted-foreground">{b.grade} · {b.term}</p>
+                  <p className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] font-bold">
+                    {b.pdfUrl ? <span className="rounded-full bg-green-500/15 px-2.5 py-0.5 text-green-800">PDF جاهز ✓</span> : <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-amber-800">بلا ملف — ارفع PDF</span>}
+                    {b.coverUrl ? null : <span className="rounded-full bg-secondary px-2.5 py-0.5 text-muted-foreground">بلا غلاف</span>}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 border-t border-border bg-secondary/30 px-4 py-3">
+                {b.pdfUrl ? <a href={b.pdfUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-xl bg-secondary px-3.5 py-2 text-xs font-bold text-primary hover:bg-accent/40"><Eye size={14} /> عرض</a> : null}
+                <span className="mr-auto flex items-center gap-1">
+                  <Button onClick={() => openEdit(b)} variant="soft" className="px-3 py-2 text-xs"><Pencil size={14} /></Button>
+                  <Button onClick={() => remove(b)} variant="ghost" className="px-2 text-destructive"><Trash2 size={16} /></Button>
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {modal && (
+        <Modal title={modal.mode === 'create' ? 'إضافة كتاب جديد' : 'تعديل الكتاب'} eyebrow="المكتبة الرقمية" onClose={() => setModal(null)} maxWidth="max-w-3xl">
+          <form onSubmit={save} className="space-y-4">
+            <Field2 label="عنوان الكتاب"><input value={form.title || ''} onChange={(e) => setForm({ ...form, title: e.target.value })} required placeholder="مثال: كتاب اللغة العربية - الصف الثامن" className={inputCls} data-testid="input-book-title" /></Field2>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field2 label="الصف">
+                <select value={form.grade || 'الصف الثامن'} onChange={(e) => setForm({ ...form, grade: e.target.value })} className={inputCls}>
+                  {GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
+                </select>
+              </Field2>
+              <Field2 label="الفصل">
+                <select value={form.term || 'الفصل الأول'} onChange={(e) => setForm({ ...form, term: e.target.value })} className={inputCls}>
+                  <option value="الفصل الأول">الفصل الأول</option>
+                  <option value="الفصل الثاني">الفصل الثاني</option>
+                </select>
+              </Field2>
+              <Field2 label="الترتيب"><input type="number" min={0} value={form.sortOrder ?? 1} onChange={(e) => setForm({ ...form, sortOrder: Number(e.target.value) })} className={inputCls} /></Field2>
+            </div>
+            <ImageUrlField label="غلاف الكتاب" value={form.coverUrl || ''} onChange={(v) => setForm({ ...form, coverUrl: v })} testId="input-book-cover" folder="/ard-al-lughah/books" />
+            <div className="rounded-2xl border border-dashed border-border p-4">
+              <p className="mb-2 text-sm font-semibold">ملف PDF {form.pdfUrl ? <span className="mr-2 rounded-full bg-green-500/15 px-2 py-0.5 text-[11px] font-bold text-green-800">مرفوع ✓</span> : null}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <input value={form.pdfUrl || ''} onChange={(e) => setForm({ ...form, pdfUrl: e.target.value })} placeholder="الصق رابط PDF أو ارفع ملفاً صغيراً" dir="ltr" className={`${inputCls} font-mono text-xs`} data-testid="input-book-pdf" />
+                <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-secondary px-3 py-2 text-xs font-bold text-primary hover:bg-accent/40 ${uploading ? 'opacity-60' : ''}`}>
+                  {uploading === 'pdf' ? <RefreshCw size={13} className="animate-spin" /> : <Upload size={13} />} {uploading === 'pdf' ? 'جارٍ الرفع...' : 'رفع PDF'}
+                  <input type="file" accept="application/pdf" className="hidden" onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = '';
+                    uploadPdf(f);
+                  }} />
+                </label>
+                {form.pdfUrl ? <a href={form.pdfUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg bg-secondary px-3 py-2 text-xs font-bold text-primary"><Eye size={13} /> عرض</a> : null}
+              </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">الملفات الكبيرة (&gt;3MB) ارفعها على استضافة خارجية والصق رابطها هنا.</p>
+            </div>
+            <div className="flex items-center justify-end gap-3 border-t border-border pt-4">
+              <Button onClick={() => setModal(null)} variant="ghost">إلغاء</Button>
+              <Button type="submit" disabled={saving} variant="primary" className="px-8 py-3" data-testid="button-save-book">{saving ? 'جارٍ الحفظ...' : 'حفظ الكتاب ✓'}</Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </Shell>
+  );
+}
+
+/* =========================================================================
    أقسام الإدارة المنفصلة — كل قسم صفحة مستقلة من نفس المنظومة
 ========================================================================= */
 
@@ -7614,6 +7791,7 @@ function Router() {
         <Route path="/teacher/assignments" component={TeacherAssignmentsPage} />
         <Route path="/teacher/announcements" component={TeacherAnnouncementsPage} />
         <Route path="/teacher/notebooks" component={TeacherNotebooksPage} />
+        <Route path="/teacher/books" component={TeacherBooksPage} />
         <Route path="/teacher/settings" component={SettingsPage} />
         <Route component={NotFound} />
       </Switch>
