@@ -28760,6 +28760,9 @@ var init_logger = __esm({
 // src/lib/supabase.ts
 async function getSupabaseUser(accessToken) {
   if (!accessToken) return null;
+  const now = Date.now();
+  const hit = userCache.get(accessToken);
+  if (hit && now - hit.at < USER_CACHE_TTL) return hit.user;
   try {
     const res = await fetch(
       `${SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/user`,
@@ -28770,9 +28773,20 @@ async function getSupabaseUser(accessToken) {
         }
       }
     );
-    if (!res.ok) return null;
+    if (!res.ok) {
+      userCache.delete(accessToken);
+      return null;
+    }
     const data = await res.json();
-    return data && typeof data === "object" ? data : null;
+    const user = data && typeof data === "object" ? data : null;
+    if (user) {
+      if (userCache.size >= USER_CACHE_MAX) {
+        const oldest = userCache.keys().next();
+        if (!oldest.done) userCache.delete(oldest.value);
+      }
+      userCache.set(accessToken, { user, at: now });
+    }
+    return user;
   } catch (err) {
     logger.error({ err }, "getSupabaseUser failed");
     return null;
@@ -28813,7 +28827,7 @@ async function supabaseQuery(endpoint, options = {}) {
     return { data: null, error: err.message };
   }
 }
-var SUPABASE_URL, SERVICE_ROLE, baseHeaders;
+var SUPABASE_URL, SERVICE_ROLE, baseHeaders, userCache, USER_CACHE_TTL, USER_CACHE_MAX;
 var init_supabase = __esm({
   "src/lib/supabase.ts"() {
     "use strict";
@@ -28825,15 +28839,75 @@ var init_supabase = __esm({
       apikey: SERVICE_ROLE,
       Authorization: `Bearer ${SERVICE_ROLE}`
     };
+    userCache = /* @__PURE__ */ new Map();
+    USER_CACHE_TTL = 60 * 1e3;
+    USER_CACHE_MAX = 2e3;
   }
 });
 
 // src/middlewares/auth.ts
-async function resolveAuth(req) {
+async function trySilentRefresh(req, res) {
   try {
-    const token = req?.cookies?.supabase_access_token;
+    const refreshToken = req?.cookies?.supabase_refresh_token;
+    if (typeof refreshToken !== "string" || !refreshToken) return null;
+    const base = (process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co").replace(/\/+$/, "");
+    const key = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SECRET_KEY || "sb_publishable_kPG7zfG0FFZpRTkNnHhO1Q_oXoOq8fg";
+    const response = await fetch(`${base}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: key,
+        Authorization: `Bearer ${key}`
+      },
+      body: JSON.stringify({ refresh_token: refreshToken })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || typeof data.access_token !== "string") return null;
+    const secure = process.env.NODE_ENV === "production";
+    if (typeof data.access_token === "string") {
+      res.cookie("supabase_access_token", data.access_token, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure,
+        path: "/",
+        maxAge: 60 * 60 * 1e3
+      });
+    }
+    if (typeof data.refresh_token === "string") {
+      res.cookie("supabase_refresh_token", data.refresh_token, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure,
+        path: "/",
+        maxAge: 30 * 24 * 60 * 60 * 1e3
+      });
+    }
+    return data.access_token;
+  } catch (err) {
+    logger.warn({ err }, "Middleware silent refresh failed");
+    return null;
+  }
+}
+async function resolveAuth(req, res) {
+  try {
+    let token = req?.cookies?.supabase_access_token;
+    if (!token && res) {
+      const refreshed = await trySilentRefresh(req, res);
+      if (refreshed) token = refreshed;
+    }
     if (!token) return null;
     const user = await getSupabaseUser(token);
+    if ((!user || !user?.id) && res) {
+      const refreshed = await trySilentRefresh(req, res);
+      if (refreshed) {
+        const retry = await getSupabaseUser(refreshed);
+        if (retry?.id) {
+          req.cookies = { ...req?.cookies || {}, supabase_access_token: refreshed };
+          return await resolveAuth(req);
+        }
+      }
+      return null;
+    }
     const userId = String(user?.id || "");
     if (!userId) return null;
     const { data } = await supabaseQuery(
@@ -28861,7 +28935,7 @@ var init_auth = __esm({
     init_supabase();
     init_logger();
     requireAuth = async (req, res, next) => {
-      const auth = await resolveAuth(req);
+      const auth = await resolveAuth(req, res);
       if (!auth) {
         res.status(401).json({ error: "\u0633\u062C\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0623\u0648\u0644\u0627\u064B \u0644\u0644\u0645\u062A\u0627\u0628\u0639\u0629." });
         return;
@@ -28870,7 +28944,7 @@ var init_auth = __esm({
       next();
     };
     requireAdmin = async (req, res, next) => {
-      const auth = await resolveAuth(req);
+      const auth = await resolveAuth(req, res);
       if (!auth) {
         res.status(401).json({ error: "\u0633\u062C\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0623\u0648\u0644\u0627\u064B \u0644\u0644\u0645\u062A\u0627\u0628\u0639\u0629." });
         return;
@@ -29287,25 +29361,6 @@ __export(curriculum_exports, {
   itemVisible: () => itemVisible,
   sectionVisible: () => sectionVisible
 });
-async function getGate(grade, term) {
-  try {
-    const { data } = await supabaseQuery(
-      `grade_gates?grade=eq.${enc(grade)}&term=eq.${enc(term)}&limit=1`
-    );
-    const g = data?.[0];
-    if (!g) return { ...DEFAULT_GATE, grade, term };
-    return {
-      grade: g.grade,
-      term: g.term,
-      unlocked_course_id: g.unlocked_course_id || null,
-      unlocked_lesson_id: g.unlocked_lesson_id || null,
-      unlocked_unit_order: typeof g.unlocked_unit_order === "number" ? g.unlocked_unit_order : 99,
-      note: g.note || ""
-    };
-  } catch {
-    return { ...DEFAULT_GATE, grade, term };
-  }
-}
 async function getStudentGender(userId) {
   if (!userId) return null;
   try {
@@ -29442,11 +29497,20 @@ function announcementToJson(a) {
   };
 }
 function assignmentToJson(a) {
+  let images = [];
+  try {
+    images = Array.isArray(a.images) ? a.images : JSON.parse(a.images || "[]");
+  } catch {
+    images = [];
+  }
   return {
     id: a.id,
     title: a.title,
     description: a.description || "",
     unit: a.unit || "",
+    courseId: a.course_id || null,
+    lessonId: a.lesson_id || null,
+    images: images.filter((u) => String(u || "").trim()),
     dueDate: a.due_date || "",
     points: a.points ?? 0,
     published: a.published !== false,
@@ -29454,7 +29518,23 @@ function assignmentToJson(a) {
     section: a.section || "\u0627\u0644\u062C\u0645\u064A\u0639"
   };
 }
-var import_express2, router2, enc, DEFAULT_GATE, COURSE_BASE, LESSON_BASE, ASSESSMENT_BASE, curriculum_default;
+function hwPhotosOf(s) {
+  try {
+    if (Array.isArray(s.photos)) return s.photos.filter((u) => String(u || "").trim());
+    if (typeof s.photos === "string" && s.photos.trim()) {
+      const p = JSON.parse(s.photos);
+      if (Array.isArray(p)) return p.filter((u) => String(u || "").trim());
+    }
+    if (s.attachment_url && String(s.attachment_url).trim().startsWith("[")) {
+      const p = JSON.parse(s.attachment_url);
+      if (Array.isArray(p)) return p.filter((u) => String(u || "").trim());
+    }
+    if (s.attachment_url && String(s.attachment_url).trim()) return [String(s.attachment_url)];
+  } catch {
+  }
+  return [];
+}
+var import_express2, router2, enc, COURSE_BASE, LESSON_BASE, ASSESSMENT_BASE, curriculum_default;
 var init_curriculum = __esm({
   "src/routes/curriculum.ts"() {
     "use strict";
@@ -29464,14 +29544,6 @@ var init_curriculum = __esm({
     init_logger();
     router2 = (0, import_express2.Router)();
     enc = (v) => encodeURIComponent(Array.isArray(v) ? v[0] ?? "" : v ?? "");
-    DEFAULT_GATE = {
-      grade: "",
-      term: "",
-      unlocked_course_id: null,
-      unlocked_lesson_id: null,
-      unlocked_unit_order: 99,
-      note: ""
-    };
     COURSE_BASE = ["title", "description", "lessons_count", "duration", "color", "icon", "sort_order", "published"];
     LESSON_BASE = ["course_id", "title", "description", "position", "content", "published"];
     ASSESSMENT_BASE = ["course_id", "title", "questions_count", "duration", "available_date", "published"];
@@ -29524,59 +29596,11 @@ var init_curriculum = __esm({
         { id: "grade-10", name: "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631", sortOrder: 3 }
       ]);
     });
-    router2.get("/curriculum/gates", async (req, res) => {
-      try {
-        const { grade, term } = req.query;
-        let endpoint = "grade_gates?order=grade.asc";
-        if (grade) endpoint += `&grade=eq.${enc(grade)}`;
-        if (term) endpoint += `&term=eq.${enc(term)}`;
-        const { data } = await supabaseQuery(endpoint);
-        res.json(
-          (data || []).map((g) => ({
-            grade: g.grade,
-            term: g.term,
-            unlockedCourseId: g.unlocked_course_id || null,
-            unlockedLessonId: g.unlocked_lesson_id || null,
-            unlockedUnitOrder: g.unlocked_unit_order ?? 99,
-            note: g.note || "",
-            updatedAt: g.updated_at || null
-          }))
-        );
-      } catch (err) {
-        logger.error({ err }, "GET /curriculum/gates failed");
-        res.json([]);
-      }
+    router2.get("/curriculum/gates", async (_req, res) => {
+      res.json([]);
     });
-    router2.patch("/teacher/gates", requireAdmin, async (req, res) => {
-      try {
-        const { grade, term, unlockedCourseId, unlockedLessonId, unlockedUnitOrder, note } = req.body || {};
-        if (!grade || !term) {
-          res.status(400).json({ error: "\u0627\u0644\u0635\u0641 \u0648\u0627\u0644\u0641\u0635\u0644 \u0645\u0637\u0644\u0648\u0628\u0627\u0646" });
-          return;
-        }
-        const payload = { grade, term, updated_at: (/* @__PURE__ */ new Date()).toISOString() };
-        if (unlockedCourseId !== void 0) payload.unlocked_course_id = unlockedCourseId || null;
-        if (unlockedLessonId !== void 0) payload.unlocked_lesson_id = unlockedLessonId || null;
-        if (unlockedUnitOrder !== void 0) payload.unlocked_unit_order = Number(unlockedUnitOrder) || 0;
-        if (note !== void 0) payload.note = note;
-        const existing = await supabaseQuery(
-          `grade_gates?grade=eq.${enc(grade)}&term=eq.${enc(term)}&limit=1`
-        );
-        if (existing.data?.[0]) {
-          const r = await supabaseQuery(`grade_gates?grade=eq.${enc(grade)}&term=eq.${enc(term)}`, {
-            method: "PATCH",
-            body: payload
-          });
-          if (r.error) throw new Error(String(r.error));
-        } else {
-          const r = await supabaseQuery("grade_gates", { method: "POST", body: [payload] });
-          if (r.error) throw new Error(String(r.error));
-        }
-        res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0646\u0642\u0637\u0629 \u0627\u0644\u0648\u0635\u0648\u0644 \u0644\u0637\u0644\u0627\u0628 \u0647\u0630\u0627 \u0627\u0644\u0635\u0641 \u0628\u0646\u062C\u0627\u062D!" });
-      } catch (err) {
-        logger.error({ err }, "PATCH /teacher/gates failed");
-        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0628\u0648\u0627\u0628\u0629 \u2014 \u0646\u0641\u0651\u0630 \u0645\u0644\u0641 sql_curriculum_v2.sql \u0623\u0648\u0644\u0627\u064B" });
-      }
+    router2.patch("/teacher/gates", requireAdmin, async (_req, res) => {
+      res.json({ success: true, message: "\u0642\u0633\u0645 \u0627\u0644\u0628\u0648\u0627\u0628\u0627\u062A \u0623\u064F\u0632\u064A\u0644 \u2014 \u0627\u0633\u062A\u062E\u062F\u0645 \u0642\u0641\u0644 \u0627\u0644\u0648\u062D\u062F\u0629 \u0645\u0628\u0627\u0634\u0631\u0629." });
     });
     router2.get("/curriculum/courses", async (req, res) => {
       try {
@@ -29602,28 +29626,19 @@ var init_curriculum = __esm({
           } catch {
           }
         }
-        let gate = null;
-        if (student === "1" && grade && term) gate = await getGate(grade, term);
-        if (gate) {
-          let cutoff = gate.unlocked_unit_order ?? 99;
-          if (gate.unlocked_course_id) {
-            const ref = courses.find((c) => c.id === gate.unlocked_course_id);
-            if (ref) cutoff = Math.min(cutoff, ref.sort_order);
-          }
-          courses = courses.map((c) => ({
+        courses = courses.map((c) => {
+          const statusLocked = c.status === "locked" || c.status === "hidden";
+          const manualLocked = !!c.isLocked || statusLocked || !c.isVisible || !c.published;
+          const empty = c.status === "empty" || (c.lessons ?? 0) === 0;
+          return {
             ...c,
-            locked: c.isLocked || !c.isVisible || !c.published || c.sort_order > cutoff || c.status === "empty" ? c.sort_order > cutoff || c.isLocked || !c.isVisible : false,
-            gateLocked: c.sort_order > cutoff,
-            isEmpty: c.status === "empty" || c.lessons === 0
-          }));
-        } else {
-          courses = courses.map((c) => ({
-            ...c,
-            locked: c.isLocked,
+            locked: manualLocked,
             gateLocked: false,
-            isEmpty: c.status === "empty" || c.lessons === 0
-          }));
-        }
+            manualLocked,
+            isEmpty: empty,
+            lockReason: manualLocked ? "manual" : empty ? "empty" : "open"
+          };
+        });
         res.json(courses.map((c) => ({ ...c, progress: progressMap[c.id] || 0 })));
       } catch (err) {
         logger.error({ err }, "GET /curriculum/courses failed");
@@ -29713,32 +29728,23 @@ var init_curriculum = __esm({
     router2.get("/curriculum/courses/:id/lessons", async (req, res) => {
       try {
         const courseId = req.params.id;
-        const { student } = req.query;
-        const { data: courseData } = await supabaseQuery(`courses?id=eq.${enc(courseId)}&limit=1`);
-        const course = courseData?.[0];
-        const { data } = await supabaseQuery(`lessons?course_id=eq.${enc(courseId)}&order=position.asc&limit=200`);
+        const brief = req.query.brief === "1";
+        const { data } = await supabaseQuery(
+          brief ? `lessons?course_id=eq.${enc(courseId)}&select=id,course_id,title,description,position,published,lesson_type,cover_url,status,is_locked,is_visible,grade,term&order=position.asc&limit=200` : `lessons?course_id=eq.${enc(courseId)}&order=position.asc&limit=200`
+        );
         let lessons = (data || []).map(lessonToJson);
-        if (student === "1" && course) {
-          const gate = await getGate(course.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631", course.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644");
-          let cutoff = gate.unlocked_unit_order ?? 99;
-          if (gate.unlocked_course_id) {
-            const { data: refData } = await supabaseQuery(`courses?id=eq.${enc(gate.unlocked_course_id)}&limit=1`);
-            const refOrder = refData?.[0]?.sort_order;
-            if (typeof refOrder === "number") cutoff = Math.min(cutoff, refOrder);
-          }
-          const courseLocked = (course.sort_order ?? 1) > cutoff;
-          let lessonCutoff = 9999;
-          if (gate.unlocked_lesson_id && gate.unlocked_course_id === courseId) {
-            const ref = lessons.find((l) => l.id === gate.unlocked_lesson_id);
-            if (ref) lessonCutoff = ref.position;
-          }
-          lessons = lessons.map((l) => {
-            const locked = courseLocked || l.isLocked || !l.isVisible || l.position > lessonCutoff;
-            return { ...l, locked, gateLocked: courseLocked || l.position > lessonCutoff, isEmpty: l.status === "empty" };
-          });
-        } else {
-          lessons = lessons.map((l) => ({ ...l, locked: l.isLocked, gateLocked: false, isEmpty: l.status === "empty" }));
-        }
+        lessons = lessons.map((l) => {
+          const statusLocked = l.status === "locked" || l.status === "hidden";
+          const manualLocked = !!l.isLocked || statusLocked || !l.isVisible || l.published === false;
+          return {
+            ...l,
+            locked: manualLocked,
+            gateLocked: false,
+            manualLocked,
+            isEmpty: l.status === "empty",
+            lockReason: manualLocked ? "manual" : "open"
+          };
+        });
         res.json(lessons);
       } catch (err) {
         logger.error({ err }, "GET /curriculum/courses/:id/lessons failed");
@@ -30155,7 +30161,18 @@ var init_curriculum = __esm({
         if (grade) endpoint += `&grade=eq.${enc(grade)}`;
         const { data, error } = await supabaseQuery(endpoint);
         if (error) throw new Error(String(error));
-        res.json((data || []).map(assignmentToJson));
+        let counts = {};
+        try {
+          const ids = (data || []).map((a) => a.id);
+          if (ids.length) {
+            const { data: subs } = await supabaseQuery(
+              `assignment_submissions?assignment_id=in.(${ids.map(enc).join(",")})&select=assignment_id&limit=2000`
+            );
+            for (const s of subs || []) counts[s.assignment_id] = (counts[s.assignment_id] || 0) + 1;
+          }
+        } catch {
+        }
+        res.json((data || []).map((a) => ({ ...assignmentToJson(a), submissionsCount: counts[a.id] || 0 })));
       } catch (err) {
         logger.error({ err }, "GET teacher curriculum assignments failed");
         res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u0648\u0627\u062C\u0628\u0627\u062A" });
@@ -30168,6 +30185,9 @@ var init_curriculum = __esm({
         if (b.title !== void 0) full.title = b.title;
         if (b.description !== void 0) full.description = b.description;
         if (b.unit !== void 0) full.unit = b.unit;
+        if (b.courseId !== void 0 || b.course_id !== void 0) full.course_id = b.courseId ?? b.course_id ?? null;
+        if (b.lessonId !== void 0 || b.lesson_id !== void 0) full.lesson_id = b.lessonId ?? b.lesson_id ?? null;
+        if (b.images !== void 0) full.images = Array.isArray(b.images) ? b.images.filter((u) => String(u || "").trim()) : [];
         if (b.dueDate !== void 0 || b.due_date !== void 0) full.due_date = b.dueDate ?? b.due_date ?? null;
         if (b.points !== void 0) full.points = Number(b.points) || 0;
         if (b.published !== void 0) full.published = !!b.published;
@@ -30190,6 +30210,65 @@ var init_curriculum = __esm({
       } catch (err) {
         logger.error({ err }, "DELETE curriculum assignment failed");
         res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0648\u0627\u062C\u0628" });
+      }
+    });
+    router2.get("/teacher/curriculum/assignments/:id/submissions", requireAdmin, async (req, res) => {
+      try {
+        const { data, error } = await supabaseQuery(
+          `assignment_submissions?assignment_id=eq.${enc(req.params.id)}&order=submitted_at.desc&limit=200`
+        );
+        if (error) throw new Error(String(error));
+        const uids = [...new Set((data || []).map((s) => s.user_id).filter(Boolean))];
+        let profiles = {};
+        if (uids.length) {
+          try {
+            const { data: profs } = await supabaseQuery(
+              `profiles?id=in.(${uids.map(enc).join(",")})&select=id,full_name,grade,school,avatar_url&limit=200`
+            );
+            for (const p of profs || []) profiles[p.id] = p;
+          } catch {
+          }
+        }
+        res.json(
+          (data || []).map((s) => ({
+            id: s.id,
+            answer: s.answer || "",
+            photos: hwPhotosOf(s),
+            score: s.score ?? null,
+            feedback: s.feedback || "",
+            status: s.status || "\u062A\u0645 \u0627\u0644\u062A\u0633\u0644\u064A\u0645",
+            submittedAt: s.submitted_at || null,
+            student: {
+              id: s.user_id,
+              name: profiles[s.user_id]?.full_name || "\u0637\u0627\u0644\u0628",
+              grade: profiles[s.user_id]?.grade || "",
+              school: profiles[s.user_id]?.school || "",
+              avatarUrl: profiles[s.user_id]?.avatar_url || ""
+            }
+          }))
+        );
+      } catch (err) {
+        logger.error({ err }, "GET hw submissions failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u062A\u0633\u0644\u064A\u0645\u0627\u062A" });
+      }
+    });
+    router2.patch("/teacher/curriculum/assignment-submissions/:id", requireAdmin, async (req, res) => {
+      try {
+        const { score, feedback, status } = req.body || {};
+        const full = { reviewed_at: (/* @__PURE__ */ new Date()).toISOString() };
+        if (score !== void 0) full.score = score === null || score === "" ? null : Number(score);
+        if (feedback !== void 0) full.feedback = feedback;
+        if (status !== void 0) full.status = status;
+        else if (full.score !== void 0 && full.score !== null) full.status = "\u062A\u0645 \u0627\u0644\u062A\u0642\u064A\u064A\u0645";
+        const { error } = await supabaseQuery(`assignment_submissions?id=eq.${enc(req.params.id)}`, {
+          method: "PATCH",
+          body: full
+        });
+        if (error) throw new Error(String(error));
+        res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u062A\u0642\u064A\u064A\u0645!" });
+      } catch (err) {
+        logger.error({ err }, "PATCH hw submission failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u062A\u0642\u064A\u064A\u0645" });
       }
     });
     curriculum_default = router2;
@@ -34209,8 +34288,16 @@ var ListAssignmentsResponseItem = objectType({
   "title": stringType(),
   "description": stringType(),
   "unit": stringType(),
+  // ترقيع يدوي إضافي (الملف مولّد): ربط الواجب بالوحدة لعرضه تحتها
+  "courseId": stringType().nullable().optional(),
+  // ترقيع يدوي إضافي (الملف مولّد): الدرس المستهدف من الواجب لعرضه تحته
+  "lessonId": stringType().nullable().optional(),
+  // ترقيع يدوي إضافي (الملف مولّد): صور الأستاذ التوضيحية على الواجب
+  "images": arrayType(stringType()).optional(),
   "dueDate": stringType(),
   "status": stringType(),
+  // ترقيع يدوي إضافي (الملف مولّد): علامة الطالب في الواجب لعرضها في القائمة
+  "score": numberType().nullable().optional(),
   "points": numberType().int(),
   "grade": stringType().optional(),
   "section": stringType().optional()
@@ -34524,6 +34611,30 @@ router3.get("/platform/overview", async (_req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0645\u0646\u0635\u0629" });
   }
 });
+router3.get("/platform/identity", async (_req, res) => {
+  try {
+    const { data } = await supabaseQuery("platform_settings?select=*&limit=1");
+    const s = data?.[0] || {};
+    res.json({
+      platformName: s.platform_name || "\u0623\u0631\u0636 \u0627\u0644\u0644\u063A\u0629",
+      teacherName: s.teacher_name || "\u0627\u0644\u0645\u0639\u0644\u0645 \u0623\u062D\u0645\u062F \u064A\u062D\u064A\u0649 \u0627\u0644\u0623\u0633\u0637\u0644",
+      teacherBio: s.teacher_bio || "",
+      teacherImageUrl: s.teacher_image_url || "/teacher-ahmed.jpg",
+      accentColor: s.accent_color || "#d7b65e",
+      semester: s.semester || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644"
+    });
+  } catch (err) {
+    logger.error({ err }, "Error in GET /platform/identity");
+    res.json({
+      platformName: "\u0623\u0631\u0636 \u0627\u0644\u0644\u063A\u0629",
+      teacherName: "\u0627\u0644\u0645\u0639\u0644\u0645 \u0623\u062D\u0645\u062F \u064A\u062D\u064A\u0649 \u0627\u0644\u0623\u0633\u0637\u0644",
+      teacherBio: "",
+      teacherImageUrl: "/teacher-ahmed.jpg",
+      accentColor: "#d7b65e",
+      semester: "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644"
+    });
+  }
+});
 router3.get("/student/dashboard", requireAuth, async (req, res) => {
   try {
     const activeStudent = await getActiveStudent(req);
@@ -34709,20 +34820,34 @@ router3.get("/assignments", async (req, res) => {
       submissions = subRes.data || [];
     }
     const statusMap = {};
+    const scoreMap = {};
     for (const sub of submissions) {
-      statusMap[sub.assignment_id] = sub.score != null ? "\u062A\u0645 \u0627\u0644\u062A\u0633\u0644\u064A\u0645" : "\u0642\u064A\u062F \u0627\u0644\u0645\u0631\u0627\u062C\u0639\u0629";
+      statusMap[sub.assignment_id] = sub.score != null ? "\u062A\u0645 \u0627\u0644\u062A\u0642\u064A\u064A\u0645" : "\u0642\u064A\u062F \u0627\u0644\u0645\u0631\u0627\u062C\u0639\u0629";
+      scoreMap[sub.assignment_id] = sub.score ?? null;
     }
-    let parsed = (data || []).map((a) => ({
-      id: a.id,
-      title: a.title,
-      description: a.description || "",
-      unit: a.unit || "",
-      dueDate: a.due_date || "",
-      status: statusMap[a.id] || "\u0644\u0645 \u064A\u0628\u062F\u0623",
-      points: a.points || 0,
-      grade: a.grade || "\u0627\u0644\u062C\u0645\u064A\u0639",
-      section: a.section || "\u0627\u0644\u062C\u0645\u064A\u0639"
-    }));
+    let parsed = (data || []).map((a) => {
+      let images = [];
+      try {
+        images = Array.isArray(a.images) ? a.images : JSON.parse(a.images || "[]");
+      } catch {
+        images = [];
+      }
+      return {
+        id: a.id,
+        title: a.title,
+        description: a.description || "",
+        unit: a.unit || "",
+        courseId: a.course_id || null,
+        lessonId: a.lesson_id || null,
+        images: images.filter((u) => String(u || "").trim()),
+        dueDate: a.due_date || "",
+        status: statusMap[a.id] || "\u0644\u0645 \u064A\u0628\u062F\u0623",
+        score: scoreMap[a.id] ?? null,
+        points: a.points || 0,
+        grade: a.grade || "\u0627\u0644\u062C\u0645\u064A\u0639",
+        section: a.section || "\u0627\u0644\u062C\u0645\u064A\u0639"
+      };
+    });
     if (activeStudent) {
       const { getStudentProfile: getStudentProfile2, getSplitMap: getSplitMap2, itemVisible: itemVisible2 } = await Promise.resolve().then(() => (init_curriculum(), curriculum_exports));
       const [profile, splitMap] = await Promise.all([
@@ -34742,28 +34867,91 @@ router3.get("/assignments", async (req, res) => {
 router3.post("/assignments/:id/submit", requireAuth, async (req, res) => {
   try {
     const assignmentId = req.params.id;
-    const { answer, userId } = req.body;
+    const { answer, userId, photos } = req.body;
     const studentId = await resolveStudentId(userId, req);
     if (!studentId) {
       res.status(404).json({ error: "\u0644\u0645 \u064A\u062A\u0645 \u0627\u0644\u0639\u062B\u0648\u0631 \u0639\u0644\u0649 \u0627\u0644\u0637\u0627\u0644\u0628 \u0627\u0644\u0646\u0634\u0637" });
       return;
     }
-    await supabaseQuery("assignment_submissions", {
-      method: "POST",
-      body: [
-        {
-          assignment_id: assignmentId,
-          user_id: studentId,
-          status: "\u062A\u0645 \u0627\u0644\u062A\u0633\u0644\u064A\u0645 \u0628\u0646\u062C\u0627\u062D",
-          answer: answer || "\u062A\u0645 \u062A\u0642\u062F\u064A\u0645 \u0627\u0644\u0625\u062C\u0627\u0628\u0629",
-          submitted_at: (/* @__PURE__ */ new Date()).toISOString()
-        }
-      ]
-    });
+    const cleanPhotos = Array.isArray(photos) ? photos.filter((u) => String(u || "").trim()) : [];
+    if (!String(answer || "").trim() && !cleanPhotos.length) {
+      res.status(400).json({ error: "\u0627\u0643\u062A\u0628 \u062D\u0644\u0651\u0643 \u0623\u0648 \u0623\u0631\u0641\u0642 \u0635\u0648\u0631\u0629 \u0648\u0627\u062D\u062F\u0629 \u0639\u0644\u0649 \u0627\u0644\u0623\u0642\u0644" });
+      return;
+    }
+    const { data: prev } = await supabaseQuery(
+      `assignment_submissions?assignment_id=eq.${assignmentId}&user_id=eq.${studentId}&select=id,score,status&limit=1`
+    );
+    if (prev?.[0] && prev[0].score == null && String(prev[0].status || "") !== "\u062A\u0645 \u0627\u0644\u062A\u0642\u064A\u064A\u0645") {
+      res.status(400).json({ error: "\u062A\u0633\u0644\u064A\u0645\u0643 \u0642\u064A\u062F \u0645\u0631\u0627\u062C\u0639\u0629 \u0627\u0644\u0623\u0633\u062A\u0627\u0630 \u{1F512} \u2014 \u0644\u0627 \u064A\u0645\u0643\u0646 \u0627\u0644\u062A\u0639\u062F\u064A\u0644 \u0623\u0648 \u0625\u0639\u0627\u062F\u0629 \u0627\u0644\u0631\u0641\u0639 \u062D\u062A\u0649 \u064A\u0642\u064A\u0651\u0645\u0647." });
+      return;
+    }
+    const fullRow = {
+      assignment_id: assignmentId,
+      user_id: studentId,
+      status: "\u062A\u0645 \u0627\u0644\u062A\u0633\u0644\u064A\u0645 \u0628\u0646\u062C\u0627\u062D",
+      answer: String(answer || "").trim() || "\u062A\u0633\u0644\u064A\u0645 \u0628\u0635\u0648\u0631 \u0645\u0631\u0641\u0642\u0629",
+      photos: cleanPhotos,
+      submitted_at: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    const writeRow = async (row) => {
+      if (prev?.[0]) {
+        return supabaseQuery(`assignment_submissions?id=eq.${prev[0].id}`, {
+          method: "PATCH",
+          body: { ...row, score: null, feedback: "" }
+        });
+      }
+      return supabaseQuery("assignment_submissions", { method: "POST", body: [row] });
+    };
+    let r = await writeRow(fullRow);
+    if (r.error && /column|schema cache|Could not find/i.test(String(r.error))) {
+      const { photos: _p, ...withoutPhotos } = fullRow;
+      if (cleanPhotos.length) withoutPhotos.attachment_url = JSON.stringify(cleanPhotos);
+      r = await writeRow(withoutPhotos);
+    }
+    if (r.error) throw new Error(String(r.error));
     res.json({ success: true, message: "\u062A\u0645 \u0625\u0631\u0633\u0627\u0644 \u0625\u062C\u0627\u0628\u062A\u0643 \u0625\u0644\u0649 \u0627\u0644\u0623\u0633\u062A\u0627\u0630 \u0623\u062D\u0645\u062F \u064A\u062D\u064A\u0649 \u0627\u0644\u0623\u0633\u0637\u0644 \u0628\u0646\u062C\u0627\u062D!" });
   } catch (err) {
     logger.error({ err }, "Error in POST /assignments/:id/submit");
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0648\u0627\u062C\u0628" });
+  }
+});
+router3.get("/assignments/:id/mine", requireAuth, async (req, res) => {
+  try {
+    const assignmentId = req.params.id;
+    const { userId } = req.query;
+    const studentId = await resolveStudentId(userId, req);
+    if (!studentId) {
+      res.json(null);
+      return;
+    }
+    const { data } = await supabaseQuery(
+      `assignment_submissions?assignment_id=eq.${assignmentId}&user_id=eq.${studentId}&order=submitted_at.desc&limit=1`
+    );
+    const s = data?.[0];
+    if (!s) {
+      res.json(null);
+      return;
+    }
+    let photos = [];
+    try {
+      if (Array.isArray(s.photos)) photos = s.photos;
+      else if (typeof s.photos === "string" && s.photos.trim()) photos = JSON.parse(s.photos);
+      else if (s.attachment_url && String(s.attachment_url).trim().startsWith("[")) photos = JSON.parse(s.attachment_url);
+      else if (s.attachment_url && String(s.attachment_url).trim()) photos = [String(s.attachment_url)];
+    } catch {
+      photos = [];
+    }
+    res.json({
+      answer: s.answer || "",
+      photos: photos.filter((u) => String(u || "").trim()),
+      score: s.score ?? null,
+      feedback: s.feedback || "",
+      status: s.status || "\u062A\u0645 \u0627\u0644\u062A\u0633\u0644\u064A\u0645",
+      submittedAt: s.submitted_at || null
+    });
+  } catch (err) {
+    logger.error({ err }, "Error in GET /assignments/:id/mine");
+    res.json(null);
   }
 });
 router3.get("/assessments", async (req, res) => {
@@ -35017,10 +35205,16 @@ router3.post("/teacher/courses", requireAdmin, async (req, res) => {
 router3.post("/teacher/assignments", requireAdmin, async (req, res) => {
   try {
     const { title, description, unit, dueDate, points, grade, section } = req.body;
+    const courseId = req.body?.courseId ?? req.body?.course_id ?? null;
+    const lessonId = req.body?.lessonId ?? req.body?.lesson_id ?? null;
+    const images = Array.isArray(req.body?.images) ? req.body.images.filter((u) => String(u || "").trim()) : [];
     const full = {
       title: title || "\u0648\u0627\u062C\u0628 \u062C\u062F\u064A\u062F",
       description: description || "",
       unit: unit || "\u0627\u0644\u0648\u062D\u062F\u0629 \u0627\u0644\u0623\u0648\u0644\u0649",
+      course_id: courseId,
+      lesson_id: lessonId,
+      images,
       due_date: dueDate || new Date(Date.now() + 864e5 * 7).toISOString().split("T")[0],
       points: parseInt(points, 10) || 20,
       published: true,
@@ -35029,7 +35223,11 @@ router3.post("/teacher/assignments", requireAdmin, async (req, res) => {
     };
     let r = await supabaseQuery("assignments", { method: "POST", body: [full] });
     if (r.error && /column|schema cache|Could not find/i.test(String(r.error))) {
-      const { grade: _g, section: _s, ...base } = full;
+      const { lesson_id: _l, course_id: _c, images: _i, ...withoutNew } = full;
+      r = await supabaseQuery("assignments", { method: "POST", body: [withoutNew] });
+    }
+    if (r.error && /column|schema cache|Could not find/i.test(String(r.error))) {
+      const { grade: _g, section: _s, course_id: _cc, lesson_id: _ll, images: _ii, ...base } = full;
       r = await supabaseQuery("assignments", { method: "POST", body: [base] });
     }
     if (r.error) throw new Error(String(r.error));
@@ -35492,7 +35690,7 @@ router5.get("/teacher/curriculum/notebooks/:id/submissions", requireAdmin, async
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u062A\u0633\u0644\u064A\u0645\u0627\u062A" });
   }
 });
-router5.post("/api/notebooks/:id/submit", requireAuth, async (req, res) => {
+router5.post("/notebooks/:id/submit", requireAuth, async (req, res) => {
   try {
     const { userId, photos, note } = req.body || {};
     if (!userId) {
@@ -35541,7 +35739,7 @@ router5.post("/api/notebooks/:id/submit", requireAuth, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u0633\u0644\u064A\u0645 \u0627\u0644\u062F\u0641\u062A\u0631 \u2014 " + V3_HINT });
   }
 });
-router5.get("/api/notebooks/:id/mine", async (req, res) => {
+router5.get("/notebooks/:id/mine", async (req, res) => {
   try {
     const { user_id } = req.query;
     if (!user_id) {
@@ -35598,7 +35796,7 @@ router5.patch("/teacher/curriculum/notebook-submissions/:id", requireAdmin, asyn
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u062A\u0642\u064A\u064A\u0645" });
   }
 });
-router5.post("/api/student/upload", requireAuth, async (req, res) => {
+router5.post("/student/upload", requireAuth, async (req, res) => {
   try {
     const { file, fileName } = req.body || {};
     if (!file || typeof file !== "string") {
@@ -35720,6 +35918,7 @@ function setSessionCookies(res, data) {
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
+      path: "/",
       maxAge: 60 * 60 * 1e3
     });
   }
@@ -35728,8 +35927,24 @@ function setSessionCookies(res, data) {
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
+      path: "/",
       maxAge: 30 * 24 * 60 * 60 * 1e3
     });
+  }
+}
+async function trySilentRefresh2(req, res) {
+  try {
+    const refreshToken = req.cookies?.supabase_refresh_token;
+    if (typeof refreshToken !== "string" || !refreshToken) return null;
+    const { response, data } = await supabaseRequest("token?grant_type=refresh_token", {
+      refresh_token: refreshToken
+    });
+    if (!response.ok || typeof data.access_token !== "string") return null;
+    setSessionCookies(res, data);
+    return data.access_token;
+  } catch (err) {
+    logger.warn({ err }, "Silent session refresh failed");
+    return null;
   }
 }
 router6.post("/auth/register", async (req, res) => {
@@ -35925,15 +36140,25 @@ router6.post("/auth/exchange", async (req, res) => {
   }
 });
 router6.get("/auth/me", async (req, res) => {
-  const accessToken = req.cookies?.supabase_access_token;
+  let accessToken = req.cookies?.supabase_access_token;
   if (!accessToken) {
-    res.json({ authenticated: false });
-    return;
+    accessToken = await trySilentRefresh2(req, res);
+    if (!accessToken) {
+      res.json({ authenticated: false });
+      return;
+    }
   }
-  const user = await getSupabaseUser(accessToken);
+  let user = await getSupabaseUser(accessToken);
   if (!user) {
-    res.clearCookie("supabase_access_token");
-    res.clearCookie("supabase_refresh_token");
+    const refreshed = await trySilentRefresh2(req, res);
+    if (refreshed) {
+      accessToken = refreshed;
+      user = await getSupabaseUser(accessToken);
+    }
+  }
+  if (!user) {
+    res.clearCookie("supabase_access_token", { path: "/" });
+    res.clearCookie("supabase_refresh_token", { path: "/" });
     res.json({ authenticated: false });
     return;
   }
@@ -36020,10 +36245,18 @@ router6.post("/auth/complete-profile", async (req, res) => {
     user: { id: profile.id, email: profile.email, fullName: profile.full_name, avatarUrl: "" }
   });
 });
+router6.post("/auth/refresh", async (req, res) => {
+  const accessToken = await trySilentRefresh2(req, res);
+  if (!accessToken) {
+    res.status(401).json({ authenticated: false, error: "\u0627\u0646\u062A\u0647\u062A \u0627\u0644\u062C\u0644\u0633\u0629. \u0633\u062C\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0645\u0646 \u062C\u062F\u064A\u062F." });
+    return;
+  }
+  res.json({ authenticated: true });
+});
 router6.post("/auth/logout", (_req, res) => {
-  res.clearCookie("supabase_access_token");
-  res.clearCookie("supabase_refresh_token");
-  res.clearCookie("supabase_pkce_verifier");
+  res.clearCookie("supabase_access_token", { path: "/" });
+  res.clearCookie("supabase_refresh_token", { path: "/" });
+  res.clearCookie("supabase_pkce_verifier", { path: "/" });
   res.json(LogoutAccountResponse.parse({ message: "\u062A\u0645 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062E\u0631\u0648\u062C." }));
 });
 var auth_default = router6;
