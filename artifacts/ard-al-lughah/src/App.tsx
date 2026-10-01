@@ -3402,6 +3402,7 @@ function StudentsPage() {
       section: s.section || 'أ',
       gender: s.gender === 'طالبة' ? 'طالبة' : 'طالب',
       status: s.status || 'نشط',
+      password: '',
     });
     setEditItem(s);
   };
@@ -3410,12 +3411,18 @@ function StudentsPage() {
     if (!editItem) return;
     setSavingEdit(true);
     try {
-      await jsonFetch(`/api/teacher/students/${editItem.id}`, { method: 'PATCH', body: editForm });
+      const { password, ...profile } = editForm;
+      await jsonFetch(`/api/teacher/students/${editItem.id}`, { method: 'PATCH', body: profile });
+      let pwdMsg = '';
+      if (password && String(password).trim()) {
+        const pr = await jsonFetch(`/api/teacher/students/${editItem.id}/password`, { method: 'PATCH', body: { password: String(password).trim() } });
+        pwdMsg = ' + ' + (pr.message || 'تم تغيير كلمة السر');
+      }
       setOpOk(true);
-      setOpMsg(`تم حفظ بيانات ${editForm.name} بنجاح ✓`);
+      setOpMsg(`تم حفظ بيانات ${editForm.name} بنجاح ✓${pwdMsg}`);
       setEditItem(null);
       query.refetch();
-      setTimeout(() => setOpMsg(''), 3000);
+      setTimeout(() => setOpMsg(''), 4000);
     } catch (e: any) {
       setOpOk(false);
       setOpMsg(e?.message || 'تعذر حفظ بيانات الطالب');
@@ -3554,6 +3561,17 @@ function StudentsPage() {
                 </select>
               </Field2>
             </div>
+            <Field2 label="كلمة سر جديدة (اختياري)">
+              <input
+                type="text"
+                value={editForm.password || ''}
+                onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                placeholder="اتركها فارغة للإبقاء — 6 أحرف على الأقل للتغيير"
+                dir="ltr"
+                className={`${inputCls} text-left`}
+                data-testid="input-edit-student-password"
+              />
+            </Field2>
             <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
               <Button type="button" onClick={() => editItem && deleteStudent(editItem)} variant="ghost" className="text-destructive"><Trash2 size={15} /> حذف الطالب</Button>
               <span className="flex items-center gap-3">

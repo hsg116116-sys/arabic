@@ -995,6 +995,12 @@ router.patch("/teacher/students/:id", requireAdmin, async (req, res) => {
       res.status(400).json({ error: "اسم الطالب مطلوب" });
       return;
     }
+    const id = String(req.params.id);
+    const { data: exists } = await supabaseQuery<any[]>(`profiles?id=eq.${encodeURIComponent(id)}&select=id&limit=1`);
+    if (!exists?.[0]) {
+      res.status(404).json({ error: "الطالب غير موجود في القاعدة — حدّث الصفحة وحاول مجدداً" });
+      return;
+    }
     const full: Record<string, any> = { updated_at: new Date().toISOString() };
     if (b.name !== undefined) full.full_name = String(b.name).trim();
     if (b.email !== undefined) full.email = String(b.email || "").trim();
@@ -1022,6 +1028,11 @@ router.patch("/teacher/students/:id", requireAdmin, async (req, res) => {
 router.delete("/teacher/students/:id", requireAdmin, async (req, res) => {
   try {
     const id = String(req.params.id);
+    const { data: exists } = await supabaseQuery<any[]>(`profiles?id=eq.${encodeURIComponent(id)}&select=id&limit=1`);
+    if (!exists?.[0]) {
+      res.status(404).json({ error: "الطالب غير موجود في القاعدة — حدّث الصفحة وحاول مجدداً" });
+      return;
+    }
     const { error } = await supabaseQuery(`profiles?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
     if (error) throw new Error(String(error));
     // محاولة حذف حساب الدخول من المصادقة (best-effort — لا تفشل الحذف إن تعذر)
@@ -1043,6 +1054,50 @@ router.delete("/teacher/students/:id", requireAdmin, async (req, res) => {
   } catch (err: any) {
     logger.error({ err }, "Error in DELETE /teacher/students/:id");
     res.status(500).json({ error: "تعذر حذف الطالب" });
+  }
+});
+
+// 9.4 Change Student Password — تغيير كلمة سر حساب الطالب (المعلم فقط)
+router.patch("/teacher/students/:id/password", requireAdmin, async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const password = String(req.body?.password || "");
+    if (password.length < 6) {
+      res.status(400).json({ error: "كلمة السر 6 أحرف على الأقل" });
+      return;
+    }
+    const { data: exists } = await supabaseQuery<any[]>(`profiles?id=eq.${encodeURIComponent(id)}&select=id&limit=1`);
+    if (!exists?.[0]) {
+      res.status(404).json({ error: "الطالب غير موجود في القاعدة" });
+      return;
+    }
+    const base = SUPABASE_URL.replace(/\/+$/, "");
+    const key =
+      process.env.SUPABASE_SECRET_KEY ||
+      process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      process.env.SUPABASE_KEY ||
+      "";
+    if (!key) {
+      res.status(500).json({ error: "مفتاح الخدمة غير مهيأ في السيرفر (SUPABASE_SECRET_KEY) — أضفه ثم أعد التشغيل" });
+      return;
+    }
+    const response = await fetch(`${base}/auth/v1/admin/users/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({ password }),
+    });
+    const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!response.ok) {
+      throw new Error(String((data as any)?.msg ?? (data as any)?.message ?? `Auth error ${response.status}`));
+    }
+    res.json({ success: true, message: "تم تغيير كلمة سر الطالب بنجاح!" });
+  } catch (err: any) {
+    logger.error({ err }, "Error in PATCH /teacher/students/:id/password");
+    res.status(500).json({ error: err?.message || "تعذر تغيير كلمة السر" });
   }
 });
 

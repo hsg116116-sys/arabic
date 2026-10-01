@@ -35324,6 +35324,12 @@ router3.patch("/teacher/students/:id", requireAdmin, async (req, res) => {
       res.status(400).json({ error: "\u0627\u0633\u0645 \u0627\u0644\u0637\u0627\u0644\u0628 \u0645\u0637\u0644\u0648\u0628" });
       return;
     }
+    const id = String(req.params.id);
+    const { data: exists } = await supabaseQuery(`profiles?id=eq.${encodeURIComponent(id)}&select=id&limit=1`);
+    if (!exists?.[0]) {
+      res.status(404).json({ error: "\u0627\u0644\u0637\u0627\u0644\u0628 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F \u0641\u064A \u0627\u0644\u0642\u0627\u0639\u062F\u0629 \u2014 \u062D\u062F\u0651\u062B \u0627\u0644\u0635\u0641\u062D\u0629 \u0648\u062D\u0627\u0648\u0644 \u0645\u062C\u062F\u062F\u0627\u064B" });
+      return;
+    }
     const full = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
     if (b.name !== void 0) full.full_name = String(b.name).trim();
     if (b.email !== void 0) full.email = String(b.email || "").trim();
@@ -35349,6 +35355,11 @@ router3.patch("/teacher/students/:id", requireAdmin, async (req, res) => {
 router3.delete("/teacher/students/:id", requireAdmin, async (req, res) => {
   try {
     const id = String(req.params.id);
+    const { data: exists } = await supabaseQuery(`profiles?id=eq.${encodeURIComponent(id)}&select=id&limit=1`);
+    if (!exists?.[0]) {
+      res.status(404).json({ error: "\u0627\u0644\u0637\u0627\u0644\u0628 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F \u0641\u064A \u0627\u0644\u0642\u0627\u0639\u062F\u0629 \u2014 \u062D\u062F\u0651\u062B \u0627\u0644\u0635\u0641\u062D\u0629 \u0648\u062D\u0627\u0648\u0644 \u0645\u062C\u062F\u062F\u0627\u064B" });
+      return;
+    }
     const { error } = await supabaseQuery(`profiles?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
     if (error) throw new Error(String(error));
     try {
@@ -35366,6 +35377,44 @@ router3.delete("/teacher/students/:id", requireAdmin, async (req, res) => {
   } catch (err) {
     logger.error({ err }, "Error in DELETE /teacher/students/:id");
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0637\u0627\u0644\u0628" });
+  }
+});
+router3.patch("/teacher/students/:id/password", requireAdmin, async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const password = String(req.body?.password || "");
+    if (password.length < 6) {
+      res.status(400).json({ error: "\u0643\u0644\u0645\u0629 \u0627\u0644\u0633\u0631 6 \u0623\u062D\u0631\u0641 \u0639\u0644\u0649 \u0627\u0644\u0623\u0642\u0644" });
+      return;
+    }
+    const { data: exists } = await supabaseQuery(`profiles?id=eq.${encodeURIComponent(id)}&select=id&limit=1`);
+    if (!exists?.[0]) {
+      res.status(404).json({ error: "\u0627\u0644\u0637\u0627\u0644\u0628 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F \u0641\u064A \u0627\u0644\u0642\u0627\u0639\u062F\u0629" });
+      return;
+    }
+    const base = SUPABASE_URL2.replace(/\/+$/, "");
+    const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || "";
+    if (!key) {
+      res.status(500).json({ error: "\u0645\u0641\u062A\u0627\u062D \u0627\u0644\u062E\u062F\u0645\u0629 \u063A\u064A\u0631 \u0645\u0647\u064A\u0623 \u0641\u064A \u0627\u0644\u0633\u064A\u0631\u0641\u0631 (SUPABASE_SECRET_KEY) \u2014 \u0623\u0636\u0641\u0647 \u062B\u0645 \u0623\u0639\u062F \u0627\u0644\u062A\u0634\u063A\u064A\u0644" });
+      return;
+    }
+    const response = await fetch(`${base}/auth/v1/admin/users/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: key,
+        Authorization: `Bearer ${key}`
+      },
+      body: JSON.stringify({ password })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(String(data?.msg ?? data?.message ?? `Auth error ${response.status}`));
+    }
+    res.json({ success: true, message: "\u062A\u0645 \u062A\u063A\u064A\u064A\u0631 \u0643\u0644\u0645\u0629 \u0633\u0631 \u0627\u0644\u0637\u0627\u0644\u0628 \u0628\u0646\u062C\u0627\u062D!" });
+  } catch (err) {
+    logger.error({ err }, "Error in PATCH /teacher/students/:id/password");
+    res.status(500).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u062A\u063A\u064A\u064A\u0631 \u0643\u0644\u0645\u0629 \u0627\u0644\u0633\u0631" });
   }
 });
 router3.post("/teacher/courses", requireAdmin, async (req, res) => {
