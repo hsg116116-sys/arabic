@@ -29231,24 +29231,31 @@ function groqKeys() {
   if (csv) for (const k of csv.split(",")) push(k);
   return list;
 }
-async function chatComplete(url, key, model, prompt) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: "\u0623\u0646\u062A \u0645\u0648\u0644\u0651\u062F \u0627\u062E\u062A\u0628\u0627\u0631\u0627\u062A \u0639\u0631\u0628\u064A\u0629. \u0623\u0639\u062F JSON \u062E\u0627\u0645 \u0641\u0642\u0637." },
-        { role: "user", content: prompt }
-      ],
-      temperature: 0.7
-    })
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error?.message || `AI error ${res.status}`);
-  const text = data?.choices?.[0]?.message?.content;
-  if (!text) throw new Error("empty AI response");
-  return text;
+async function chatComplete(url, key, model, prompt, timeoutMs = 5e4) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: "\u0623\u0646\u062A \u0645\u0648\u0644\u0651\u062F \u0627\u062E\u062A\u0628\u0627\u0631\u0627\u062A \u0639\u0631\u0628\u064A\u0629. \u0623\u0639\u062F JSON \u062E\u0627\u0645 \u0641\u0642\u0637." },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.7
+      }),
+      signal: ctrl.signal
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error?.message || `AI error ${res.status}`);
+    const text = data?.choices?.[0]?.message?.content;
+    if (!text) throw new Error("empty AI response");
+    return text;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 function groqModels() {
   const list = [
@@ -29304,42 +29311,91 @@ function suggestExamMeta(opts) {
   const unit = clean(opts.unitTitle);
   const suggestedTitle = lesson ? `\u0627\u062E\u062A\u0628\u0627\u0631 \u062F\u0631\u0633 ${lesson}` : unit ? `\u0627\u062E\u062A\u0628\u0627\u0631 ${unit}` : `\u0627\u062E\u062A\u0628\u0627\u0631: ${opts.prompt.slice(0, 45)}`;
   const n = opts.questionsCount;
-  const suggestedDuration = n <= 3 ? PRESET_DURATIONS[0] : n <= 5 ? PRESET_DURATIONS[1] : n <= 8 ? PRESET_DURATIONS[2] : n <= 10 ? PRESET_DURATIONS[3] : PRESET_DURATIONS[4];
+  const suggestedDuration = n <= 3 ? PRESET_DURATIONS[0] : n <= 5 ? PRESET_DURATIONS[1] : n <= 8 ? PRESET_DURATIONS[2] : n <= 12 ? PRESET_DURATIONS[3] : n <= 20 ? PRESET_DURATIONS[4] : PRESET_DURATIONS[5];
   return { suggestedTitle, suggestedDuration };
 }
-async function generateQuestions(opts) {
-  const auto = !opts.count || Number(opts.count) <= 0;
-  const count = auto ? 10 : Math.min(Math.max(Number(opts.count), 1), 15);
-  const full = buildPrompt({ ...opts, count: auto ? void 0 : count });
-  const finish = (payload, provider) => ({
-    questions: payload.questions.slice(0, count),
-    description: payload.description,
-    durationMinutes: payload.durationMinutes,
-    provider
-  });
+async function runOnce(prompt) {
   const keys = groqKeys();
   for (let i = 0; i < keys.length; i++) {
     try {
-      return finish(extractQuestions(await viaGroq(full, keys[i])), `GROQ #${i + 1}`);
+      return { payload: extractQuestions(await viaGroq(prompt, keys[i])), provider: `GROQ #${i + 1}` };
     } catch (err) {
       logger.warn({ keyIndex: i + 1, err: err?.message }, "GROQ key failed, rotating to next");
     }
   }
   if (process.env.AI_API_KEY) {
     try {
-      return finish(extractQuestions(await viaOpenAICompatible(full)), "custom");
+      return { payload: extractQuestions(await viaOpenAICompatible(prompt)), provider: "custom" };
     } catch (err) {
       logger.warn({ err }, "custom AI failed, falling back to free provider");
     }
   }
-  try {
-    return finish(extractQuestions(await viaPollinations(full)), "free");
-  } catch (err) {
-    logger.error({ err }, "AI generation failed on all providers");
+  const text = await viaPollinations(prompt);
+  return { payload: extractQuestions(text), provider: "free" };
+}
+async function generateQuestions(opts) {
+  const auto = !opts.count || Number(opts.count) <= 0;
+  const count = auto ? 10 : Math.min(Math.max(Math.round(Number(opts.count)) || 10, 1), MAX_COUNT);
+  const BATCH = 10;
+  const batches = Math.ceil(count / BATCH);
+  if (batches <= 1) {
+    const full = buildPrompt({ ...opts, count: auto ? void 0 : count });
+    const { payload, provider } = await runOnce(full);
+    return {
+      questions: payload.questions.slice(0, count),
+      description: payload.description,
+      durationMinutes: payload.durationMinutes,
+      provider
+    };
+  }
+  const ANGLES = [
+    "\u0623\u0633\u0626\u0644\u0629 \u0641\u0647\u0645 \u0648\u0627\u0633\u062A\u064A\u0639\u0627\u0628 \u0645\u0628\u0627\u0634\u0631\u0629 \u0644\u0644\u062F\u0631\u0633",
+    "\u0623\u0633\u0626\u0644\u0629 \u062A\u0637\u0628\u064A\u0642\u064A\u0629 \u0639\u0644\u0649 \u0623\u0645\u062B\u0644\u0629 \u0648\u0634\u0648\u0627\u0647\u062F \u062C\u062F\u064A\u062F\u0629",
+    "\u0623\u0633\u0626\u0644\u0629 \u062A\u0645\u064A\u064A\u0632 \u062F\u0642\u064A\u0642 \u0628\u064A\u0646 \u0627\u0644\u0645\u0641\u0627\u0647\u064A\u0645 \u0627\u0644\u0645\u062A\u0642\u0627\u0631\u0628\u0629",
+    "\u0623\u0633\u0626\u0644\u0629 \u062A\u0631\u0643\u064A\u0628\u064A\u0629 \u062A\u0642\u064A\u0633 \u0627\u0644\u0641\u0647\u0645 \u0627\u0644\u0639\u0645\u064A\u0642"
+  ];
+  const jobs = Array.from({ length: batches }, (_, i) => {
+    const full = buildPrompt({ ...opts, count: BATCH }) + `
+- \u0647\u0630\u0647 \u0627\u0644\u062F\u0641\u0639\u0629 \u0631\u0642\u0645 ${i + 1} \u0645\u0646 ${batches}: \u0627\u062C\u0639\u0644 \u0623\u0633\u0626\u0644\u062A\u0647\u0627 \u0628\u0632\u0627\u0648\u064A\u0629 \xAB${ANGLES[i % ANGLES.length]}\xBB \u0648\u0645\u062E\u062A\u0644\u0641\u0629 \u062A\u0645\u0627\u0645\u0627\u064B \u0639\u0646 \u0623\u064A \u0623\u0633\u0626\u0644\u0629 \u0645\u0639\u062A\u0627\u062F\u0629 \u062D\u0648\u0644 \u0627\u0644\u0645\u0648\u0636\u0648\u0639 \u2014 \u0645\u0645\u0646\u0648\u0639 \u0623\u064A \u062A\u0643\u0631\u0627\u0631 \u0644\u0641\u0638\u064A \u0623\u0648 \u0645\u0639\u0646\u0648\u064A.`;
+    return runOnce(full);
+  });
+  const settled = await Promise.allSettled(jobs);
+  const merged = [];
+  const seen = /* @__PURE__ */ new Set();
+  const norm = (s) => String(s || "").replace(/[ً-ٰٟ]/g, "").replace(/[أإآ]/g, "\u0627").replace(/ة/g, "\u0647").replace(/[^\u0621-\u064A\u0660-\u06690-9]+/g, " ").replace(/\s+/g, " ").trim();
+  let description = "";
+  let durationMinutes = null;
+  const providers = [];
+  let firstErr = null;
+  for (const r of settled) {
+    if (r.status !== "fulfilled") {
+      if (!firstErr) firstErr = r.reason;
+      continue;
+    }
+    providers.push(r.value.provider);
+    if (!description) description = r.value.payload.description;
+    if (durationMinutes == null) durationMinutes = r.value.payload.durationMinutes;
+    for (const q of r.value.payload.questions) {
+      const key = norm(q.question).slice(0, 120);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      merged.push(q);
+      if (merged.length >= count) break;
+    }
+    if (merged.length >= count) break;
+  }
+  if (!merged.length) {
+    logger.error({ err: firstErr }, "AI batch generation failed on all providers");
     throw new Error("\u062A\u0639\u0630\u0631 \u062A\u0648\u0644\u064A\u062F \u0627\u0644\u0623\u0633\u0626\u0644\u0629 \u0627\u0644\u0622\u0646 \u0639\u0644\u0649 \u0643\u0644 \u0627\u0644\u0645\u0632\u0648\u062F\u064A\u0646 \u2014 \u062A\u062D\u0642\u0642 \u0645\u0646 \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0648\u0627\u0644\u0645\u0641\u0627\u062A\u064A\u062D \u0648\u062D\u0627\u0648\u0644 \u0645\u062C\u062F\u062F\u0627\u064B (\u064A\u0645\u0643\u0646\u0643 \u062F\u0627\u0626\u0645\u0627\u064B \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0623\u0633\u0626\u0644\u0629 \u064A\u062F\u0648\u064A\u0627\u064B).");
   }
+  return {
+    questions: merged.slice(0, count),
+    description,
+    durationMinutes,
+    provider: [...new Set(providers)].join("+") || "batch"
+  };
 }
-var PRESET_DURATIONS;
+var PRESET_DURATIONS, MAX_COUNT;
 var init_ai = __esm({
   "src/lib/ai.ts"() {
     "use strict";
@@ -29347,6 +29403,7 @@ var init_ai = __esm({
     init_imagekit();
     loadLocalEnvOnce();
     PRESET_DURATIONS = ["10 \u062F\u0642\u0627\u0626\u0642", "15 \u062F\u0642\u064A\u0642\u0629", "20 \u062F\u0642\u064A\u0642\u0629", "30 \u062F\u0642\u064A\u0642\u0629", "45 \u062F\u0642\u064A\u0642\u0629", "60 \u062F\u0642\u064A\u0642\u0629"];
+    MAX_COUNT = 40;
   }
 });
 

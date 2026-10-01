@@ -155,24 +155,32 @@ async function chatComplete(
   key: string,
   model: string,
   prompt: string,
+  timeoutMs = 50000,
 ): Promise<string> {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: "أنت مولّد اختبارات عربية. أعد JSON خام فقط." },
-        { role: "user", content: prompt },
-      ],
-      temperature: 0.7,
-    }),
-  });
-  const data = (await res.json().catch(() => ({}))) as any;
-  if (!res.ok) throw new Error(data?.error?.message || `AI error ${res.status}`);
-  const text = data?.choices?.[0]?.message?.content;
-  if (!text) throw new Error("empty AI response");
-  return text;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: "أنت مولّد اختبارات عربية. أعد JSON خام فقط." },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.7,
+      }),
+      signal: ctrl.signal,
+    });
+    const data = (await res.json().catch(() => ({}))) as any;
+    if (!res.ok) throw new Error(data?.error?.message || `AI error ${res.status}`);
+    const text = data?.choices?.[0]?.message?.content;
+    if (!text) throw new Error("empty AI response");
+    return text;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** الموديلات المرشحة بالترتيب — الأول من .env ثم بدائل مثبتة (ضد تقاعد الموديلات) */
@@ -248,11 +256,39 @@ export function suggestExamMeta(opts: {
       : `اختبار: ${opts.prompt.slice(0, 45)}`;
   const n = opts.questionsCount;
   const suggestedDuration =
-    n <= 3 ? PRESET_DURATIONS[0] : n <= 5 ? PRESET_DURATIONS[1] : n <= 8 ? PRESET_DURATIONS[2] : n <= 10 ? PRESET_DURATIONS[3] : PRESET_DURATIONS[4];
+    n <= 3 ? PRESET_DURATIONS[0] : n <= 5 ? PRESET_DURATIONS[1] : n <= 8 ? PRESET_DURATIONS[2] : n <= 12 ? PRESET_DURATIONS[3] : n <= 20 ? PRESET_DURATIONS[4] : PRESET_DURATIONS[5];
   return { suggestedTitle, suggestedDuration };
 }
 
 export { PRESET_DURATIONS };
+
+const MAX_COUNT = 40;
+
+/** محاولة توليد واحدة عبر سلسلة المزودين (GROQ ثم الخاص ثم المجاني) */
+async function runOnce(prompt: string): Promise<{ payload: AiExamPayload; provider: string }> {
+  // 1) مفاتيح GROQ بالترتيب: الأول، فإن فشل فالثاني، وهكذا
+  const keys = groqKeys();
+  for (let i = 0; i < keys.length; i++) {
+    try {
+      return { payload: extractQuestions(await viaGroq(prompt, keys[i])), provider: `GROQ #${i + 1}` };
+    } catch (err: any) {
+      logger.warn({ keyIndex: i + 1, err: err?.message }, "GROQ key failed, rotating to next");
+    }
+  }
+
+  // 2) مزود خاص إن وُجد
+  if (process.env.AI_API_KEY) {
+    try {
+      return { payload: extractQuestions(await viaOpenAICompatible(prompt)), provider: "custom" };
+    } catch (err: any) {
+      logger.warn({ err }, "custom AI failed, falling back to free provider");
+    }
+  }
+
+  // 3) المجاني الاحتياطي
+  const text = await viaPollinations(prompt);
+  return { payload: extractQuestions(text), provider: "free" };
+}
 
 export async function generateQuestions(opts: {
   prompt: string;
@@ -263,40 +299,75 @@ export async function generateQuestions(opts: {
   lessonTitle?: string;
 }): Promise<{ questions: GeneratedQuestion[]; description: string; durationMinutes: number | null; provider: string }> {
   const auto = !opts.count || Number(opts.count) <= 0;
-  const count = auto ? 10 : Math.min(Math.max(Number(opts.count), 1), 15);
-  const full = buildPrompt({ ...opts, count: auto ? undefined : count });
+  const count = auto ? 10 : Math.min(Math.max(Math.round(Number(opts.count)) || 10, 1), MAX_COUNT);
+  const BATCH = 10;
+  const batches = Math.ceil(count / BATCH);
 
-  const finish = (payload: AiExamPayload, provider: string) => ({
-    questions: payload.questions.slice(0, count),
-    description: payload.description,
-    durationMinutes: payload.durationMinutes,
-    provider,
+  // دفعة واحدة (الأكثر شيوعاً) — نفس المسار السابق تماماً
+  if (batches <= 1) {
+    const full = buildPrompt({ ...opts, count: auto ? undefined : count });
+    const { payload, provider } = await runOnce(full);
+    return {
+      questions: payload.questions.slice(0, count),
+      description: payload.description,
+      durationMinutes: payload.durationMinutes,
+      provider,
+    };
+  }
+
+  // أعداد كبيرة (حتى 40): دفعات متوازية بزوايا مختلفة ثم دمج بلا تكرار
+  const ANGLES = [
+    "أسئلة فهم واستيعاب مباشرة للدرس",
+    "أسئلة تطبيقية على أمثلة وشواهد جديدة",
+    "أسئلة تمييز دقيق بين المفاهيم المتقاربة",
+    "أسئلة تركيبية تقيس الفهم العميق",
+  ];
+  const jobs = Array.from({ length: batches }, (_, i) => {
+    const full =
+      buildPrompt({ ...opts, count: BATCH }) +
+      `\n- هذه الدفعة رقم ${i + 1} من ${batches}: اجعل أسئلتها بزاوية «${ANGLES[i % ANGLES.length]}» ومختلفة تماماً عن أي أسئلة معتادة حول الموضوع — ممنوع أي تكرار لفظي أو معنوي.`;
+    return runOnce(full);
   });
-
-  // 1) مفاتيح GROQ بالترتيب: الأول، فإن فشل فالثاني، وهكذا
-  const keys = groqKeys();
-  for (let i = 0; i < keys.length; i++) {
-    try {
-      return finish(extractQuestions(await viaGroq(full, keys[i])), `GROQ #${i + 1}`);
-    } catch (err: any) {
-      logger.warn({ keyIndex: i + 1, err: err?.message }, "GROQ key failed, rotating to next");
+  const settled = await Promise.allSettled(jobs);
+  const merged: GeneratedQuestion[] = [];
+  const seen = new Set<string>();
+  const norm = (s: string) =>
+    String(s || "")
+      .replace(/[ً-ٰٟ]/g, "")
+      .replace(/[أإآ]/g, "ا")
+      .replace(/ة/g, "ه")
+      .replace(/[^\u0621-\u064A\u0660-\u06690-9]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  let description = "";
+  let durationMinutes: number | null = null;
+  const providers: string[] = [];
+  let firstErr: any = null;
+  for (const r of settled) {
+    if (r.status !== "fulfilled") {
+      if (!firstErr) firstErr = r.reason;
+      continue;
     }
-  }
-
-  // 2) مزود خاص إن وُجد
-  if (process.env.AI_API_KEY) {
-    try {
-      return finish(extractQuestions(await viaOpenAICompatible(full)), "custom");
-    } catch (err: any) {
-      logger.warn({ err }, "custom AI failed, falling back to free provider");
+    providers.push(r.value.provider);
+    if (!description) description = r.value.payload.description;
+    if (durationMinutes == null) durationMinutes = r.value.payload.durationMinutes;
+    for (const q of r.value.payload.questions) {
+      const key = norm(q.question).slice(0, 120);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      merged.push(q);
+      if (merged.length >= count) break;
     }
+    if (merged.length >= count) break;
   }
-
-  // 3) المجاني الاحتياطي
-  try {
-    return finish(extractQuestions(await viaPollinations(full)), "free");
-  } catch (err: any) {
-    logger.error({ err }, "AI generation failed on all providers");
+  if (!merged.length) {
+    logger.error({ err: firstErr }, "AI batch generation failed on all providers");
     throw new Error("تعذر توليد الأسئلة الآن على كل المزودين — تحقق من الاتصال والمفاتيح وحاول مجدداً (يمكنك دائماً إضافة الأسئلة يدوياً).");
   }
+  return {
+    questions: merged.slice(0, count),
+    description,
+    durationMinutes,
+    provider: [...new Set(providers)].join("+") || "batch",
+  };
 }

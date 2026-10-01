@@ -4956,9 +4956,11 @@ function CurriculumManagerPage({ onlyTab, hero }: {
   const [examLessons, setExamLessons] = useState<any[]>([]);
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiLevel, setAiLevel] = useState('متوسط');
+  const [aiCount, setAiCount] = useState(10);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiDrafts, setAiDrafts] = useState<any[]>([]);
   const [aiMsg, setAiMsg] = useState('');
+  const [aiOk, setAiOk] = useState(true);
   const [importText, setImportText] = useState('');
   const importFromText = () => {
     const parsed = parseTextQuiz(importText);
@@ -4978,12 +4980,14 @@ function CurriculumManagerPage({ onlyTab, hero }: {
     const course = courses.find((c: any) => c.id === examForm.courseId);
     const lesson = examLessons.find((l: any) => l.id === examForm.lessonId);
     const prompt = aiPrompt.trim() || `اختبار شامل عن ${lesson?.title || course?.title || 'المنهاج'}`;
+    const want = Math.min(Math.max(Number(aiCount) || 10, 1), 40);
     setAiLoading(true);
     setAiMsg('');
+    setAiOk(true);
     try {
       const res = await jsonFetch('/api/teacher/curriculum/assessments/generate', {
         method: 'POST',
-        body: { prompt, level: aiLevel, grade, unitTitle: course?.title || '', lessonTitle: lesson?.title || '' },
+        body: { prompt, count: want, level: aiLevel, grade, unitTitle: course?.title || '', lessonTitle: lesson?.title || '' },
       });
       const qs = Array.isArray(res.questions) ? res.questions : [];
       setAiDrafts(qs);
@@ -5002,13 +5006,19 @@ function CurriculumManagerPage({ onlyTab, hero }: {
         filled.push('المدة المناسبة');
       }
       if (!qs.length) {
-        setAiMsg('لم يولّد الذكاء أسئلة — جرّب صياغة أخرى');
-      } else if (filled.length) {
-        setAiMsg(`تم توليد ${qs.length} أسئلة (العدد الحقيقي ✓) وتعبئة (${filled.join(' + ')}) تلقائياً ✓`);
+        setAiOk(false);
+        setAiMsg('لم يولّد الذكاء أسئلة — جرّب صياغة أخرى أو قلل العدد');
       } else {
-        setAiMsg(`تم توليد ${qs.length} أسئلة بنجاح — راجعها واعتمدها ✓`);
+        setAiOk(true);
+        const short = qs.length < want ? ` (طلبت ${want} لكن المتاح غير المكرر ${qs.length} — ولّد دفعة أخرى للإكمال)` : '';
+        if (filled.length) {
+          setAiMsg(`تم توليد ${qs.length} أسئلة حقيقية ✓${short} وتعبئة (${filled.join(' + ')}) تلقائياً ✓`);
+        } else {
+          setAiMsg(`تم توليد ${qs.length} أسئلة بنجاح ✓${short} — راجعها واعتمدها`);
+        }
       }
     } catch (e: any) {
+      setAiOk(false);
       setAiMsg(e?.message || 'تعذر التوليد الآن');
     } finally {
       setAiLoading(false);
@@ -5280,7 +5290,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
   /* ---------- الاختبارات ---------- */
   const openExamCreate = () => {
     setExamForm({ title: '', description: '', courseId: selectedCourseId || courses[0]?.id || '', lessonId: '', duration: '20 دقيقة', published: true, isVisible: true, section: 'الجميع' });
-    setAiPrompt(''); setAiDrafts([]); setAiMsg(''); setAiLevel('متوسط');
+    setAiPrompt(''); setAiDrafts([]); setAiMsg(''); setAiOk(true); setAiLevel('متوسط'); setAiCount(10);
     setExamQuestions([{ question: '', options: ['', '', '', ''], correctAnswer: 0, explanation: '' }]);
     setExamModal(true);
   };
@@ -6015,7 +6025,10 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                   <Button type="button" onClick={importFromText} variant="soft" className="mt-2 w-full py-2 text-xs" data-testid="button-import-parse">📥 استخراج الأسئلة من النص الملصق</Button>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-2 text-xs font-bold text-primary">✨ عدد الأسئلة تلقائي حسب الدرس</span>
+                  <label className="flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-2 text-xs font-bold text-primary">عدد الأسئلة:
+                    <input type="number" min={1} max={40} value={aiCount} onChange={(e) => setAiCount(Math.min(Math.max(Number(e.target.value) || 1, 1), 40))} className="w-14 rounded-md border border-input bg-background px-1.5 py-1 text-center text-xs font-extrabold outline-none" data-testid="input-ai-count" />
+                    <span className="font-normal text-muted-foreground">(1-40)</span>
+                  </label>
                   <label className="flex items-center gap-1.5 text-xs font-bold">المستوى:
                     <select value={aiLevel} onChange={(e) => setAiLevel(e.target.value)} className="rounded-lg border border-input bg-background px-2 py-1.5 text-xs outline-none">
                       {['سهل', 'متوسط', 'صعب'].map((l) => <option key={l} value={l}>{l}</option>)}
@@ -6027,10 +6040,10 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                 </div>
                 {aiLoading ? (
                   <div className="flex items-center gap-3 rounded-2xl bg-secondary/60 p-4 text-xs font-bold text-primary">
-                    <RefreshCw size={16} className="animate-spin" /> يكتب الذكاء الاصطناعي أسئلتك... قد يستغرق حتى دقيقة — لا تغلق النافذة.
+                    <RefreshCw size={16} className="animate-spin" /> يكتب الذكاء الاصطناعي أسئلتك... الأعداد الكبيرة تُولَّد على دفعات وقد تستغرق حتى دقيقة — لا تغلق النافذة.
                   </div>
                 ) : null}
-                {aiMsg ? <p className="rounded-xl bg-destructive/10 px-4 py-2.5 text-xs font-bold text-destructive">{aiMsg}</p> : null}
+                {aiMsg ? <p className={`rounded-xl px-4 py-2.5 text-xs font-bold ${aiOk ? 'bg-green-500/15 text-green-800' : 'bg-destructive/10 text-destructive'}`}>{aiMsg}</p> : null}
                 {aiDrafts.length ? (
                   <div className="rounded-2xl bg-background/70 p-3 ring-1 ring-accent/30">
                     <div className="mb-2.5 flex items-center justify-between">
