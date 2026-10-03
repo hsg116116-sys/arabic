@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "buildCommand": "pnpm --filter @workspace/ard-al-lughah run build && pnpm --filter @workspace/api-server run build && cp artifacts/api-server/dist/index.mjs api/index.mjs && cp artifacts/api-server/dist/pino-worker.mjs artifacts/api-server/dist/pino-file.mjs artifacts/api-server/dist/pino-pretty.mjs artifacts/api-server/dist/thread-stream-worker.mjs api/ 2>/dev/null || true",
+  "buildCommand": "pnpm run build:deploy",
   "outputDirectory": "artifacts/ard-al-lughah/dist/public",
   "functions": {
     "api/index.mjs": {
