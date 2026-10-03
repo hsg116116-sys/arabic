@@ -697,6 +697,74 @@ export async function loadBundleHtml(
   }
 }
 
+/* ---------------- أكواد تشخيص الرفع (للمعلم: انسخ التقرير والصقه للمطور) ---------------- */
+
+export type UploadDiag = {
+  code: string;
+  message: string;
+  stage: string;
+  fileName: string;
+  fileSizeKB: number;
+  time: string;
+  host: string;
+  detail?: string;
+};
+
+/** خطأ رفع يحمل كود تشخيص ثابتاً + تفاصيل اختيارية */
+export function codedUploadError(code: string, message: string, detail?: string): Error {
+  const e = new Error(message) as Error & { code: string; detail?: string };
+  e.code = code;
+  if (detail) e.detail = detail;
+  return e;
+}
+
+/** تخمين الكود من المرحلة عندما لا يحمل الخطأ كوداً (أخطاء الفحص/البناء المحلية) */
+export function diagCodeForStage(stage: string, err?: any): string {
+  if (err?.code) return err.code;
+  if (stage.includes('فحص') || stage.includes('فك') || stage.includes('تصنيف')) return 'LOCAL-01';
+  if (stage.includes('محرك') || stage.includes('بناء')) return 'BUILD-01';
+  if (stage.includes('ضغط')) return 'PACK-01';
+  if (stage.includes('قديمة') || stage.includes('تنظيف')) return 'CLEANUP-01';
+  if (stage.includes('رفع')) return 'UPLOAD-01';
+  return 'UNKNOWN-01';
+}
+
+/** يبني تقرير التشخيص الجاهز للنسخ */
+export function buildUploadDiag(err: any, stage: string, file?: { name?: string; size?: number } | null): UploadDiag {
+  let host = '';
+  try {
+    host = window.location.host;
+  } catch {
+    host = 'unknown';
+  }
+  return {
+    code: diagCodeForStage(stage, err),
+    message: err?.message || 'خطأ غير معروف',
+    stage,
+    fileName: file?.name || '—',
+    fileSizeKB: Math.round((file?.size || 0) / 1024),
+    time: new Date().toISOString(),
+    host,
+    detail: err?.detail || undefined,
+  };
+}
+
+/** ينزّل التقرير كنص للنسخ واللصق */
+export function formatUploadDiag(d: UploadDiag): string {
+  return [
+    '[تقرير تشخيص الرفع]',
+    `الكود: ${d.code}`,
+    `المرحلة: ${d.stage}`,
+    `الملف: ${d.fileName} (${d.fileSizeKB}KB)`,
+    `الوقت: ${d.time}`,
+    `المضيف: ${d.host}`,
+    `الرسالة: ${d.message}`,
+    d.detail ? `التفاصيل: ${d.detail}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 /* ---------------- الرفع المباشر من المتصفح إلى ImageKit ---------------- */
 
 export type DirectUploadResult = {
@@ -746,13 +814,17 @@ export function uploadBundleDirect(
         const r = await fallbackUploader(fbFile);
         return { url: r.url, fileId: '', name: safeName, size: file.size, viaFallback: true, directError: directErr.message };
       } catch (fbErr: any) {
-        throw new Error(`فشل الرفع المباشر (${directErr.message}) وفشل البديل (${fbErr?.message || 'خطأ'}) — تحقق من مفاتيح ImageKit في .env`);
+        throw codedUploadError(
+          'FALLBACK-FAIL',
+          `فشل الرفع المباشر (${directErr.message}) وفشل البديل (${fbErr?.message || 'خطأ'}) — تحقق من مفاتيح ImageKit في .env`,
+          `direct=${(directErr as any)?.code || '?'} fallback=${fbErr?.message || '?'}`,
+        );
       }
     }
     throw directErr;
   };
   const fail = (e: unknown, resolve: (v: DirectUploadResult) => void, reject: (e: Error) => void) => {
-    const err = e instanceof Error ? e : new Error('تعذّر الرفع المباشر');
+    const err = e instanceof Error ? e : codedUploadError('UPLOAD-01', 'تعذّر الرفع المباشر');
     tryFallback(err).then(resolve, reject);
   };
   return new Promise((resolve, reject) => {
@@ -764,12 +836,18 @@ export function uploadBundleDirect(
       .then(async (r) => {
         if (!r.ok) {
           const body = await r.json().catch(() => null);
-          throw new Error((body && (body.error || body.message)) || 'تعذّر تجهيز الرفع المباشر — سجّل الدخول كمعلم وحاول مجدداً');
+          const serverMsg = (body && (body.error || body.message)) || '';
+          const code = /PUBLIC_KEY/.test(serverMsg) ? 'AUTH-NOKEY' : `AUTH-HTTP-${r.status}`;
+          throw codedUploadError(
+            code,
+            serverMsg || 'تعذّر تجهيز الرفع المباشر — سجّل الدخول كمعلم وحاول مجدداً',
+            `status=${r.status}`,
+          );
         }
         return r.json();
       })
       .then((auth: any) => {
-        if (!auth?.signature) throw new Error('رد غير صالح من خادم الرفع');
+        if (!auth?.signature) throw codedUploadError('AUTH-BAD', 'رد غير صالح من خادم الرفع', 'missing signature');
         const form = new FormData();
         form.append('file', file, safeName);
         form.append('fileName', safeName);
@@ -791,17 +869,21 @@ export function uploadBundleDirect(
             if (xhr.status >= 200 && xhr.status < 300 && data.url) {
               resolve({ url: data.url, fileId: data.fileId, name: data.name, size: data.size || file.size });
             } else {
-              fail(new Error(data?.message || `فشل الرفع المباشر (${xhr.status}) — تحقق من مساحة التخزين`), resolve, reject);
+              fail(codedUploadError(
+                `DIRECT-HTTP-${xhr.status}`,
+                data?.message || `رفض ImageKit الرفع (${xhr.status}) — تحقق من مساحة التخزين والمفاتيح`,
+                String(data?.message || '').slice(0, 200) || `status=${xhr.status}`,
+              ), resolve, reject);
             }
           } catch (e) {
             fail(e, resolve, reject);
           }
         };
-        xhr.onerror = () => fail(new Error('انقطع الاتصال أثناء الرفع — تحقق من الإنترنت وحاول مجدداً'), resolve, reject);
-        xhr.ontimeout = () => fail(new Error('انتهت مهلة الرفع — الملف كبير والاتصال بطيء، حاول مجدداً'), resolve, reject);
+        xhr.onerror = () => fail(codedUploadError('DIRECT-NET', 'انقطع الاتصال أثناء الرفع — تحقق من الإنترنت وحاول مجدداً'), resolve, reject);
+        xhr.ontimeout = () => fail(codedUploadError('DIRECT-TIMEOUT', 'انتهت مهلة الرفع — الملف كبير والاتصال بطيء، حاول مجدداً'), resolve, reject);
         xhr.timeout = 10 * 60 * 1000;
         xhr.send(form);
       })
-      .catch((e) => fail(e, resolve, reject));
+      .catch((e) => fail(e instanceof Error ? e : codedUploadError('AUTH-NET', 'تعذّر الوصول لخادم الرفع — تحقق أن السيرفر يعمل'), resolve, reject));
   });
 }

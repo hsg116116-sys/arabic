@@ -94,7 +94,10 @@ import {
   isArchiveFileName,
   loadBundleHtml,
   uploadBundleDirect,
+  buildUploadDiag,
+  formatUploadDiag,
   type BuiltSite,
+  type UploadDiag,
 } from '@/lib/site-bundle';
 import {
   extractRawArchive,
@@ -5631,6 +5634,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
   const [uploadingBundle, setUploadingBundle] = useState<number | false>(false);
   const [bundleStage, setBundleStage] = useState('');
   const [bundleInfo, setBundleInfo] = useState<any>(null);
+  const [uploadDiag, setUploadDiag] = useState<UploadDiag | null>(null);
   const [savingLesson, setSavingLesson] = useState(false);
   const [previewLesson, setPreviewLesson] = useState<any | null>(null);
 
@@ -5924,6 +5928,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
     setBundleInfo(null);
     setUploadingBundle(false);
     setBundleStage('');
+    setUploadDiag(null);
     setLessonModal({ mode: 'create', courseId });
   };
   const openLessonEdit = (lesson: any) => {
@@ -5935,6 +5940,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
     setBundleInfo(lesson.htmlFileUrl && (isBundleUrl(lesson.htmlFileUrl) || isSourceBundleUrl(lesson.htmlFileUrl)) ? { url: lesson.htmlFileUrl, existing: true } : null);
     setUploadingBundle(false);
     setBundleStage('');
+    setUploadDiag(null);
     setLessonModal({ mode: 'edit', lesson });
   };
   const saveLesson = async (e: FormEvent) => {
@@ -6640,12 +6646,15 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                           }
                           (async () => {
                             setUploadingBundle(0);
-                            setBundleStage('فك الضغط وفحص الأرشيف…');
+                            setUploadDiag(null);
+                            let stage = 'فك الضغط وفحص الأرشيف';
+                            const setStage = (s: string) => { stage = s; setBundleStage(s); };
+                            setStage('فك الضغط وفحص الأرشيف');
                             const prevUrl: string = lessonForm.htmlFileUrl || '';
                             const dropOld = async (newUrl: string) => {
                               // استبدال النسخة القديمة بدل تكديس النسخ + حذف اليتيم من التخزين
                               if (prevUrl && prevUrl !== newUrl && (isBundleUrl(prevUrl) || isSourceBundleUrl(prevUrl))) {
-                                setBundleStage('حذف النسخة القديمة من التخزين…');
+                                setStage('حذف النسخة القديمة من التخزين');
                                 await deleteStoredUrl(prevUrl);
                               }
                             };
@@ -6660,10 +6669,11 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                                   mode: 'site', name: f.name, sizeKB: Math.round(f.size / 1024),
                                   files: prep.files.size, entry, warnings: prep.warnings, ignored: prep.ignored,
                                 });
-                                setBundleStage('رفع الموقع الجاهز مباشرة…');
+                                setStage('رفع الموقع الجاهز مباشرة');
                                 const res = await uploadBundleDirect(f, '/ard-al-lughah/bundles', (p) => setUploadingBundle(p), (file) => uploadFileToCloud(file, '/ard-al-lughah/bundles'));
                                 await dropOld(res.url);
                                 setLessonForm((lf: any) => ({ ...lf, htmlFileUrl: res.url }));
+                                setUploadDiag(null);
                                 setShowHtmlPreview(true);
                                 flash(`تم رفع الموقع الجاهز ✓ (${prep.files.size} ملفات · الدخول: ${entry}) — المعاينة بالأسفل، تأكد أن الموقع يعمل كاملاً قبل الحفظ${prep.warnings.length ? ' — ⚠ ' + prep.warnings.slice(0, 2).join(' — ') : ''}${res.viaFallback ? ' — (رُفع بالمسار البديل لأن المباشر متعطل: أضف IMAGEKIT_*_PUBLIC_KEY في .env للملفات الكبيرة)' : ''}`);
                               } else {
@@ -6672,11 +6682,11 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                                   mode: 'source', name: f.name, sizeKB: Math.round(f.size / 1024),
                                   files: prep.files.size, entry: prep.entry, warnings: prep.warnings, ignored: prep.ignored,
                                 });
-                                setBundleStage('تحميل محرك البناء (أول مرة فقط)…');
+                                setStage('تحميل محرك البناء (أول مرة فقط)');
                                 await ensureSourceEngine({ wasmURL: ESBUILD_WASM_CDN }, { worker: true });
-                                setBundleStage('بناء المشروع داخل المتصفح…');
-                                const built = await buildSourceBundle(prep, (m) => setBundleStage(m));
-                                setBundleStage('ضغط الناتج وفحص الحجم…');
+                                setStage('بناء المشروع داخل المتصفح');
+                                const built = await buildSourceBundle(prep, (m) => setStage(m));
+                                setStage('ضغط الناتج وفحص الحجم');
                                 const packed = await packSourceContainer(built);
                                 const gzKB = Math.round(packed.bytes.length / 1024);
                                 // نفس المحتوى محفوظ مسبقاً؟ قارن البصمة مع النسخة القديمة بدل إعادة الرفع
@@ -6698,15 +6708,18 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                                   gzKB, hash: packed.hash.slice(0, 12),
                                   buildWarnings: built.warnings,
                                 }));
-                                setBundleStage(`رفع الحاوية المضغوطة (${gzKB}KB)…`);
+                                setStage(`رفع الحاوية المضغوطة (${gzKB}KB)`);
                                 const up = await uploadSourceContainer(packed.bytes, f.name, (p) => setUploadingBundle(p), (file) => uploadFileToCloud(file, '/ard-al-lughah/bundles'));
                                 await dropOld(up.url);
                                 setLessonForm((lf: any) => ({ ...lf, htmlFileUrl: up.url }));
+                                setUploadDiag(null);
                                 setShowHtmlPreview(true);
                                 flash(`تم بناء المشروع ورفعه ✓ — الأرشيف ${Math.round(f.size / 1024)}KB ← المخزَّن ${gzKB}KB فقط (توفير ${Math.max(0, Math.round((1 - packed.bytes.length / Math.max(f.size, 1)) * 100))}%) — المعاينة بالأسفل قبل الحفظ${built.warnings.length ? ' — ⚠ ' + built.warnings.slice(0, 2).join(' — ') : ''}${up.viaFallback ? ' — (رُفع بالمسار البديل: أضف IMAGEKIT_*_PUBLIC_KEY في .env)' : ''}`);
                               }
                             } catch (err: any) {
-                              flash(err?.message || 'تعذر رفع الموقع المضغوط');
+                              const diag = buildUploadDiag(err, stage, f);
+                              setUploadDiag(diag);
+                              flash(`${err?.message || 'تعذر رفع الموقع المضغوط'} (كود: ${diag.code} — انسخ تقرير التشخيص بالأسفل والصقه للمطور)`);
                             } finally {
                               setUploadingBundle(false);
                               setBundleStage('');
@@ -6728,6 +6741,36 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                       {(bundleInfo.buildWarnings?.length || 0) > 0 ? <span className="mt-1 block font-bold text-amber-800">⚠ {bundleInfo.buildWarnings.slice(0, 2).join(' — ')}</span> : null}
                       {(bundleInfo.warnings?.length || 0) > 0 ? <span className="mt-1 block font-bold text-amber-800">⚠ {bundleInfo.warnings.slice(0, 2).join(' — ')}</span> : null}
                       {(bundleInfo.ignored?.length || 0) > 0 ? <span className="mt-1 block font-normal text-muted-foreground">تُجاهل أثناء الفحص ({bundleInfo.ignored.length}): <span dir="ltr" className="font-mono">{bundleInfo.ignored.slice(0, 3).join('، ')}</span>{bundleInfo.ignored.length > 3 ? '…' : ''}</span> : null}
+                    </div>
+                  ) : null}
+                  {uploadDiag ? (
+                    <div className="mt-3 rounded-xl border-2 border-dashed border-destructive/50 bg-destructive/5 px-4 py-3" data-testid="upload-diag-panel">
+                      <p className="flex flex-wrap items-center justify-between gap-2 text-[12px] font-extrabold text-destructive">
+                        <span>🔍 فشل الرفع — كود التشخيص: <span dir="ltr" className="rounded-lg bg-destructive px-2 py-0.5 font-mono text-white">{uploadDiag.code}</span></span>
+                        <span className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const txt = formatUploadDiag(uploadDiag);
+                              if (navigator.clipboard?.writeText) {
+                                navigator.clipboard.writeText(txt).then(
+                                  () => flash('تم نسخ تقرير التشخيص ✓ — الصقه للمطور'),
+                                  () => flash('تعذّر النسخ التلقائي — انسخ النص من الصندوق يدوياً'),
+                                );
+                              } else {
+                                flash('انسخ النص من الصندوق يدوياً');
+                              }
+                            }}
+                            className="rounded-lg bg-primary px-3 py-1.5 text-[11px] font-extrabold text-primary-foreground shadow-sm hover:brightness-110"
+                            data-testid="button-copy-diag"
+                          >
+                            📋 نسخ التقرير
+                          </button>
+                          <button type="button" onClick={() => setUploadDiag(null)} className="rounded-lg px-2 py-1 text-muted-foreground hover:bg-muted" title="إخفاء">✕</button>
+                        </span>
+                      </p>
+                      <pre dir="auto" className="mt-2 max-h-40 select-all overflow-auto whitespace-pre-wrap rounded-lg bg-background/80 p-3 font-mono text-[11px] leading-6 text-primary">{formatUploadDiag(uploadDiag)}</pre>
+                      <p className="mt-1.5 text-[11px] font-bold text-muted-foreground">انسخ التقرير بالزر والصقه للمطور — الكود يحدد مكان الخلل بالضبط.</p>
                     </div>
                   ) : null}
                   {(lessonForm.htmlFileUrl && (isBundleUrl(lessonForm.htmlFileUrl) || isSourceBundleUrl(lessonForm.htmlFileUrl))) ? (
