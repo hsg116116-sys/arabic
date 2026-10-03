@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "أرض اللغة"
+description = "منصة تعليمية عربية تجمع الكتب التعليمية والوحدات والواجبات والتقييمات ومساحة متابعة للطلاب والمعلمين."
+version = "1.0.0"
+id = "artifacts/ard-al-lughah"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24395
+
+[services.development]
+run = "pnpm --filter @workspace/ard-al-lughah run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/ard-al-lughah", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/ard-al-lughah/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24395"
+BASE_PATH = "/"
