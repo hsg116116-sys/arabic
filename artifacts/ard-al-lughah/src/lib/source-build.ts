@@ -689,8 +689,107 @@ function layoutChain(files: Map<string, Uint8Array>, entryDir: string): string[]
   return chain;
 }
 
+/**
+ * معامل esm.sh: نُبقي React خارجياً (استيراد مجرد يلتقطه importmap ← نسخة واحدة)
+ * بدل ?deps الذي يعيد بناء الحزمة ونسخها فيكسر التصديرات في بعض الإصدارات.
+ */
+const CDN_EXTERNAL_PARAM = 'external=react,react-dom,react/jsx-runtime&target=es2020';
+
+/**
+ * نسخ بديلة مرشحة لنسخة معطوبة — بالترتيب من الأقرب للأبعد:
+ * نفس الإصدار الرئيسي (آخر تصحيح داخله) ثم الأرقام التي تسبقه، وأخيراً الأحدث.
+ * الهدف: أقرب نسخة سليمة ممكنة حتى لا تتغير واجهات المكتبة على كود المعلم.
+ */
+function fallbackVersions(pinned: string): string[] {
+  const out: string[] = [];
+  const m = /^(\d+)/.exec(pinned);
+  const major = m ? Number(m[1]) : NaN;
+  if (Number.isFinite(major) && major >= 1) {
+    out.push(String(major));
+    for (let k = major - 1; k >= Math.max(1, major - 3); k--) out.push(String(k));
+  }
+  out.push('latest');
+  return [...new Set(out)];
+}
+
+/**
+ * فحص سلامة إصدار على esm.sh.
+ * نستخدم ?bundle كفحص: esm.sh يبني الحزمة كاملة فيفشل بخطأ 500 صراحةً إن كان
+ * هناك استيراد غير مصدَّر (مثل framer-motion v12 و motion-dom) — بينما الطلب
+ * العادي قد يعيد 200 ثم ينهار وقت التشغيل في المتصفح.
+ */
+export async function urlWorks(url: string, timeoutMs = 20000): Promise<boolean> {
+  const probe = url.includes('?') ? `${url}&bundle` : `${url}?bundle`;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(probe, { signal: ctrl.signal, headers: { Accept: 'text/javascript,*/*' } });
+    if (!res.ok) return false;
+    const txt = (await res.text()).slice(0, 300);
+    return !/No matching export|Internal Server Error|^\s*$/i.test(txt);
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/**
+ * يفحص روابط CDN ويبدّل أي رابط معطوب (مثل framer-motion v12 الذي يفشل
+ * تصديره على esm.sh) بأحدث نسخة سليمة — تلقائياً ودون تدخل من المعلم.
+ */
+async function healExternalUrls(
+  js: string,
+  specs: Map<string, { name: string; rest: string; ver: string }>,
+  note: (m: string) => void,
+): Promise<string> {
+  const urls = [...specs.keys()].filter((u) => js.includes(u));
+  if (!urls.length) return js;
+  const checks = await Promise.all(urls.map(async (u) => ({ u, ok: await urlWorks(u) })));
+  let out = js;
+  const fixed: string[] = [];
+  const broken = new Set<string>();
+  for (const { u, ok } of checks) {
+    if (ok) continue;
+    const meta = specs.get(u)!;
+    let healed = false;
+    for (const cand of fallbackVersions(meta.ver)) {
+      const candidate = `https://esm.sh/${meta.name}@${cand}${meta.rest}?${CDN_EXTERNAL_PARAM}`;
+      if (candidate === u) continue;
+      if (await urlWorks(candidate)) {
+        out = out.split(u).join(candidate);
+        fixed.push(`${meta.name}@${meta.ver} ← ${cand}`);
+        healed = true;
+        break;
+      }
+    }
+    if (!healed) broken.add(meta.name);
+  }
+  if (fixed.length) note(`استُبدلت نسخ مكتبات معطوبة على CDN تلقائياً: ${fixed.join('، ')}`);
+  if (broken.size) note(`تعذّر إيجاد نسخة سليمة على CDN لـ: ${[...broken].join('، ')} — قد يفشل جزء من الموقع`);
+  return out;
+}
+
 function isPageEntry(entry: string): boolean {
   return /(^|\/)(page|index)\.[jt]sx?$/.test(entry) || /(^|\/)pages\/[^/]+\.[jt]sx?$/.test(entry);
+}
+
+/**
+ * شفاء روابط الحاويات القديمة عند العرض: بعض إصدارات npm نُشرت معطوبة على
+ * esm.sh، والحاوية المحفوظة تحوي الروابط القديمة — نستبدلها في الذاكرة فقط
+ * (دون إعادة رفع) فيعمل الدرس مباشرة.
+ */
+export async function healSourceJs(js: string, note?: (m: string) => void): Promise<string> {
+  const urls = [...new Set([...js.matchAll(/https:\/\/esm\.sh\/[A-Za-z0-9@._\-/]+/g)].map((m) => m[0]))];
+  if (!urls.length) return js;
+  const specs = new Map<string, { name: string; rest: string; ver: string }>();
+  for (const u of urls) {
+    const m = /^https:\/\/esm\.sh\/(.+?)@([^/?]+)([^?]*)/.exec(u);
+    if (!m) continue;
+    specs.set(u, { name: m[1]!, rest: m[3] || '', ver: m[2]! });
+  }
+  if (!specs.size) return js;
+  return healExternalUrls(js, specs, (m) => note?.(m));
 }
 
 /**
@@ -813,15 +912,24 @@ export async function buildSourceBundle(
 
   const warnings = [...prep.warnings];
 
+/**
+   * روابط CDN: react تُترك مجردة (importmap) لضمان نسخة واحدة، وباقي الحزم
+   * تُبنى بنسخة موحّدة مع external لـ react.
+   */
+  const EXTERNAL_REACT_PARAM = CDN_EXTERNAL_PARAM;
+  const externalSpecs = new Map<string, { name: string; rest: string; ver: string }>();
+
   const esmUrlFor = (spec: string): string => {
     const { name, rest } = splitBare(spec);
     const ver = cleanVersion(deps[name], name === 'react' ? reactVersion : name === 'react-dom' ? reactDomVersion : 'latest');
-    const fam = name === 'react' || name === 'react-dom';
     if (name === 'react') return `https://esm.sh/react@${ver}${rest}`;
-    if (name === 'react-dom') return `https://esm.sh/react-dom@${ver}${rest}?deps=react@${reactVersion}`;
+    if (name === 'react-dom') {
+      return `https://esm.sh/react-dom@${ver}${rest}${rest ? `?${EXTERNAL_REACT_PARAM}` : ''}`;
+    }
     if (!deps[name]) warnings.push(`الحزمة «${name}» غير مذكورة في dependencies — استُخدمت أحدث نسخة وقد تختلف عن مشروعك`);
-    const pin = `?deps=react@${reactVersion},react-dom@${reactDomVersion}`;
-    return `https://esm.sh/${name}@${ver}${rest}${pin}`;
+    const url = `https://esm.sh/${name}@${ver}${rest}?${EXTERNAL_REACT_PARAM}`;
+    externalSpecs.set(url, { name, rest, ver });
+    return url;
   };
 
   const plugin: esbuildTypes.Plugin = {
@@ -991,13 +1099,15 @@ export async function buildSourceBundle(
   if (strippedCssImports.length) {
     warnings.push(`حُذف من CSS ما يحتاج بناءً خارجياً (${strippedCssImports.slice(0, 3).join('، ')}) — التصميم الأساسي يعمل وبعض الإضافات قد تغيب`);
   }
+  // شفاء روابط CDN المعطوبة (نسخة منشورة خاطئة) باستبدالها بنسخة سليمة
+  const healedJs = await healExternalUrls(js, externalSpecs, (m) => warnings.push(m));
   const sizes = {
     js: jsFile.contents.length,
     css: cssFile ? cssFile.contents.length : 0,
     total: jsFile.contents.length + (cssFile ? cssFile.contents.length : 0),
   };
   log('اكتمل البناء ✓');
-  return { js, css, entry, deps, reactVersion, reactDomVersion, warnings, sizes, tailwind, fonts: collectedFonts, autoEntry, strippedCssImports };
+  return { js: healedJs, css, entry, deps, reactVersion, reactDomVersion, warnings, sizes, tailwind, fonts: collectedFonts, autoEntry, strippedCssImports };
 }
 
 /* ---------------- الحاوية المضغوطة للتخزين ---------------- */
