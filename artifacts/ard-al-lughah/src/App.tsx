@@ -155,7 +155,7 @@ function redirectAfterAuth(setLocation: (to: string) => void, fallback = '/stude
     .catch(() => setLocation(fallback));
 }
 const teacherImageUrl = '/teacher-ahmed.jpg';
-const APP_VERSION = 'v25.09-C';
+const APP_VERSION = 'v25.10-SRC';
 const platformLogoUrl = '/ard-al-lughah-logo-transparent.png';
 const platformBannerUrl = '/ard-al-lughah-banner-transparent.png';
 const bookNineUrl = '/arab-9.jpg';
