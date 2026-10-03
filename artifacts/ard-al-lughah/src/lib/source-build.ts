@@ -138,11 +138,83 @@ function isSkippedPath(p: string): boolean {
   return false;
 }
 
-const ENTRY_CANDIDATES = [
-  'src/main.tsx', 'src/main.ts', 'src/index.tsx', 'src/index.ts',
-  'src/App.tsx', 'main.tsx', 'main.ts', 'index.tsx', 'index.ts', 'App.tsx',
-  'src/main.jsx', 'src/index.jsx', 'main.jsx', 'index.jsx',
-];
+const ENTRY_BASENAME_SCORE: Record<string, number> = {
+  'main.tsx': 0, 'main.ts': 1, 'index.tsx': 2, 'index.ts': 3,
+  'app.tsx': 4, 'main.jsx': 5, 'index.jsx': 6, 'page.tsx': 7,
+  'index.js': 8, 'main.js': 9, 'app.jsx': 10, 'app.ts': 11,
+  'root.tsx': 12, 'client.tsx': 13, 'bootstrap.tsx': 14,
+};
+
+const ENTRY_EXTS = new Set(['tsx', 'ts', 'jsx', 'js', 'mjs']);
+
+function isTestOrStoryPath(p: string): boolean {
+  const b = p.split('/').pop()!.toLowerCase();
+  return b.includes('.test.') || b.includes('.spec.') || b.includes('.stories.') || b.includes('.cy.');
+}
+
+/** أقضح ملف JSON (package.json/tsconfig) — يتقبل أي عمق */
+function shallowestJsonPath(files: Map<string, Uint8Array>, name: string): string | null {
+  let best: string | null = null;
+  let bestDepth = Infinity;
+  for (const p of files.keys()) {
+    if (p !== name && !p.endsWith('/' + name)) continue;
+    const d = p.split('/').length;
+    if (d < bestDepth || (d === bestDepth && (best === null || p < best))) {
+      bestDepth = d;
+      best = p;
+    }
+  }
+  return best;
+}
+
+/**
+ * بحث تراجعي عن نقطة الدخول في أي عمق وبأي اسم:
+ * 1) أسماء الإقلاع المعروفة (main/index/app/page…) 2) ملفات تستدعي createRoot/render
+ * 3) الملفات المساعدة البحتة (util/helpers…) لا تُعتبر دخولاً أبداً.
+ */
+function findSourceEntry(files: Map<string, Uint8Array>): string | null {
+  const dec = new TextDecoder('utf-8');
+  type Cand = { p: string; score: number };
+  const cands: Cand[] = [];
+  for (const p of files.keys()) {
+    const ext = p.split('.').pop()!.toLowerCase();
+    if (!ENTRY_EXTS.has(ext)) continue;
+    if (isTestOrStoryPath(p)) continue;
+    const base = p.split('/').pop()!.toLowerCase();
+    const depth = p.split('/').length;
+    const known = ENTRY_BASENAME_SCORE[base];
+    if (known === undefined) continue; // ليس اسم إقلاع — قد يُرفع لاحقاً عبر إشارة المحتوى
+    cands.push({ p, score: known * 100 + depth * 5 });
+  }
+  // إشارات المحتوى: أي ملف يقلع تطبيقاً (بأي اسم) مرشح قوي
+  for (const p of files.keys()) {
+    if (cands.some((c) => c.p === p)) continue;
+    const ext = p.split('.').pop()!.toLowerCase();
+    if (!ENTRY_EXTS.has(ext)) continue;
+    if (isTestOrStoryPath(p)) continue;
+    const data = files.get(p)!;
+    if (data.length > 300_000) continue;
+    let src = '';
+    try {
+      src = dec.decode(data.subarray(0, 8192));
+    } catch {
+      continue;
+    }
+    if (/createRoot|hydrateRoot|ReactDOM\s*\.\s*render/.test(src)) {
+      cands.push({ p, score: -500 + p.split('/').length * 5 });
+    }
+  }
+  if (!cands.length) return null;
+  cands.sort((a, b) => a.score - b.score || (a.p < b.p ? -1 : 1));
+  return cands[0]!.p;
+}
+
+function listSourceFiles(files: Map<string, Uint8Array>, max = 8): string[] {
+  const src = [...files.keys()].filter(
+    (p) => /\.(tsx|ts|jsx|js|mjs|json)$/i.test(p) && !isTestOrStoryPath(p),
+  );
+  return (src.length ? src : [...files.keys()]).slice(0, max);
+}
 
 function parseTsPaths(tsconfig: any): { baseUrl: string; paths: Array<{ prefix: string; suffix: string; star: boolean; targets: string[] }> } {
   const out = { baseUrl: '', paths: [] as Array<{ prefix: string; suffix: string; star: boolean; targets: string[] }> };
@@ -239,26 +311,34 @@ export function classifyAndPrepare(
   if (rootIndex || (htmls.length > 0 && !files.has('package.json'))) {
     return { kind: 'site', files, ignored, warnings };
   }
-  // 4) مصدر؟ (package.json أو tsconfig أو ملفات src)
-  const pkg = readJsonFile(files, 'package.json');
-  const hasTsConfig = files.has('tsconfig.json');
+  // 4) مصدر؟ (package.json أو tsconfig أو ملفات src — بأي عمق)
+  const pkgPath = shallowestJsonPath(files, 'package.json');
+  const pkg = (pkgPath && readJsonFile(files, pkgPath)) || null;
+  const tsPath = shallowestJsonPath(files, 'tsconfig.json');
   const hasSrc = [...files.keys()].some((p) => /\.(tsx|ts|jsx)$/i.test(p));
-  if (!pkg && !hasTsConfig && !hasSrc) {
+  if (!pkg && !tsPath && !hasSrc) {
     const sample = [...files.keys()].slice(0, 6).join('، ');
     throw new Error(
       `تعذّر التعرّف على المشروع — لا index.html (موقع جاهز) ولا package.json/src (كود مصدري). وجدنا: ${sample}. اضغط مجلد المشروع نفسه بصيغة TAR (الأفضل) أو ZIP.`,
     );
   }
   const packageJson = pkg || {};
-  const tsconfig = readJsonFile(files, 'tsconfig.json') || {};
+  const tsconfig = (tsPath && readJsonFile(files, tsPath)) || {};
+  const tsDir = tsPath ? dirOf(tsPath) : '';
   const { baseUrl, paths } = parseTsPaths(tsconfig);
-  const entry = ENTRY_CANDIDATES.find((c) => files.has(c));
+  // مسارات tsconfig نسبية لمجلد tsconfig نفسه (أو لـ baseUrl داخله)
+  const effectiveBase = baseUrl ? (tsDir ? `${tsDir}/${baseUrl}` : baseUrl) : tsDir;
+  const entry = findSourceEntry(files);
   if (!entry) {
+    const sample = listSourceFiles(files).join('، ');
     throw new Error(
-      'تعذّر العثور على ملف الدخول — ضع نقطة البداية في src/main.tsx أو src/index.tsx (أو index.tsx في الجذر) ثم أعد الضغط',
+      `تعذّر العثور على ملف الدخول — ملفات الكود الموجودة: ${sample}. ضع نقطة البداية باسم واضح (main.tsx أو index.tsx داخل src، بأي عمق) ثم أعد الضغط`,
     );
   }
-  return { kind: 'source', files, ignored, warnings, entry, packageJson, tsPaths: paths, baseUrl };
+  if (/(^|\/)app\/page\.[jt]sx?$/.test(entry) || /(^|\/)pages\/index\.[jt]sx?$/.test(entry)) {
+    warnings.push('يبدو مشروع Next.js (يحتاج سيرفراً عادة) — سيُحاوَل بناؤه كصفحة عميلة، وإن فشل ارفع مجلد dist المبني');
+  }
+  return { kind: 'source', files, ignored, warnings, entry, packageJson, tsPaths: paths, baseUrl: effectiveBase };
 }
 
 /* ---------------- محرك esbuild-wasm ---------------- */
