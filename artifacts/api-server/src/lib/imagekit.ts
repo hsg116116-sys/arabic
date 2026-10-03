@@ -201,6 +201,11 @@ export function createUploadAuth(folder = "/ard-al-lughah/bundles", preferredAcc
     if (found >= 0) idx = found;
   }
   const account = accounts[idx]!;
+  if (!account.publicKey) {
+    throw new Error(
+      `الرفع المباشر متعطل: المفتاح العام (PUBLIC_KEY) ناقص للحساب ${account.id} — أضف IMAGEKIT_*_PUBLIC_KEY بجانب مفاتيحك الحالية في .env (تجده في لوحة ImageKit) ثم أعد تشغيل السيرفر`,
+    );
+  }
   const token = randomUUID();
   const expire = Math.floor(Date.now() / 1000) + 10 * 60; // صالح 10 دقائق
   const signature = createHmac("sha1", account.privateKey).update(token + expire).digest("hex");

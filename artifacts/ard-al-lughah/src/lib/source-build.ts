@@ -751,15 +751,16 @@ export function sourceContainerName(archiveName: string): string {
 
 /**
  * رفع الحاوية المضغوطة (ثنائية — بلا base64) رفعاً مباشراً إلى ImageKit.
- * يُعيد رابط التخزين الدائم.
+ * يُعيد رابط التخزين الدائم. يقبل مساراً بديلاً عبر السيرفر للملفات الصغيرة.
  */
 export function uploadSourceContainer(
   bytes: Uint8Array,
   archiveName: string,
   onProgress?: (percent: number) => void,
-): Promise<{ url: string; fileId: string }> {
+  fallbackUploader?: (file: File) => Promise<{ url: string }>,
+): Promise<{ url: string; fileId: string; viaFallback?: boolean; directError?: string }> {
   const file = new File([bytes as unknown as BlobPart], sourceContainerName(archiveName), { type: 'application/gzip' });
-  return uploadBundleDirect(file, '/ard-al-lughah/bundles', onProgress);
+  return uploadBundleDirect(file, '/ard-al-lughah/bundles', onProgress, fallbackUploader);
 }
 
 /** حذف ملف مخزّن قديم (يتيم) — الأفضل فقط، لا يفشل التدفق إن تعذّر */

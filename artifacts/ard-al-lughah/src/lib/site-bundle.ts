@@ -704,6 +704,10 @@ export type DirectUploadResult = {
   fileId: string;
   name: string;
   size: number;
+  /** true عندما تم الرفع عبر مسار السيرفر البديل (لأن المباشر تعذّر) */
+  viaFallback?: boolean;
+  /** رسالة فشل المسار المباشر — للتنبيه الإداري */
+  directError?: string;
 };
 
 const ARCHIVE_EXTS = ['.zip', '.tar', '.tar.gz', '.tgz'];
@@ -721,27 +725,54 @@ export function isHtmlFileName(name: string): boolean {
 /**
  * رفع حزمة مباشرة إلى ImageKit بدون المرور بالسيرفر (يتجاوز حد Vercel).
  * يُستخدم لملفات ZIP/TAR الكبيرة حتى ~100MB.
+ *
+ * + تعقيم اسم الملف (عربي/مسافات/رموز كانت تفشل الرفع أحياناً).
+ * + رسالة السيرفر الأصلية تُمرَّر كما هي عند فشل التجهيز (مثل نقص PUBLIC_KEY).
+ * + مسار بديل اختياري: إن فشل المباشر وكان الملف صغيراً (≤2.5MB) يُرفع عبر
+ *   السيرفر بنفس طريقة ملف HTML — فيعمل حتى لو كان الرفع المباشر معطلاً.
  */
 export function uploadBundleDirect(
   file: File,
   folder = '/ard-al-lughah/bundles',
   onProgress?: (percent: number) => void,
+  fallbackUploader?: (file: File) => Promise<{ url: string }>,
 ): Promise<DirectUploadResult> {
+  const safeName = (file.name || `bundle-${Date.now()}`).replace(/[^\w.\-()\[\] ]+/g, '_').slice(0, 120) || 'bundle';
+  const FALLBACK_MAX = Math.floor(2.5 * 1024 * 1024);
+  const tryFallback = async (directErr: Error): Promise<DirectUploadResult> => {
+    if (fallbackUploader && file.size <= FALLBACK_MAX) {
+      const fbFile = new File([file], safeName, { type: file.type || 'application/octet-stream' });
+      try {
+        const r = await fallbackUploader(fbFile);
+        return { url: r.url, fileId: '', name: safeName, size: file.size, viaFallback: true, directError: directErr.message };
+      } catch (fbErr: any) {
+        throw new Error(`فشل الرفع المباشر (${directErr.message}) وفشل البديل (${fbErr?.message || 'خطأ'}) — تحقق من مفاتيح ImageKit في .env`);
+      }
+    }
+    throw directErr;
+  };
+  const fail = (e: unknown, resolve: (v: DirectUploadResult) => void, reject: (e: Error) => void) => {
+    const err = e instanceof Error ? e : new Error('تعذّر الرفع المباشر');
+    tryFallback(err).then(resolve, reject);
+  };
   return new Promise((resolve, reject) => {
     if (file.size > BUNDLE_LIMITS.maxDirectMB * 1024 * 1024) {
       reject(new Error(`حجم الملف يتجاوز ${BUNDLE_LIMITS.maxDirectMB}MB — صغّر الصور والفيديو داخل الموقع ثم أعد الضغط`));
       return;
     }
     fetch(`/api/teacher/upload-auth?folder=${encodeURIComponent(folder)}`, { credentials: 'include' })
-      .then((r) => {
-        if (!r.ok) throw new Error('تعذّر تجهيز الرفع المباشر — سجّل الدخول كمعلم وحاول مجدداً');
+      .then(async (r) => {
+        if (!r.ok) {
+          const body = await r.json().catch(() => null);
+          throw new Error((body && (body.error || body.message)) || 'تعذّر تجهيز الرفع المباشر — سجّل الدخول كمعلم وحاول مجدداً');
+        }
         return r.json();
       })
       .then((auth: any) => {
         if (!auth?.signature) throw new Error('رد غير صالح من خادم الرفع');
         const form = new FormData();
-        form.append('file', file, file.name);
-        form.append('fileName', file.name);
+        form.append('file', file, safeName);
+        form.append('fileName', safeName);
         form.append('folder', auth.folder || folder);
         form.append('publicKey', auth.publicKey);
         form.append('signature', auth.signature);
@@ -760,17 +791,17 @@ export function uploadBundleDirect(
             if (xhr.status >= 200 && xhr.status < 300 && data.url) {
               resolve({ url: data.url, fileId: data.fileId, name: data.name, size: data.size || file.size });
             } else {
-              reject(new Error(data?.message || `فشل الرفع المباشر (${xhr.status}) — تحقق من مساحة التخزين`));
+              fail(new Error(data?.message || `فشل الرفع المباشر (${xhr.status}) — تحقق من مساحة التخزين`), resolve, reject);
             }
-          } catch {
-            reject(new Error(`فشل الرفع المباشر (${xhr.status}) — حاول مجدداً`));
+          } catch (e) {
+            fail(e, resolve, reject);
           }
         };
-        xhr.onerror = () => reject(new Error('انقطع الاتصال أثناء الرفع — تحقق من الإنترنت وحاول مجدداً'));
-        xhr.ontimeout = () => reject(new Error('انتهت مهلة الرفع — الملف كبير والاتصال بطيء، حاول مجدداً'));
+        xhr.onerror = () => fail(new Error('انقطع الاتصال أثناء الرفع — تحقق من الإنترنت وحاول مجدداً'), resolve, reject);
+        xhr.ontimeout = () => fail(new Error('انتهت مهلة الرفع — الملف كبير والاتصال بطيء، حاول مجدداً'), resolve, reject);
         xhr.timeout = 10 * 60 * 1000;
         xhr.send(form);
       })
-      .catch((e) => reject(e instanceof Error ? e : new Error('تعذّر بدء الرفع المباشر')));
+      .catch((e) => fail(e, resolve, reject));
   });
 }

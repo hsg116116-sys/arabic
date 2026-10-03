@@ -6661,11 +6661,11 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                                   files: prep.files.size, entry, warnings: prep.warnings, ignored: prep.ignored,
                                 });
                                 setBundleStage('رفع الموقع الجاهز مباشرة…');
-                                const res = await uploadBundleDirect(f, '/ard-al-lughah/bundles', (p) => setUploadingBundle(p));
+                                const res = await uploadBundleDirect(f, '/ard-al-lughah/bundles', (p) => setUploadingBundle(p), (file) => uploadFileToCloud(file, '/ard-al-lughah/bundles'));
                                 await dropOld(res.url);
                                 setLessonForm((lf: any) => ({ ...lf, htmlFileUrl: res.url }));
                                 setShowHtmlPreview(true);
-                                flash(`تم رفع الموقع الجاهز ✓ (${prep.files.size} ملفات · الدخول: ${entry}) — المعاينة بالأسفل، تأكد أن الموقع يعمل كاملاً قبل الحفظ${prep.warnings.length ? ' — ⚠ ' + prep.warnings.slice(0, 2).join(' — ') : ''}`);
+                                flash(`تم رفع الموقع الجاهز ✓ (${prep.files.size} ملفات · الدخول: ${entry}) — المعاينة بالأسفل، تأكد أن الموقع يعمل كاملاً قبل الحفظ${prep.warnings.length ? ' — ⚠ ' + prep.warnings.slice(0, 2).join(' — ') : ''}${res.viaFallback ? ' — (رُفع بالمسار البديل لأن المباشر متعطل: أضف IMAGEKIT_*_PUBLIC_KEY في .env للملفات الكبيرة)' : ''}`);
                               } else {
                                 // ——— كود مصدري React/TS: بناء كامل داخل المتصفح ———
                                 setBundleInfo({
@@ -6699,11 +6699,11 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                                   buildWarnings: built.warnings,
                                 }));
                                 setBundleStage(`رفع الحاوية المضغوطة (${gzKB}KB)…`);
-                                const up = await uploadSourceContainer(packed.bytes, f.name, (p) => setUploadingBundle(p));
+                                const up = await uploadSourceContainer(packed.bytes, f.name, (p) => setUploadingBundle(p), (file) => uploadFileToCloud(file, '/ard-al-lughah/bundles'));
                                 await dropOld(up.url);
                                 setLessonForm((lf: any) => ({ ...lf, htmlFileUrl: up.url }));
                                 setShowHtmlPreview(true);
-                                flash(`تم بناء المشروع ورفعه ✓ — الأرشيف ${Math.round(f.size / 1024)}KB ← المخزَّن ${gzKB}KB فقط (توفير ${Math.max(0, Math.round((1 - packed.bytes.length / Math.max(f.size, 1)) * 100))}%) — المعاينة بالأسفل قبل الحفظ${built.warnings.length ? ' — ⚠ ' + built.warnings.slice(0, 2).join(' — ') : ''}`);
+                                flash(`تم بناء المشروع ورفعه ✓ — الأرشيف ${Math.round(f.size / 1024)}KB ← المخزَّن ${gzKB}KB فقط (توفير ${Math.max(0, Math.round((1 - packed.bytes.length / Math.max(f.size, 1)) * 100))}%) — المعاينة بالأسفل قبل الحفظ${built.warnings.length ? ' — ⚠ ' + built.warnings.slice(0, 2).join(' — ') : ''}${up.viaFallback ? ' — (رُفع بالمسار البديل: أضف IMAGEKIT_*_PUBLIC_KEY في .env)' : ''}`);
                               }
                             } catch (err: any) {
                               flash(err?.message || 'تعذر رفع الموقع المضغوط');
