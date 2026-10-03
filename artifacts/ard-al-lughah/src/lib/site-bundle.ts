@@ -84,10 +84,40 @@ const MIME_BY_EXT: Record<string, string> = {
   map: 'application/json;charset=utf-8',
 };
 
-/** هل هذا الرابط حزمة موقع مضغوطة؟ (امتداد zip/tar/tgz في الرابط) */
+/** مسار الملف بلا استعلام/ frag */
+function urlPath(url: string): string {
+  return String(url).split('?')[0]!.split('#')[0]!;
+}
+
+/** اسم الملف الأخير من الرابط (بدون المجلدات) */
+function urlFileName(url: string): string {
+  const p = urlPath(url);
+  return p.slice(p.lastIndexOf('/') + 1);
+}
+
+/**
+ * هل هذا الرابط حزمة موقع مضغوطة؟ (امتداد zip/tar/tgz في اسم الملف)
+ * ملاحظة: ImageKit يُلحق رمزاً فريداً قبل الامتداد (site.tar_XXXX) —
+ * لذلك نتحقق من وجود الامتداد في أي موضع من الاسم لا في نهايته فقط.
+ */
 export function isBundleUrl(url?: string | null): boolean {
   if (!url) return false;
-  return /\.(zip|tar(\.gz)?|tgz)(\?|#|$)/i.test(url.split('?')[0] ?? '');
+  if (isSourceBundleUrl(url)) return false;
+  // الامتداد يجب أن يكون في آخر اسم الملف (معAllowance لرمز ImageKit قبل .gz)
+  return /\.(zip|tar|tgz)([._-][\w-]*)?(\.gz)?$/i.test(urlFileName(url));
+}
+
+/**
+ * هل هذا الرابط حاوية كود مصدري مبني؟
+ * مهم: ImageKit يُلحق رمزاً فريداً قبل الامتداد، فالاسم الحقيقي يصبح
+ * «app.srcbundle_XXXX.gz» لا «app.srcbundle.gz» — لذلك نتحقق من وجود
+ * الوسم srcbundle في اسم الملف مع انتهاء .gz.
+ */
+export function isSourceBundleUrl(url?: string | null): boolean {
+  if (!url) return false;
+  const file = urlFileName(url);
+  if (!/\.gz$/i.test(file)) return false;
+  return /\.srcbundle(?:[._-][\w-]*)?\.gz$/i.test(file) || /srcbundle/i.test(file);
 }
 
 export function extOf(path: string): string {
@@ -695,12 +725,6 @@ export async function loadBundleHtml(
   } finally {
     window.clearTimeout(timer);
   }
-}
-
-/** هل هذا الرابط حاوية كود مصدري مبني؟ (نُقلت هنا لتفادي استيراد دائري) */
-export function isSourceBundleUrl(url?: string | null): boolean {
-  if (!url) return false;
-  return /\.srcbundle\.gz(\?|#|$)/i.test(url);
 }
 
 export type LessonHtmlMode =

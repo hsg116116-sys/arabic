@@ -5642,6 +5642,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
   const [bundleStage, setBundleStage] = useState('');
   const [bundleInfo, setBundleInfo] = useState<any>(null);
   const [uploadDiag, setUploadDiag] = useState<UploadDiag | null>(null);
+  const [repairing, setRepairing] = useState(false);
   const [savingLesson, setSavingLesson] = useState(false);
   const [previewLesson, setPreviewLesson] = useState<any | null>(null);
 
@@ -6795,10 +6796,39 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                     const m = resolveLessonHtml(lessonForm);
                     if (m.mode === 'bundle' || m.mode === 'source') {
                       return (
-                        <p className="mt-2 rounded-xl border border-[#6a1b9a]/30 bg-[#6a1b9a]/5 px-4 py-3 text-[11px] font-bold leading-6 text-primary">
-                          {m.mode === 'source' ? '⚛️ هذا الدرس يستخدم كوداً مبنياً — مربع اللصق معطّل لمنع التعارض.' : '📦 هذا الدرس يستخدم موقعاً مضغوطاً — مربع اللصق معطّل لمنع التعارض.'}
-                          <span className="mt-0.5 block font-normal text-muted-foreground">للعودة إلى اللصق اليدوي: اضغط «إزالة» بجانب رابط الحزمة أعلاه.</span>
-                        </p>
+                        <div className="mt-2 rounded-xl border border-[#6a1b9a]/30 bg-[#6a1b9a]/5 px-4 py-3 text-[11px] font-bold leading-6 text-primary">
+                          <p>
+                            {m.mode === 'source' ? '⚛️ هذا الدرس يستخدم كوداً مبنياً — مربع اللصق معطّل لمنع التعارض.' : '📦 هذا الدرس يستخدم موقعاً مضغوطاً — مربع اللصق معطّل لمنع التعارض.'}
+                            <span className="mt-0.5 block font-normal text-muted-foreground">للعودة إلى اللصق اليدوي: اضغط «إزالة» بجانب رابط الحزمة أعلاه.</span>
+                          </p>
+                          {(lessonForm.htmlContent || '').length > 0 ? (
+                            <button
+                              type="button"
+                              disabled={repairing}
+                              onClick={async () => {
+                                if (!lessonModal || lessonModal.mode !== 'edit') return;
+                                setRepairing(true);
+                                try {
+                                  await jsonFetch(`/api/teacher/curriculum/lessons/${lessonModal.lesson.id}`, {
+                                    method: 'PATCH',
+                                    body: { htmlContent: '', htmlFileUrl: m.url },
+                                  });
+                                  setLessonForm((lf: any) => ({ ...lf, htmlContent: '' }));
+                                  loadLessons();
+                                  flash('تم تنظيف الحقل الملوث من قاعدة البيانات ✓');
+                                } catch (e: any) {
+                                  flash(e?.message || 'تعذر التنظيف');
+                                } finally {
+                                  setRepairing(false);
+                                }
+                              }}
+                              className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-destructive px-3 py-1.5 text-[11px] font-extrabold text-white shadow-sm hover:brightness-110 disabled:opacity-60"
+                              data-testid="button-repair-html"
+                            >
+                              {repairing ? <RefreshCw size={12} className="animate-spin" /> : <ShieldCheck size={12} />} تنظيف الحقل الملوث في القاعدة ({htmlKb(lessonForm.htmlContent)} ك.ب)
+                            </button>
+                          ) : null}
+                        </div>
                       );
                     }
                     return (

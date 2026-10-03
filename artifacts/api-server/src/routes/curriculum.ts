@@ -116,12 +116,42 @@ function courseToJson(c: any) {
   };
 }
 
+/** روابط الحزم/الحاويات التي يُهمل عندها حقل اللصق تماماً */
+function isRichHtmlUrl(url: unknown): boolean {
+  const u = String(url || "");
+  if (!u) return false;
+  const file = u.split("?")[0]!.split("#")[0]!.slice(u.lastIndexOf("/") + 1);
+  if (/\.srcbundle(?:[._-][\w-]*)?\.gz$/i.test(file) || /srcbundle/i.test(file)) return true;
+  return /\.(zip|tar|tgz)([._-][\w-]*)?(\.gz)?$/i.test(file);
+}
+
+/** هل يبدو النص ثنائياً/مضغوطاً (يحتوي على محارف تحكّم أو بديل)؟ */
+function looksBinaryText(s: string): boolean {
+  if (!s) return false;
+  const sample = s.slice(0, 4000);
+  let bad = 0;
+  for (let i = 0; i < sample.length; i++) {
+    const c = sample.charCodeAt(i);
+    if (c === 9 || c === 10 || c === 13) continue;
+    if (c < 32 || c === 0xfffd) bad++;
+  }
+  return bad / Math.max(sample.length, 1) > 0.05;
+}
+
 function lessonToJson(l: any) {
   let images: any[] = [];
   try {
     images = Array.isArray(l.images) ? l.images : JSON.parse(l.images || "[]");
   } catch {
     images = [];
+  }
+  const richUrl = isRichHtmlUrl(l.html_file_url);
+  // شفاء ذاتي: مع وجود رابط حزمة يُتجاهل اللصق، ويُمسح أي نص ثنائي ملوث
+  let htmlContent = l.html_content || "";
+  if (richUrl) {
+    htmlContent = "";
+  } else if (looksBinaryText(htmlContent)) {
+    htmlContent = "";
   }
   return {
     id: l.id,
@@ -134,8 +164,9 @@ function lessonToJson(l: any) {
     lessonType: l.lesson_type || "مطالعة",
     coverUrl: l.cover_url || "",
     images,
-    htmlContent: l.html_content || "",
+    htmlContent,
     htmlFileUrl: l.html_file_url || "",
+    htmlPoisoned: !richUrl && looksBinaryText(l.html_content || ""),
     status: l.status || "published",
     isLocked: !!l.is_locked,
     isVisible: l.is_visible !== false,
@@ -171,7 +202,8 @@ async function tolerantWrite(
 }
 
 const COURSE_BASE = ["title", "description", "lessons_count", "duration", "color", "icon", "sort_order", "published"];
-const LESSON_BASE = ["course_id", "title", "description", "position", "content", "published"];
+// html_file_url/html_content داخل الأساس: لو فشل ماكرو التوسّع (خطأ عمود) يبقى الرابط محفوظاً
+const LESSON_BASE = ["course_id", "title", "description", "position", "content", "published", "html_content", "html_file_url"];
 const ASSESSMENT_BASE = ["course_id", "title", "questions_count", "duration", "available_date", "published"];
 
 // ───────────────────────────── إعدادات التقسيم لكل صف ─────────────────────────────
@@ -471,6 +503,8 @@ router.patch("/teacher/curriculum/lessons/:id", requireAdmin, async (req, res) =
     if (b.images !== undefined) full.images = b.images;
     if (b.htmlContent !== undefined || b.html_content !== undefined) full.html_content = b.htmlContent ?? b.html_content ?? "";
     if (b.htmlFileUrl !== undefined || b.html_file_url !== undefined) full.html_file_url = b.htmlFileUrl ?? b.html_file_url ?? "";
+    // رابط الحزمة يغني عن اللصق: نُفرغه دائماً حتى لا تتسرب بقايا ثنائية
+    if (isRichHtmlUrl(full.html_file_url)) full.html_content = "";
     if (b.status !== undefined) full.status = b.status;
     if (b.isLocked !== undefined || b.is_locked !== undefined) full.is_locked = !!(b.isLocked ?? b.is_locked);
     if (b.isVisible !== undefined || b.is_visible !== undefined) full.is_visible = (b.isVisible ?? b.is_visible) !== false;
