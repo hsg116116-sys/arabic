@@ -92,11 +92,26 @@ import NotFound from '@/pages/not-found';
 import {
   isBundleUrl,
   isArchiveFileName,
-  extractSiteBundle,
   loadBundleHtml,
   uploadBundleDirect,
   type BuiltSite,
 } from '@/lib/site-bundle';
+import {
+  extractRawArchive,
+  classifyAndPrepare,
+  ensureSourceEngine,
+  buildSourceBundle,
+  packSourceContainer,
+  unpackSourceContainer,
+  buildSourceSrcdoc,
+  uploadSourceContainer,
+  deleteStoredUrl,
+  findSiteEntry,
+  ESBUILD_WASM_CDN,
+  isSourceBundleUrl,
+  SOURCE_LIMITS,
+  type SourceContainer,
+} from '@/lib/source-build';
 
 // تخفيف استهلاك Supabase: لا إعادة جلب مع كل تركيز نافذة، وصلاحية 3 دقائق للبيانات
 const queryClient = new QueryClient({
@@ -4237,6 +4252,70 @@ function useBundleHtml(url?: string | null) {
   };
 }
 
+/* =========================================================================
+   خطاف الحاوية المبنية — يحمّل gz ويفكّه ويبني srcdoc معزولاً.
+   العرض داخل iframe بخاصية sandbox="allow-scripts" فقط (بلا same-origin)
+   لأن الكود مرفوع من مستخدمين — وكل شيء مضمّن أو من CDN.
+   ========================================================================= */
+const SOURCE_FRAME_SANDBOX = 'allow-scripts';
+
+function useSourceContainer(url?: string | null, title?: string) {
+  const [srcdoc, setSrcdoc] = useState<string | null>(null);
+  const [meta, setMeta] = useState<SourceContainer | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  const active = !!url && isSourceBundleUrl(url);
+  useEffect(() => {
+    if (!active || !url) {
+      setSrcdoc(null);
+      setMeta(null);
+      setLoading(false);
+      setError('');
+      return;
+    }
+    let live = true;
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => ctrl.abort(), 90000);
+    setLoading(true);
+    setError('');
+    setSrcdoc(null);
+    setMeta(null);
+    fetch(url, { signal: ctrl.signal })
+      .then((r) => {
+        if (!r.ok) throw new Error(`تعذّر تحميل الحاوية المبنية (خطأ ${r.status}) — أعد رفع المشروع`);
+        return r.arrayBuffer();
+      })
+      .then((buf) => unpackSourceContainer(new Uint8Array(buf)))
+      .then((c) => {
+        if (!live) return;
+        setMeta(c);
+        setSrcdoc(buildSourceSrcdoc({
+          js: c.js,
+          css: c.css,
+          reactVersion: (c.deps?.react || '18.3.1').replace(/^[~^>=<\s]+/, '').split(/[,\s|]+/)[0] || '18.3.1',
+          reactDomVersion: (c.deps?.['react-dom'] || c.deps?.react || '18.3.1').replace(/^[~^>=<\s]+/, '').split(/[,\s|]+/)[0] || '18.3.1',
+          title,
+        }));
+      })
+      .catch((e: any) => {
+        if (!live) return;
+        setError(e?.name === 'AbortError' ? 'انتهت مهلة تحميل الحاوية — تحقق من الاتصال وحاول مجدداً' : (e?.message || 'تعذّر فتح الحاوية المبنية'));
+      })
+      .finally(() => {
+        window.clearTimeout(timer);
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+      ctrl.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url, active, attempt]);
+  return { active, srcdoc, meta, loading, error, retry: () => setAttempt((a) => a + 1) };
+}
+
 /** حجم تقريبي للنص بالكيلوبايت (العربية = 2 بايت للحرف غالباً) */
 function htmlKb(s?: string | null): number {
   if (!s) return 0;
@@ -4247,8 +4326,9 @@ function ExtHtmlViewer({ url, fill }: { url: string; fill?: boolean }) {
   const [html, setHtml] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const bundle = useBundleHtml(url);
+  const source = useSourceContainer(isSourceBundleUrl(url) ? url : null);
   useEffect(() => {
-    if (bundle.active) return;
+    if (bundle.active || source.active) return;
     let live = true;
     setHtml(null);
     setFailed(false);
@@ -4260,7 +4340,25 @@ function ExtHtmlViewer({ url, fill }: { url: string; fill?: boolean }) {
       .then((t) => { if (live) setHtml(t.startsWith('ARDB64') ? decodeArdB64(t) : t); })
       .catch(() => { if (live) setFailed(true); });
     return () => { live = false; };
-  }, [url, bundle.active]);
+  }, [url, bundle.active, source.active]);
+  if (source.active) {
+    if (source.error) {
+      return (
+        <div className="rounded-xl bg-destructive/10 p-4 text-sm font-bold text-destructive">
+          {source.error}
+          <button type="button" onClick={source.retry} className="mr-2 underline">إعادة المحاولة</button>
+        </div>
+      );
+    }
+    if (!source.srcdoc) {
+      return (
+        <div className="flex items-center gap-3 rounded-xl bg-secondary/60 p-5 text-sm font-bold text-primary">
+          <RefreshCw size={17} className="animate-spin" /> جارٍ تجهيز الكود المبني...
+        </div>
+      );
+    }
+    return <iframe title="المحتوى التفاعلي" sandbox={SOURCE_FRAME_SANDBOX} srcDoc={source.srcdoc} loading="lazy" referrerPolicy="no-referrer" className={fill ? 'h-full w-full bg-white' : 'h-[480px] w-full bg-white'} data-testid="iframe-lesson-html-ext" />;
+  }
   if (bundle.active) {
     if (bundle.error) {
       return (
@@ -4319,6 +4417,25 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
   // حزمة مضغوطة (ZIP/TAR): تُفك محلياً في المتصفح بدل جلب نص HTML
   const bundleUrl = !inline && lesson?.htmlFileUrl && isBundleUrl(lesson.htmlFileUrl) ? String(lesson.htmlFileUrl) : null;
   const bundle = useBundleHtml(bundleUrl);
+  // حاوية كود مصدري مبني (.srcbundle.gz): srcdoc معزول بلا same-origin
+  const sourceUrl = !inline && lesson?.htmlFileUrl && isSourceBundleUrl(lesson.htmlFileUrl) ? String(lesson.htmlFileUrl) : null;
+  const source = useSourceContainer(sourceUrl, lesson?.title);
+  const [sourceErrors, setSourceErrors] = useState<string[]>([]);
+
+  // جسر أخطاء وقت التشغيل من الـiframe المعزول (postMessage) — بدل الشاشة البيضاء
+  useEffect(() => {
+    const onMsg = (ev: MessageEvent) => {
+      if (!ev?.data || ev.data.__srcbundle !== 1) return;
+      try {
+        if (!sourceUrl || ev.source !== iframeRef.current?.contentWindow) return;
+      } catch { return; }
+      const kind = ev.data.type === 'resource' ? 'مورد' : 'تشغيل';
+      const text = `خطأ ${kind}: ${String(ev.data.message || 'غير معروف').slice(0, 200)}`;
+      setSourceErrors((arr) => (arr.includes(text) ? arr : [...arr, text].slice(-3)));
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, [sourceUrl]);
 
   useEffect(() => {
     setExtHtml(null);
@@ -4333,6 +4450,7 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
       return;
     }
     if (bundleUrl) return; // الحزمة لها خطافها الخاص — لا جلب نصي هنا
+    if (sourceUrl) { setSourceErrors([]); return; } // الحاوية لها خطافها الخاص
     if (!lesson?.htmlFileUrl) return;
     let live = true;
     const ctrl = new AbortController();
@@ -4349,10 +4467,11 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
       })
       .catch(() => { window.clearTimeout(timer); if (live) setExtFailed(true); });
     return () => { live = false; window.clearTimeout(timer); ctrl.abort(); };
-  }, [lesson, inline, bundleUrl, attempt]);
+  }, [lesson, inline, bundleUrl, sourceUrl, attempt]);
 
-  const html: string | null = inline ? lesson.htmlContent : bundleUrl ? bundle.html : extHtml;
+  const html: string | null = inline ? lesson.htmlContent : sourceUrl ? source.srcdoc : bundleUrl ? bundle.html : extHtml;
   const bundleMeta = bundleUrl ? bundle.meta : null;
+  const sourceMeta = sourceUrl ? source.meta : null;
 
   const trackProgress = () => {
     try {
@@ -4397,7 +4516,7 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
   }, [html, attempt]);
 
   const openNewTab = () => {
-    const src = inline ? lesson.htmlContent : bundleUrl ? bundle.html : extHtml;
+    const src = inline ? lesson.htmlContent : sourceUrl ? source.srcdoc : bundleUrl ? bundle.html : extHtml;
     if (!src) return;
     const blob = new Blob([src], { type: 'text/html;charset=utf-8' });
     window.open(URL.createObjectURL(blob), '_blank', 'noopener');
@@ -4420,7 +4539,11 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
         <span className="flex items-center gap-1.5 rounded-xl bg-primary px-2.5 py-1.5 text-xs font-extrabold text-primary-foreground">
           <FileCode2 size={14} /> المحتوى التفاعلي
         </span>
-        {bundleMeta ? (
+        {sourceMeta ? (
+          <span className="rounded-lg bg-secondary px-2.5 py-1.5 text-[11px] font-bold tabular-nums text-muted-foreground" title={`بُني من: ${sourceMeta.entry}`}>
+            ⚛️ كود مبني · {Math.max(1, Math.round((sourceMeta.sizes?.gz || 0) / 1024))} ك.ب
+          </span>
+        ) : bundleMeta ? (
           <span className="rounded-lg bg-secondary px-2.5 py-1.5 text-[11px] font-bold tabular-nums text-muted-foreground" title={`صفحة الدخول: ${bundleMeta.entry}`}>
             📦 موقع مضغوط · {bundleMeta.totalKB} ك.ب · {bundleMeta.fileCount} ملفات
           </span>
@@ -4445,28 +4568,39 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
       <div className="h-1.5 bg-muted/60">
         <div className="h-full rounded-l-full bg-gradient-to-l from-primary via-accent to-accent transition-[width] duration-300" style={{ width: `${progress}%` }} />
       </div>
+      {/* أخطاء وقت التشغيل من التطبيق المعزول — بدل الشاشة البيضاء */}
+      {sourceUrl && sourceErrors.length > 0 ? (
+        <div className="border-b border-amber-500/40 bg-amber-500/10 px-4 py-3 text-[11px] font-bold leading-6 text-amber-800">
+          <span className="flex items-center justify-between gap-2">
+            <span>⚠ تعثّر التطبيق أثناء التشغيل:</span>
+            <button type="button" onClick={() => setSourceErrors([])} className="rounded-lg px-2 py-0.5 text-amber-800 hover:bg-amber-500/20">إخفاء</button>
+          </span>
+          {sourceErrors.map((m, i) => <span key={i} className="mt-1 block rounded-lg bg-background/60 px-2.5 py-1" dir="auto">{m}</span>)}
+          <span className="mt-1 block font-normal">أخبر الأستاذ بهذه الرسالة — وغالباً السبب مكتبة تحتاج شبكة أو ميزة غير مدعومة.</span>
+        </div>
+      ) : null}
       {/* المحتوى المدمج */}
       <div className="bg-white">
-        {!inline && (bundleUrl ? !!bundle.error : extFailed) ? (
+        {!inline && (sourceUrl ? !!source.error : bundleUrl ? !!bundle.error : extFailed) ? (
           <div className="p-6 text-center">
             <p className="text-sm font-bold text-destructive">تعذر تحميل المحتوى التفاعلي</p>
-            <p className="mx-auto mt-1 max-w-md text-xs leading-5 text-muted-foreground">{bundleUrl && bundle.error ? bundle.error : 'تحقق من الاتصال — للملفات الكبيرة جداً جرّب فتحها في تبويب جديد أو أخبر الأستاذ لتقسيمها.'}</p>
+            <p className="mx-auto mt-1 max-w-md text-xs leading-5 text-muted-foreground">{sourceUrl && source.error ? source.error : bundleUrl && bundle.error ? bundle.error : 'تحقق من الاتصال — للملفات الكبيرة جداً جرّب فتحها في تبويب جديد أو أخبر الأستاذ لتقسيمها.'}</p>
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-              <button type="button" onClick={() => { if (bundleUrl) bundle.retry(); else setAttempt((a) => a + 1); }} className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-extrabold text-primary-foreground shadow-sm transition-transform hover:scale-105"><RefreshCw size={14} /> إعادة المحاولة</button>
-              {!bundleUrl ? (
+              <button type="button" onClick={() => { if (sourceUrl) source.retry(); else if (bundleUrl) bundle.retry(); else setAttempt((a) => a + 1); }} className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-extrabold text-primary-foreground shadow-sm transition-transform hover:scale-105"><RefreshCw size={14} /> إعادة المحاولة</button>
+              {!bundleUrl && !sourceUrl ? (
               <a href={lesson.htmlFileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-secondary px-4 py-2.5 text-xs font-bold text-primary">فتح الملف مباشرة <ArrowLeft size={14} /></a>
               ) : null}
             </div>
           </div>
         ) : !html ? (
           <div className="flex items-center gap-3 p-6 text-sm font-bold text-primary">
-            <RefreshCw size={17} className="animate-spin" /> {bundleUrl ? 'جارٍ فك ضغط الموقع وتجهيزه...' : 'جارٍ تحميل المحتوى التفاعلي...'}
+            <RefreshCw size={17} className="animate-spin" /> {sourceUrl ? 'جارٍ تجهيز الكود المبني...' : bundleUrl ? 'جارٍ فك ضغط الموقع وتجهيزه...' : 'جارٍ تحميل المحتوى التفاعلي...'}
           </div>
         ) : (
           <iframe
             ref={iframeRef}
             title={`محتوى ${lesson.title}`}
-            sandbox={HTML_FRAME_SANDBOX}
+            sandbox={sourceUrl ? SOURCE_FRAME_SANDBOX : HTML_FRAME_SANDBOX}
             srcDoc={html}
             onLoad={() => { trackProgress(); bindFrameScroll(); }}
             loading="lazy"
@@ -4503,7 +4637,7 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
           </div>
           <div className="min-h-0 flex-1 px-2 pb-2 sm:px-5 sm:pb-5">
             <div className="h-full overflow-hidden rounded-2xl bg-white shadow-2xl">
-              <iframe title={`محتوى ${lesson.title}`} sandbox={HTML_FRAME_SANDBOX} srcDoc={html} loading="lazy" referrerPolicy="no-referrer" style={{ zoom }} className="h-full w-full" />
+              <iframe title={`محتوى ${lesson.title}`} sandbox={sourceUrl ? SOURCE_FRAME_SANDBOX : HTML_FRAME_SANDBOX} srcDoc={html} loading="lazy" referrerPolicy="no-referrer" style={{ zoom }} className="h-full w-full" />
             </div>
           </div>
         </div>
@@ -4518,10 +4652,12 @@ function HtmlPreviewFrame({ content, fileUrl }: { content?: string; fileUrl?: st
   const [failed, setFailed] = useState(false);
   const bundleActive = !content && !!fileUrl && isBundleUrl(fileUrl);
   const bundle = useBundleHtml(bundleActive ? fileUrl : null);
+  const sourceActive = !content && !!fileUrl && isSourceBundleUrl(fileUrl);
+  const source = useSourceContainer(sourceActive ? fileUrl : null);
   useEffect(() => {
     if (content) { setText(content); setFailed(false); return; }
     if (!fileUrl) { setText(null); setFailed(false); return; }
-    if (isBundleUrl(fileUrl)) return; // الحزمة عبر الخطاف — لا جلب نصي
+    if (isBundleUrl(fileUrl) || isSourceBundleUrl(fileUrl)) return; // الحزم عبر خطافاتها — لا جلب نصي
     let live = true;
     const ctrl = new AbortController();
     const timer = window.setTimeout(() => ctrl.abort(), 25000);
@@ -4549,6 +4685,24 @@ function HtmlPreviewFrame({ content, fileUrl }: { content?: string; fileUrl?: st
           {(bundle.meta?.warnings?.length || 0) > 0 ? <span className="mt-1 block text-amber-800">⚠ {bundle.meta!.warnings.slice(0, 2).join(' — ')}</span> : null}
         </p>
         <iframe title="معاينة HTML" sandbox={HTML_FRAME_SANDBOX} srcDoc={bundle.html} loading="lazy" referrerPolicy="no-referrer" className="mt-3 h-80 w-full rounded-xl border border-border bg-white" />
+      </div>
+    );
+  }
+  if (sourceActive) {
+    if (source.error) return (
+      <div className="mt-3 rounded-xl bg-destructive/10 px-4 py-3 text-xs font-bold leading-6 text-destructive">
+        {source.error}
+        <button type="button" onClick={source.retry} className="mr-2 underline">إعادة المحاولة</button>
+      </div>
+    );
+    if (!source.srcdoc) return <p className="mt-3 flex items-center gap-2 rounded-xl bg-secondary/50 px-4 py-3 text-xs font-bold text-primary"><RefreshCw size={14} className="animate-spin" /> جارٍ تجهيز الكود المبني للمعاينة...</p>;
+    return (
+      <div>
+        <p className="mt-3 rounded-xl bg-green-600/10 px-4 py-2.5 text-[11px] font-bold leading-5 text-green-800">
+          ⚛️ معاينة الكود المبني — الدخول: <span dir="ltr" className="font-mono">{source.meta?.entry}</span> · المخزَّن: {Math.max(1, Math.round((source.meta?.sizes?.gz || 0) / 1024))}KB · البصمة: <span dir="ltr" className="font-mono">{source.meta?.hash?.slice(0, 12)}</span>
+          {(source.meta?.warnings?.length || 0) > 0 ? <span className="mt-1 block text-amber-800">⚠ {source.meta!.warnings.slice(0, 2).join(' — ')}</span> : null}
+        </p>
+        <iframe title="معاينة الكود المبني" sandbox={SOURCE_FRAME_SANDBOX} srcDoc={source.srcdoc} loading="lazy" referrerPolicy="no-referrer" className="mt-3 h-80 w-full rounded-xl border border-border bg-white" />
       </div>
     );
   }
@@ -5475,6 +5629,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
   const [showHtmlPreview, setShowHtmlPreview] = useState(false);
   const [uploadingHtml, setUploadingHtml] = useState(false);
   const [uploadingBundle, setUploadingBundle] = useState<number | false>(false);
+  const [bundleStage, setBundleStage] = useState('');
   const [bundleInfo, setBundleInfo] = useState<any>(null);
   const [savingLesson, setSavingLesson] = useState(false);
   const [previewLesson, setPreviewLesson] = useState<any | null>(null);
@@ -5768,6 +5923,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
     setShowHtmlPreview(false);
     setBundleInfo(null);
     setUploadingBundle(false);
+    setBundleStage('');
     setLessonModal({ mode: 'create', courseId });
   };
   const openLessonEdit = (lesson: any) => {
@@ -5776,8 +5932,9 @@ function CurriculumManagerPage({ onlyTab, hero }: {
     setLessonImages(Array.isArray(lesson.images) ? [...lesson.images] : []);
     setNewImageUrl('');
     setShowHtmlPreview(false);
-    setBundleInfo(lesson.htmlFileUrl && isBundleUrl(lesson.htmlFileUrl) ? { url: lesson.htmlFileUrl, existing: true } : null);
+    setBundleInfo(lesson.htmlFileUrl && (isBundleUrl(lesson.htmlFileUrl) || isSourceBundleUrl(lesson.htmlFileUrl)) ? { url: lesson.htmlFileUrl, existing: true } : null);
     setUploadingBundle(false);
+    setBundleStage('');
     setLessonModal({ mode: 'edit', lesson });
   };
   const saveLesson = async (e: FormEvent) => {
@@ -6099,7 +6256,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                         {lesson.isLocked ? <span className="font-bold text-destructive">🔒 مقفل</span> : null}
                         {!lesson.isVisible ? <span className="font-bold text-destructive">مخفي</span> : null}
                         {lesson.images?.length ? <span>· {lesson.images.length}📷</span> : null}
-                        {lesson.htmlFileUrl && isBundleUrl(lesson.htmlFileUrl) ? <span className="font-bold text-[#6a1b9a]">· 📦 موقع</span> : lesson.htmlContent || lesson.htmlFileUrl ? <span>· HTML</span> : null}
+                        {lesson.htmlFileUrl && isSourceBundleUrl(lesson.htmlFileUrl) ? <span className="font-bold text-[#6a1b9a]">· ⚛️ مصدر مبني</span> : lesson.htmlFileUrl && isBundleUrl(lesson.htmlFileUrl) ? <span className="font-bold text-[#6a1b9a]">· 📦 موقع</span> : lesson.htmlContent || lesson.htmlFileUrl ? <span>· HTML</span> : null}
                       </p>
                     </div>
                     <span className="flex shrink-0 items-center gap-1">
@@ -6351,7 +6508,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                     <span className="rounded-lg bg-accent px-2 py-0.5 text-[#3a2c07]">{lessonForm.lessonType || 'مطالعة'}</span>
                     <span className="rounded-lg bg-black/30 px-2 py-0.5 backdrop-blur-sm">ترتيب {lessonForm.position || 1}</span>
                     {lessonImages.length ? <span className="rounded-lg bg-black/30 px-2 py-0.5 backdrop-blur-sm">{lessonImages.length} صور</span> : null}
-                    {(lessonForm.htmlContent || lessonForm.htmlFileUrl) ? <span className="rounded-lg bg-black/30 px-2 py-0.5 backdrop-blur-sm">{lessonForm.htmlFileUrl && isBundleUrl(lessonForm.htmlFileUrl) ? '📦 موقع مضغوط' : 'تفاعلي HTML'}</span> : null}
+                    {(lessonForm.htmlContent || lessonForm.htmlFileUrl) ? <span className="rounded-lg bg-black/30 px-2 py-0.5 backdrop-blur-sm">{lessonForm.htmlFileUrl && isSourceBundleUrl(lessonForm.htmlFileUrl) ? '⚛️ كود مبني' : lessonForm.htmlFileUrl && isBundleUrl(lessonForm.htmlFileUrl) ? '📦 موقع مضغوط' : 'تفاعلي HTML'}</span> : null}
                     {lessonForm.examId ? <span className="rounded-lg bg-green-500/80 px-2 py-0.5 text-white">+ اختبار مرتبط</span> : null}
                   </p>
                 </div>
@@ -6471,7 +6628,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                         }} />
                       </label>
                       <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-gradient-to-l from-[#6a1b9a] to-[#8a508f] px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:brightness-110 ${uploadingBundle !== false || uploadingHtml ? 'opacity-60' : ''}`} title="ارفع موقعاً كاملاً مضغوطاً (ZIP/TAR/TGZ): html + css + js + json + صور — يُرفع مباشرة إلى التخزين حتى 100MB">
-                        {uploadingBundle !== false ? <RefreshCw size={13} className="animate-spin" /> : <Package size={13} />} {uploadingBundle !== false ? `جارٍ الرفع المباشر ${uploadingBundle}%...` : '📦 ارفع موقعاً مضغوطاً'}
+                        {uploadingBundle !== false ? <RefreshCw size={13} className="animate-spin" /> : <Package size={13} />} {uploadingBundle !== false ? (bundleStage || `جارٍ الرفع المباشر ${uploadingBundle}%...`) : '📦 ارفع موقعاً مضغوطاً'}
                         <input type="file" accept=".zip,.tar,.tar.gz,.tgz,application/zip,application/x-tar" className="hidden" data-testid="input-lesson-bundle" onChange={(e) => {
                           const f = e.target.files?.[0];
                           const target = e.target;
@@ -6483,27 +6640,76 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                           }
                           (async () => {
                             setUploadingBundle(0);
+                            setBundleStage('فك الضغط وفحص الأرشيف…');
+                            const prevUrl: string = lessonForm.htmlFileUrl || '';
+                            const dropOld = async (newUrl: string) => {
+                              // استبدال النسخة القديمة بدل تكديس النسخ + حذف اليتيم من التخزين
+                              if (prevUrl && prevUrl !== newUrl && (isBundleUrl(prevUrl) || isSourceBundleUrl(prevUrl))) {
+                                setBundleStage('حذف النسخة القديمة من التخزين…');
+                                await deleteStoredUrl(prevUrl);
+                              }
+                            };
                             try {
-                              // فحص محلي أولاً: نفك الأرشيف في المتصفح للتأكد من وجود index.html قبل أي رفع
                               const buf = await f.arrayBuffer();
-                              const local = await extractSiteBundle(buf, f.name);
-                              setBundleInfo({
-                                name: f.name,
-                                sizeKB: Math.round(f.size / 1024),
-                                files: local.files.size,
-                                entry: local.entry,
-                                kind: local.kind,
-                                warnings: local.warnings,
-                              });
-                              // رفع مباشر إلى ImageKit (لا يمر بالسيرفر — حتى 100MB)
-                              const res = await uploadBundleDirect(f, '/ard-al-lughah/bundles', (p) => setUploadingBundle(p));
-                              setLessonForm((lf: any) => ({ ...lf, htmlFileUrl: res.url }));
-                              setShowHtmlPreview(true);
-                              flash(`تم رفع الموقع المضغوط ✓ (${local.files.size} ملفات · الدخول: ${local.entry}) — المعاينة بالأسفل، تأكد أن الموقع يعمل كاملاً قبل الحفظ${local.warnings.length ? ' — ⚠ ' + local.warnings.slice(0, 2).join(' — ') : ''}`);
+                              const raw = await extractRawArchive(buf, f.name);
+                              const prep = classifyAndPrepare(raw.files, raw.warnings);
+                              if (prep.kind === 'site') {
+                                // ——— موقع جاهز (index.html + assets): يُرفع كما هو ———
+                                const entry = findSiteEntry(prep.files);
+                                setBundleInfo({
+                                  mode: 'site', name: f.name, sizeKB: Math.round(f.size / 1024),
+                                  files: prep.files.size, entry, warnings: prep.warnings, ignored: prep.ignored,
+                                });
+                                setBundleStage('رفع الموقع الجاهز مباشرة…');
+                                const res = await uploadBundleDirect(f, '/ard-al-lughah/bundles', (p) => setUploadingBundle(p));
+                                await dropOld(res.url);
+                                setLessonForm((lf: any) => ({ ...lf, htmlFileUrl: res.url }));
+                                setShowHtmlPreview(true);
+                                flash(`تم رفع الموقع الجاهز ✓ (${prep.files.size} ملفات · الدخول: ${entry}) — المعاينة بالأسفل، تأكد أن الموقع يعمل كاملاً قبل الحفظ${prep.warnings.length ? ' — ⚠ ' + prep.warnings.slice(0, 2).join(' — ') : ''}`);
+                              } else {
+                                // ——— كود مصدري React/TS: بناء كامل داخل المتصفح ———
+                                setBundleInfo({
+                                  mode: 'source', name: f.name, sizeKB: Math.round(f.size / 1024),
+                                  files: prep.files.size, entry: prep.entry, warnings: prep.warnings, ignored: prep.ignored,
+                                });
+                                setBundleStage('تحميل محرك البناء (أول مرة فقط)…');
+                                await ensureSourceEngine({ wasmURL: ESBUILD_WASM_CDN }, { worker: true });
+                                setBundleStage('بناء المشروع داخل المتصفح…');
+                                const built = await buildSourceBundle(prep, (m) => setBundleStage(m));
+                                setBundleStage('ضغط الناتج وفحص الحجم…');
+                                const packed = await packSourceContainer(built);
+                                const gzKB = Math.round(packed.bytes.length / 1024);
+                                // نفس المحتوى محفوظ مسبقاً؟ قارن البصمة مع النسخة القديمة بدل إعادة الرفع
+                                if (isSourceBundleUrl(prevUrl)) {
+                                  try {
+                                    const oldBuf = await (await fetch(prevUrl)).arrayBuffer();
+                                    const old = await unpackSourceContainer(new Uint8Array(oldBuf));
+                                    if (old.hash === packed.hash) {
+                                      setBundleInfo((b: any) => ({ ...b, gzKB, hash: packed.hash.slice(0, 12), skipped: true }));
+                                      flash('المحتوى مطابق للمحفوظ تماماً (نفس البصمة) — لم يُرفع شيء ✓');
+                                      return;
+                                    }
+                                  } catch { /* تعذّرت المقارنة — تابع الرفع */ }
+                                }
+                                setBundleInfo((b: any) => ({
+                                  ...b, mode: 'source',
+                                  jsKB: Math.round(packed.container.sizes.js / 1024),
+                                  cssKB: Math.round(packed.container.sizes.css / 1024),
+                                  gzKB, hash: packed.hash.slice(0, 12),
+                                  buildWarnings: built.warnings,
+                                }));
+                                setBundleStage(`رفع الحاوية المضغوطة (${gzKB}KB)…`);
+                                const up = await uploadSourceContainer(packed.bytes, f.name, (p) => setUploadingBundle(p));
+                                await dropOld(up.url);
+                                setLessonForm((lf: any) => ({ ...lf, htmlFileUrl: up.url }));
+                                setShowHtmlPreview(true);
+                                flash(`تم بناء المشروع ورفعه ✓ — الأرشيف ${Math.round(f.size / 1024)}KB ← المخزَّن ${gzKB}KB فقط (توفير ${Math.max(0, Math.round((1 - packed.bytes.length / Math.max(f.size, 1)) * 100))}%) — المعاينة بالأسفل قبل الحفظ${built.warnings.length ? ' — ⚠ ' + built.warnings.slice(0, 2).join(' — ') : ''}`);
+                              }
                             } catch (err: any) {
                               flash(err?.message || 'تعذر رفع الموقع المضغوط');
                             } finally {
                               setUploadingBundle(false);
+                              setBundleStage('');
                               target.value = '';
                             }
                           })();
@@ -6516,13 +6722,17 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                   </div>
                   {bundleInfo && !bundleInfo.existing ? (
                     <div className="mt-3 rounded-xl border border-[#6a1b9a]/30 bg-[#6a1b9a]/5 px-4 py-3 text-[11px] font-bold leading-6 text-primary">
-                      📦 <span dir="ltr" className="font-mono">{bundleInfo.name}</span> · {bundleInfo.sizeKB} ك.ب · {bundleInfo.files} ملفات · الدخول: <span dir="ltr" className="font-mono">{bundleInfo.entry}</span>
+                      {bundleInfo.mode === 'source' ? '⚛️ كود مصدري (يُبنى داخل المتصفح)' : '📦 موقع جاهز'} <span dir="ltr" className="font-mono">{bundleInfo.name}</span> · {bundleInfo.sizeKB} ك.ب · {bundleInfo.files} ملفات · الدخول: <span dir="ltr" className="font-mono">{bundleInfo.entry}</span>
+                      {bundleInfo.gzKB != null ? <span className="mt-1 block text-green-800">✓ المخزَّن بعد البناء والضغط: {bundleInfo.gzKB}KB فقط (JS: {bundleInfo.jsKB}KB + CSS: {bundleInfo.cssKB}KB) · البصمة: <span dir="ltr" className="font-mono">{bundleInfo.hash}</span></span> : null}
+                      {bundleInfo.skipped ? <span className="mt-1 block text-green-800">✓ مطابق للمحفوظ — لم يُرفع شيء</span> : null}
+                      {(bundleInfo.buildWarnings?.length || 0) > 0 ? <span className="mt-1 block font-bold text-amber-800">⚠ {bundleInfo.buildWarnings.slice(0, 2).join(' — ')}</span> : null}
                       {(bundleInfo.warnings?.length || 0) > 0 ? <span className="mt-1 block font-bold text-amber-800">⚠ {bundleInfo.warnings.slice(0, 2).join(' — ')}</span> : null}
+                      {(bundleInfo.ignored?.length || 0) > 0 ? <span className="mt-1 block font-normal text-muted-foreground">تُجاهل أثناء الفحص ({bundleInfo.ignored.length}): <span dir="ltr" className="font-mono">{bundleInfo.ignored.slice(0, 3).join('، ')}</span>{bundleInfo.ignored.length > 3 ? '…' : ''}</span> : null}
                     </div>
                   ) : null}
-                  {lessonForm.htmlFileUrl && isBundleUrl(lessonForm.htmlFileUrl) ? (
+                  {(lessonForm.htmlFileUrl && (isBundleUrl(lessonForm.htmlFileUrl) || isSourceBundleUrl(lessonForm.htmlFileUrl))) ? (
                     <div className="mt-2 flex items-center gap-2">
-                      <input value={lessonForm.htmlFileUrl || ''} readOnly dir="ltr" className={`${inputCls} font-mono text-xs opacity-80`} data-testid="input-lesson-html-url" title="رابط الحزمة المضغوطة — يُملأ تلقائياً عند الرفع" />
+                      <input value={lessonForm.htmlFileUrl || ''} readOnly dir="ltr" className={`${inputCls} font-mono text-xs opacity-80`} data-testid="input-lesson-html-url" title="رابط الحزمة المخزنة — يُملأ تلقائياً عند الرفع" />
                       <button type="button" onClick={() => { setLessonForm({ ...lessonForm, htmlFileUrl: '' }); setBundleInfo(null); }} className="shrink-0 rounded-lg px-3 py-2 text-xs font-bold text-destructive hover:bg-destructive/10" title="إزالة الموقع المضغوط">إزالة</button>
                     </div>
                   ) : null}
@@ -6537,10 +6747,10 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                     ملف HTML مفرد يُرمَّز ويُرفع كنص مشفّر — يعمل دائماً بلا 403 وبلا أي استهلاك من Supabase.
                     <span className="mt-1 block rounded-lg bg-[#6a1b9a]/5 px-2.5 py-1.5 font-bold text-primary">
                       📦 الموقع المضغوط: اضغط مجلد موقعك (وفي جذره index.html مع css/js/json/الصور) بصيغة ZIP أو TAR وارفعه بزر «ارفع موقعاً مضغوطاً» — يُفحص على جهازك أولاً ثم يُرفع مباشرة حتى 100MB.
-                      مشاريع React/TypeScript: نفّذ <span dir="ltr" className="font-mono">npm run build</span> أولاً واضغط مجلد <span dir="ltr" className="font-mono">dist</span> (أو <span dir="ltr" className="font-mono">build</span>) الناتج — لا ترفع الكود المصدري.
+                      <span className="mt-1 block">⚛️ الكود المصدري (React/TypeScript): ارفع ZIP المشروع نفسه (package.json + src) وسيُبنى تلقائياً داخل المتصفح — يُخزَّن الناتج المضغوط فقط (حد 1MB)، والمكتبات تُجلب من CDN وقت العرض فلا تستهلك مساحتك.</span>
                     </span>
                   </p>
-                  {!(lessonForm.htmlFileUrl && isBundleUrl(lessonForm.htmlFileUrl)) ? (
+                  {!(lessonForm.htmlFileUrl && (isBundleUrl(lessonForm.htmlFileUrl) || isSourceBundleUrl(lessonForm.htmlFileUrl))) ? (
                   <div className="mt-2 flex items-center gap-2">
                     <input value={lessonForm.htmlFileUrl || ''} onChange={(e) => setLessonForm({ ...lessonForm, htmlFileUrl: e.target.value })} placeholder="رابط خارجي فقط (مثال: Google Sites) — اتركه فارغاً للمحتوى الداخلي" dir="ltr" className={`${inputCls} font-mono text-xs`} data-testid="input-lesson-html-url" />
                   </div>

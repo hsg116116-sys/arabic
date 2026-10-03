@@ -216,6 +216,55 @@ export function createUploadAuth(folder = "/ard-al-lughah/bundles", preferredAcc
   };
 }
 
+export type AccountUsage = {
+  accountId: string;
+  supported: boolean;
+  usedBytes?: number;
+  limitBytes?: number;
+  details?: unknown;
+  error?: string;
+};
+
+function pickNumber(...vals: unknown[]): number | undefined {
+  for (const v of vals) {
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0) return v;
+  }
+  return undefined;
+}
+
+/**
+ * قراءة استهلاك التخزين من ImageKit (استشارية — تُستخدم قبل رفع الحزم).
+ * شكل الاستجابة قد يختلف بين الخطط، لذا الاستخراج دفاعي: إن تعذّر الفهم
+ * تُعاد supported:false ويتصرّف العميل على حدّه الصارم المحلي.
+ */
+export async function getAccountUsage(accountId?: string): Promise<AccountUsage[]> {
+  const accounts = getImageKitAccounts().filter((a) => !accountId || a.id === accountId);
+  const out: AccountUsage[] = [];
+  for (const acc of accounts) {
+    try {
+      const res = await fetch("https://api.imagekit.io/v1/accounts/usage", {
+        headers: { Authorization: basicAuth(acc.privateKey) },
+      });
+      if (!res.ok) {
+        out.push({ accountId: acc.id, supported: false, error: `HTTP ${res.status}` });
+        continue;
+      }
+      const j = (await res.json().catch(() => null)) as any;
+      const storage = j?.storage ?? j?.mediaLibraryStorage ?? j?.usage?.storage ?? {};
+      const used = pickNumber(storage.usedBytes, storage.used, storage.consumedBytes, j?.usedBytes);
+      const limit = pickNumber(storage.limitBytes, storage.limit, storage.totalBytes, storage.quotaBytes, j?.limitBytes);
+      if (used === undefined && limit === undefined) {
+        out.push({ accountId: acc.id, supported: false, details: j });
+      } else {
+        out.push({ accountId: acc.id, supported: true, usedBytes: used, limitBytes: limit });
+      }
+    } catch (err: any) {
+      out.push({ accountId: acc.id, supported: false, error: err?.message || "network" });
+    }
+  }
+  return out;
+}
+
 export function getStorageStatus() {
   const accounts = getImageKitAccounts();
   return {

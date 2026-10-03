@@ -151,7 +151,8 @@ async function inflateRaw(data: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(buf);
 }
 
-async function gunzip(data: Uint8Array): Promise<Uint8Array> {
+/** فك GZIP — مُصدَّرة لخط أنابيب الكود المصدري (source-build). */
+export async function gunzipBuffer(data: Uint8Array): Promise<Uint8Array> {
   const DS = getDecompressionStream();
   const buf = await new Response(
     new Blob([data as unknown as BlobPart]).stream().pipeThrough(new DS('gzip')),
@@ -168,7 +169,8 @@ function readU32LE(b: Uint8Array, o: number): number {
   return (b[o]! | (b[o + 1]! << 8) | (b[o + 2]! << 16) | (b[o + 3]! << 24)) >>> 0;
 }
 
-async function parseZip(data: Uint8Array, warnings: string[]): Promise<Map<string, Uint8Array>> {
+/** محلّل ZIP — مُصدَّر لخط أنابيب الكود المصدري (source-build). */
+export async function parseZip(data: Uint8Array, warnings: string[]): Promise<Map<string, Uint8Array>> {
   const out = new Map<string, Uint8Array>();
   const dec = new TextDecoder('utf-8');
   // البحث عن EOCD من النهاية (تعليق الأرشيف حتى 64KB)
@@ -255,7 +257,8 @@ async function parseZip(data: Uint8Array, warnings: string[]): Promise<Map<strin
 
 /* ---------------- محلّل TAR (ustar / gnu + أسماء طويلة) ---------------- */
 
-function parseTar(data: Uint8Array, warnings: string[]): Map<string, Uint8Array> {
+/** محلّل TAR — مُصدَّر لخط أنابيب الكود المصدري (source-build). */
+export function parseTar(data: Uint8Array, warnings: string[]): Map<string, Uint8Array> {
   const out = new Map<string, Uint8Array>();
   const dec = new TextDecoder('utf-8');
   const isZeroBlock = (o: number) => {
@@ -314,7 +317,8 @@ function parseTar(data: Uint8Array, warnings: string[]): Map<string, Uint8Array>
 
 /* ---------------- كشف النوع + استخراج الحزمة ---------------- */
 
-function detectKind(buf: Uint8Array, fileName: string): BundleKind | null {
+/** كشف نوع الأرشيف من البصمة السحرية ثم الامتداد — مُصدَّر لخط الكود المصدري. */
+export function detectKind(buf: Uint8Array, fileName: string): BundleKind | null {
   if (buf.length >= 2 && buf[0] === 0x1f && buf[1] === 0x8b) return 'tgz'; // gzip السحري
   if (buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04) return 'zip';
   const lower = fileName.toLowerCase();
@@ -378,7 +382,7 @@ export async function extractSiteBundle(buffer: ArrayBuffer, fileName: string): 
   } else if (kind === 'tgz') {
     let tar: Uint8Array;
     try {
-      tar = await gunzip(bytes);
+      tar = await gunzipBuffer(bytes);
     } catch {
       throw new Error('تعذّر فك ضغط GZIP — الملف تالف أو ليس tar.gz حقيقياً');
     }

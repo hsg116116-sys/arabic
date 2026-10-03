@@ -1,5 +1,5 @@
 ﻿import { Router, type IRouter } from "express";
-import { uploadFile, deleteFileById, deleteFileByUrl, getStorageStatus, createUploadAuth } from "../lib/imagekit";
+import { uploadFile, deleteFileById, deleteFileByUrl, getStorageStatus, createUploadAuth, getAccountUsage } from "../lib/imagekit";
 import { requireAdmin } from "../middlewares/auth";
 import { logger } from "../lib/logger";
 
@@ -46,6 +46,17 @@ router.get("/teacher/upload-auth", requireAdmin, async (req, res) => {
   } catch (err: any) {
     logger.error({ err }, "GET /teacher/upload-auth failed");
     res.status(500).json({ error: err?.message || "تعذر تجهيز الرفع المباشر" });
+  }
+});
+
+router.get("/teacher/storage-usage", requireAdmin, async (_req, res) => {
+  try {
+    // استهلاك التخزين عبر حسابات ImageKit (استشاري — قد لا تدعمه كل الخطط)
+    const usage = await getAccountUsage();
+    res.json({ success: true, usage });
+  } catch (err: any) {
+    logger.error({ err }, "GET /teacher/storage-usage failed");
+    res.status(500).json({ error: "تعذر قراءة الاستهلاك" });
   }
 });
 
