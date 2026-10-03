@@ -93,7 +93,7 @@ export async function extractRawArchive(
   }
   const warnings: string[] = [];
   const kind = detectKind(bytes, fileName);
-  if (!kind) throw new Error('صيغة غير مدعومة — ارفع ZIP أو TAR أو TAR.GZ/TGZ فقط');
+  if (!kind) throw new Error('صيغة غير مدعومة — ارفع TAR أو TAR.GZ (الأفضل) أو ZIP فقط');
   let raw: Map<string, Uint8Array>;
   if (kind === 'zip') raw = await parseZip(bytes, warnings);
   else if (kind === 'tgz') raw = parseTar(await gunzipBuffer(bytes), warnings);
@@ -232,7 +232,7 @@ export function classifyAndPrepare(
   if (!pkg && !hasTsConfig && !hasSrc) {
     const sample = [...files.keys()].slice(0, 6).join('، ');
     throw new Error(
-      `تعذّر التعرّف على المشروع — لا index.html (موقع جاهز) ولا package.json/src (كود مصدري). وجدنا: ${sample}. اضغط مجلد المشروع نفسه بصيغة ZIP.`,
+      `تعذّر التعرّف على المشروع — لا index.html (موقع جاهز) ولا package.json/src (كود مصدري). وجدنا: ${sample}. اضغط مجلد المشروع نفسه بصيغة TAR (الأفضل) أو ZIP.`,
     );
   }
   const packageJson = pkg || {};

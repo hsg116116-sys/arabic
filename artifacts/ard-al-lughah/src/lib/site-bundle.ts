@@ -374,7 +374,7 @@ export async function extractSiteBundle(buffer: ArrayBuffer, fileName: string): 
   const warnings: string[] = [];
   const kind = detectKind(bytes, fileName);
   if (!kind) {
-    throw new Error('صيغة غير مدعومة — ارفع ZIP أو TAR أو TAR.GZ/TGZ فقط (ملف HTML المفرد يُرفع بزر ملف HTML)');
+    throw new Error('صيغة غير مدعومة — ارفع TAR أو TAR.GZ (الأفضل) أو ZIP فقط (ملف HTML المفرد يُرفع بزر ملف HTML)');
   }
   let raw: Map<string, Uint8Array>;
   if (kind === 'zip') {

@@ -6627,14 +6627,14 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                             .finally(() => { setUploadingHtml(false); target.value = ''; });
                         }} />
                       </label>
-                      <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-gradient-to-l from-[#6a1b9a] to-[#8a508f] px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:brightness-110 ${uploadingBundle !== false || uploadingHtml ? 'opacity-60' : ''}`} title="ارفع موقعاً كاملاً مضغوطاً (ZIP/TAR/TGZ): html + css + js + json + صور — يُرفع مباشرة إلى التخزين حتى 100MB">
-                        {uploadingBundle !== false ? <RefreshCw size={13} className="animate-spin" /> : <Package size={13} />} {uploadingBundle !== false ? (bundleStage || `جارٍ الرفع المباشر ${uploadingBundle}%...`) : '📦 ارفع موقعاً مضغوطاً'}
-                        <input type="file" accept=".zip,.tar,.tar.gz,.tgz,application/zip,application/x-tar" className="hidden" data-testid="input-lesson-bundle" onChange={(e) => {
+                      <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-gradient-to-l from-[#6a1b9a] to-[#8a508f] px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:brightness-110 ${uploadingBundle !== false || uploadingHtml ? 'opacity-60' : ''}`} title="ارفع موقعاً كاملاً — الأفضل TAR (أو TAR.GZ لحجم أصغر): html + css + js + json + صور — يُرفع مباشرة إلى التخزين حتى 100MB. وZIP مدعوم أيضاً.">
+                        {uploadingBundle !== false ? <RefreshCw size={13} className="animate-spin" /> : <Package size={13} />} {uploadingBundle !== false ? (bundleStage || `جارٍ الرفع المباشر ${uploadingBundle}%...`) : '📦 ارفع موقعاً (TAR مفضّل)'}
+                        <input type="file" accept=".tar,.tar.gz,.tgz,.zip,application/x-tar,application/zip" className="hidden" data-testid="input-lesson-bundle" onChange={(e) => {
                           const f = e.target.files?.[0];
                           const target = e.target;
                           if (!f || uploadingBundle !== false || uploadingHtml) return;
                           if (!isArchiveFileName(f.name)) {
-                            flash('اختر ملفاً مضغوطاً بصيغة ZIP أو TAR أو TGZ — وملف HTML المفرد له زرّه الخاص');
+                            flash('اختر ملفاً بصيغة TAR أو TAR.GZ (الأفضل) أو ZIP — وملف HTML المفرد له زرّه الخاص');
                             target.value = '';
                             return;
                           }
@@ -6746,8 +6746,8 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                   <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
                     ملف HTML مفرد يُرمَّز ويُرفع كنص مشفّر — يعمل دائماً بلا 403 وبلا أي استهلاك من Supabase.
                     <span className="mt-1 block rounded-lg bg-[#6a1b9a]/5 px-2.5 py-1.5 font-bold text-primary">
-                      📦 الموقع المضغوط: اضغط مجلد موقعك (وفي جذره index.html مع css/js/json/الصور) بصيغة ZIP أو TAR وارفعه بزر «ارفع موقعاً مضغوطاً» — يُفحص على جهازك أولاً ثم يُرفع مباشرة حتى 100MB.
-                      <span className="mt-1 block">⚛️ الكود المصدري (React/TypeScript): ارفع ZIP المشروع نفسه (package.json + src) وسيُبنى تلقائياً داخل المتصفح — يُخزَّن الناتج المضغوط فقط (حد 1MB)، والمكتبات تُجلب من CDN وقت العرض فلا تستهلك مساحتك.</span>
+                      📦 الموقع المضغوط — <b>الأفضل TAR</b> (أو TAR.GZ لحجم أصغر): اضغط مجلد موقعك (وفي جذره index.html مع css/js/json/الصور) وارفعه — يُفحص على جهازك أولاً ثم يُرفع مباشرة حتى 100MB. طريقة سريعة على ويندوز: افتح التيرمنال في مجلد الموقع ونفّذ <span dir="ltr" className="font-mono">tar -cf site.tar .</span> — وZIP يعمل أيضاً لكن TAR أضمن.
+                      <span className="mt-1 block">⚛️ الكود المصدري (React/TypeScript): ارفع TAR أو ZIP المشروع نفسه (package.json + src) وسيُبنى تلقائياً داخل المتصفح — يُخزَّن الناتج المضغوط فقط (حد 1MB)، والمكتبات تُجلب من CDN وقت العرض فلا تستهلك مساحتك.</span>
                     </span>
                   </p>
                   {!(lessonForm.htmlFileUrl && (isBundleUrl(lessonForm.htmlFileUrl) || isSourceBundleUrl(lessonForm.htmlFileUrl))) ? (
