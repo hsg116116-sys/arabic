@@ -54,6 +54,78 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
+// src/lib/env.ts
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+function parseDotEnv(text) {
+  const out = {};
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const m = line.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+    if (!m) continue;
+    const [, key, rhs] = m;
+    let value = rhs.trim();
+    if (value.startsWith('"') && value.endsWith('"') && value.length >= 2 || value.startsWith("'") && value.endsWith("'") && value.length >= 2 || value.startsWith("`") && value.endsWith("`") && value.length >= 2) {
+      value = value.slice(1, -1);
+    } else {
+      const hash = value.indexOf(" #");
+      if (hash >= 0) value = value.slice(0, hash).trim();
+      value = value.replace(/^["']|["']$/g, "");
+    }
+    out[key] = value;
+  }
+  return out;
+}
+function candidatePaths() {
+  const list = [];
+  const push = (p) => {
+    if (p && !list.includes(p)) list.push(p);
+  };
+  push(resolve(process.cwd(), ".env"));
+  push(resolve(process.cwd(), "..", ".env"));
+  push(resolve(process.cwd(), "..", "..", ".env"));
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    push(resolve(here, ".env"));
+    push(resolve(here, "..", "..", "..", "..", ".env"));
+    push(resolve(here, "..", "..", ".env"));
+  } catch {
+  }
+  return list.filter((p) => existsSync(p));
+}
+function loadLocalEnvOnce() {
+  if (loaded) return;
+  loaded = true;
+  if (process.env.SUPABASE_URL && process.env.SUPABASE_SECRET_KEY) {
+    const hasAnyOptional = process.env.IMAGEKIT_1_PRIVATE_KEY || process.env.GROQ_API_KEY_1 || process.env.GROQ_API_KEY;
+    if (hasAnyOptional) return;
+  }
+  for (const p of candidatePaths()) {
+    try {
+      const parsed = parseDotEnv(readFileSync(p, "utf8"));
+      let filled = 0;
+      for (const [k, v] of Object.entries(parsed)) {
+        if (process.env[k] === void 0) {
+          process.env[k] = v;
+          filled++;
+        }
+      }
+      if (filled > 0 || process.env.SUPABASE_URL) return;
+    } catch {
+    }
+  }
+}
+var loaded;
+var init_env = __esm({
+  "src/lib/env.ts"() {
+    "use strict";
+    loaded = false;
+    loadLocalEnvOnce();
+  }
+});
+
 // ../../node_modules/.pnpm/ms@2.1.3/node_modules/ms/index.js
 var require_ms = __commonJS({
   "../../node_modules/.pnpm/ms@2.1.3/node_modules/ms/index.js"(exports, module) {
@@ -18806,7 +18878,7 @@ var require_view = __commonJS({
     var debug = require_src()("express:view");
     var path = __require("node:path");
     var fs = __require("node:fs");
-    var dirname = path.dirname;
+    var dirname2 = path.dirname;
     var basename = path.basename;
     var extname = path.extname;
     var join = path.join;
@@ -18845,7 +18917,7 @@ var require_view = __commonJS({
       for (var i = 0; i < roots.length && !path2; i++) {
         var root = roots[i];
         var loc = resolve2(root, name);
-        var dir = dirname(loc);
+        var dir = dirname2(loc);
         var file = basename(loc);
         path2 = this.resolve(dir, file);
       }
@@ -28271,7 +28343,7 @@ var require_pino = __commonJS({
     function pinoBundlerAbsolutePath(p) {
       try {
         const path = __require("path");
-        const outputDir = "C:\\Users\\HSG\\Downloads\\arabic-main\\arabic-main\\artifacts\\api-server\\dist";
+        const outputDir = "C:\\Users\\MOH\\Documents\\GG\\arabic-main\\arabic-main\\artifacts\\api-server\\dist";
         return path.resolve(outputDir, p.replace(/^\.\//, ""));
       } catch (e) {
         const f = new Function("p", "return new URL(p, import.meta.url).pathname");
@@ -28960,31 +29032,7 @@ var init_auth = __esm({
 });
 
 // src/lib/imagekit.ts
-import { readFileSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
-function loadLocalEnvOnce() {
-  if (process.env.IMAGEKIT_1_PRIVATE_KEY) return;
-  const candidates = [
-    resolve(process.cwd(), ".env"),
-    resolve(process.cwd(), "..", "..", ".env"),
-    resolve(process.cwd(), "..", ".env")
-  ];
-  for (const p of candidates) {
-    try {
-      if (!existsSync(p)) continue;
-      const text = readFileSync(p, "utf8");
-      for (const line of text.split("\n")) {
-        const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
-        if (!m) continue;
-        const [, key, raw] = m;
-        if (process.env[key] !== void 0) continue;
-        process.env[key] = raw.replace(/^["']|["']$/g, "");
-      }
-      if (process.env.IMAGEKIT_1_PRIVATE_KEY) return;
-    } catch {
-    }
-  }
-}
+import { createHmac, randomUUID } from "node:crypto";
 function getImageKitAccounts() {
   loadLocalEnvOnce();
   const accounts = [];
@@ -29099,6 +29147,69 @@ async function deleteFileByUrl(url) {
   if (!hit?.fileId) throw new Error("\u0627\u0644\u0645\u0644\u0641 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F \u0641\u064A \u0627\u0644\u062A\u062E\u0632\u064A\u0646");
   await deleteFileById(hit.fileId, acc.id);
 }
+function createUploadAuth(folder = "/ard-al-lughah/bundles", preferredAccountId) {
+  const accounts = getImageKitAccounts();
+  if (!accounts.length) {
+    throw new Error("\u0627\u0644\u062A\u062E\u0632\u064A\u0646 \u0627\u0644\u0633\u062D\u0627\u0628\u064A \u063A\u064A\u0631 \u0645\u0647\u064A\u0623 \u2014 \u0623\u0636\u0641 \u0645\u0641\u0627\u062A\u064A\u062D IMAGEKIT_* \u0625\u0644\u0649 .env");
+  }
+  let idx = activeIndex % accounts.length;
+  if (preferredAccountId) {
+    const found = accounts.findIndex((a) => a.id === preferredAccountId);
+    if (found >= 0) idx = found;
+  }
+  const account = accounts[idx];
+  if (!account.publicKey) {
+    throw new Error(
+      `\u0627\u0644\u0631\u0641\u0639 \u0627\u0644\u0645\u0628\u0627\u0634\u0631 \u0645\u062A\u0639\u0637\u0644: \u0627\u0644\u0645\u0641\u062A\u0627\u062D \u0627\u0644\u0639\u0627\u0645 (PUBLIC_KEY) \u0646\u0627\u0642\u0635 \u0644\u0644\u062D\u0633\u0627\u0628 ${account.id} \u2014 \u0623\u0636\u0641 IMAGEKIT_*_PUBLIC_KEY \u0628\u062C\u0627\u0646\u0628 \u0645\u0641\u0627\u062A\u064A\u062D\u0643 \u0627\u0644\u062D\u0627\u0644\u064A\u0629 \u0641\u064A .env (\u062A\u062C\u062F\u0647 \u0641\u064A \u0644\u0648\u062D\u0629 ImageKit) \u062B\u0645 \u0623\u0639\u062F \u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0633\u064A\u0631\u0641\u0631`
+    );
+  }
+  const token = randomUUID();
+  const expire = Math.floor(Date.now() / 1e3) + 10 * 60;
+  const signature = createHmac("sha1", account.privateKey).update(token + expire).digest("hex");
+  return {
+    uploadUrl: "https://upload.imagekit.io/api/v1/files/upload",
+    publicKey: account.publicKey,
+    signature,
+    expire,
+    token,
+    folder,
+    accountId: account.id,
+    endpoint: account.endpoint
+  };
+}
+function pickNumber(...vals) {
+  for (const v of vals) {
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0) return v;
+  }
+  return void 0;
+}
+async function getAccountUsage(accountId) {
+  const accounts = getImageKitAccounts().filter((a) => !accountId || a.id === accountId);
+  const out = [];
+  for (const acc of accounts) {
+    try {
+      const res = await fetch("https://api.imagekit.io/v1/accounts/usage", {
+        headers: { Authorization: basicAuth(acc.privateKey) }
+      });
+      if (!res.ok) {
+        out.push({ accountId: acc.id, supported: false, error: `HTTP ${res.status}` });
+        continue;
+      }
+      const j = await res.json().catch(() => null);
+      const storage = j?.storage ?? j?.mediaLibraryStorage ?? j?.usage?.storage ?? {};
+      const used = pickNumber(storage.usedBytes, storage.used, storage.consumedBytes, j?.usedBytes);
+      const limit = pickNumber(storage.limitBytes, storage.limit, storage.totalBytes, storage.quotaBytes, j?.limitBytes);
+      if (used === void 0 && limit === void 0) {
+        out.push({ accountId: acc.id, supported: false, details: j });
+      } else {
+        out.push({ accountId: acc.id, supported: true, usedBytes: used, limitBytes: limit });
+      }
+    } catch (err) {
+      out.push({ accountId: acc.id, supported: false, error: err?.message || "network" });
+    }
+  }
+  return out;
+}
 function getStorageStatus() {
   const accounts = getImageKitAccounts();
   return {
@@ -29109,7 +29220,9 @@ function getStorageStatus() {
       active: i === activeIndex % Math.max(accounts.length, 1)
     })),
     activeAccountId: accounts.length ? accounts[activeIndex % accounts.length].id : null,
-    maxFileMB: 20
+    maxFileMB: 20,
+    directUpload: true,
+    maxDirectMB: 100
   };
 }
 var activeIndex;
@@ -29117,6 +29230,8 @@ var init_imagekit = __esm({
   "src/lib/imagekit.ts"() {
     "use strict";
     init_logger();
+    init_env();
+    init_env();
     activeIndex = 0;
   }
 });
@@ -29496,12 +29611,37 @@ function courseToJson(c) {
     section: c.section || "\u0627\u0644\u062C\u0645\u064A\u0639"
   };
 }
+function isRichHtmlUrl(url) {
+  const u = String(url || "");
+  if (!u) return false;
+  const file = u.split("?")[0].split("#")[0].slice(u.lastIndexOf("/") + 1);
+  if (/\.srcbundle(?:[._-][\w-]*)?\.gz$/i.test(file) || /srcbundle/i.test(file)) return true;
+  return /\.(zip|tar|tgz)([._-][\w-]*)?(\.gz)?$/i.test(file);
+}
+function looksBinaryText(s) {
+  if (!s) return false;
+  const sample = s.slice(0, 4e3);
+  let bad = 0;
+  for (let i = 0; i < sample.length; i++) {
+    const c = sample.charCodeAt(i);
+    if (c === 9 || c === 10 || c === 13) continue;
+    if (c < 32 || c === 65533) bad++;
+  }
+  return bad / Math.max(sample.length, 1) > 0.05;
+}
 function lessonToJson(l) {
   let images = [];
   try {
     images = Array.isArray(l.images) ? l.images : JSON.parse(l.images || "[]");
   } catch {
     images = [];
+  }
+  const richUrl = isRichHtmlUrl(l.html_file_url);
+  let htmlContent = l.html_content || "";
+  if (richUrl) {
+    htmlContent = "";
+  } else if (looksBinaryText(htmlContent)) {
+    htmlContent = "";
   }
   return {
     id: l.id,
@@ -29514,8 +29654,9 @@ function lessonToJson(l) {
     lessonType: l.lesson_type || "\u0645\u0637\u0627\u0644\u0639\u0629",
     coverUrl: l.cover_url || "",
     images,
-    htmlContent: l.html_content || "",
+    htmlContent,
     htmlFileUrl: l.html_file_url || "",
+    htmlPoisoned: !richUrl && looksBinaryText(l.html_content || ""),
     status: l.status || "published",
     isLocked: !!l.is_locked,
     isVisible: l.is_visible !== false,
@@ -29602,7 +29743,7 @@ var init_curriculum = __esm({
     router2 = (0, import_express2.Router)();
     enc = (v) => encodeURIComponent(Array.isArray(v) ? v[0] ?? "" : v ?? "");
     COURSE_BASE = ["title", "description", "lessons_count", "duration", "color", "icon", "sort_order", "published"];
-    LESSON_BASE = ["course_id", "title", "description", "position", "content", "published"];
+    LESSON_BASE = ["course_id", "title", "description", "position", "content", "published", "html_content", "html_file_url"];
     ASSESSMENT_BASE = ["course_id", "title", "questions_count", "duration", "available_date", "published"];
     router2.get("/curriculum/grade-settings", async (_req, res) => {
       try {
@@ -29863,6 +30004,7 @@ var init_curriculum = __esm({
         if (b.images !== void 0) full.images = b.images;
         if (b.htmlContent !== void 0 || b.html_content !== void 0) full.html_content = b.htmlContent ?? b.html_content ?? "";
         if (b.htmlFileUrl !== void 0 || b.html_file_url !== void 0) full.html_file_url = b.htmlFileUrl ?? b.html_file_url ?? "";
+        if (isRichHtmlUrl(full.html_file_url)) full.html_content = "";
         if (b.status !== void 0) full.status = b.status;
         if (b.isLocked !== void 0 || b.is_locked !== void 0) full.is_locked = !!(b.isLocked ?? b.is_locked);
         if (b.isVisible !== void 0 || b.is_visible !== void 0) full.is_visible = (b.isVisible ?? b.is_visible) !== false;
@@ -30332,7 +30474,11 @@ var init_curriculum = __esm({
   }
 });
 
+// src/index.ts
+init_env();
+
 // src/app.ts
+init_env();
 var import_express8 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_cookie_parser = __toESM(require_cookie_parser(), 1);
@@ -34538,6 +34684,7 @@ async function getActiveStudent(req) {
   );
   return sessionProfile || null;
 }
+var DEFAULT_SCHOOL = "\u0645\u062F\u0631\u0633\u0629 \u0648\u0627\u064A\u0644\u062F";
 function toStudentShape(profile, progress) {
   return {
     id: profile.id,
@@ -35307,6 +35454,137 @@ router3.get("/teacher/students", requireAdmin, async (_req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0642\u0627\u0626\u0645\u0629 \u0627\u0644\u0637\u0644\u0627\u0628" });
   }
 });
+router3.get("/teacher/students/report", requireAdmin, async (req, res) => {
+  try {
+    const q = req.query || {};
+    const grade = (q.grade || "").trim();
+    const school = (q.school || "").trim();
+    const gender = (q.gender || "").trim();
+    const [profilesRes, lessonsRes, cpRes, subRes, attemptRes] = await Promise.all([
+      supabaseQuery("profiles?role=eq.student&order=full_name.asc&limit=2000"),
+      // آخر إكمال درس لكل طالب (لحساب الدروس المكتملة وتاريخ آخر نشاط)
+      supabaseQuery("lesson_progress?select=user_id,completed_at,lesson_id&limit=20000"),
+      supabaseQuery("course_progress?select=user_id,progress&limit=20000"),
+      supabaseQuery("assignment_submissions?select=user_id,score,status&limit=20000"),
+      supabaseQuery(
+        "assessment_attempts?select=user_id,score,total,completed_at&limit=20000"
+      )
+    ]);
+    const lessonCount = /* @__PURE__ */ new Map();
+    const lastLessonAt = /* @__PURE__ */ new Map();
+    for (const r of lessonsRes.data || []) {
+      if (!r.user_id) continue;
+      if (r.lesson_id) {
+        if (!lessonCount.has(r.user_id)) lessonCount.set(r.user_id, /* @__PURE__ */ new Set());
+        lessonCount.get(r.user_id).add(String(r.lesson_id));
+      }
+      const at = r.completed_at ? String(r.completed_at) : "";
+      if (at && (!lastLessonAt.get(r.user_id) || at > lastLessonAt.get(r.user_id))) {
+        lastLessonAt.set(r.user_id, at);
+      }
+    }
+    const courseAvg = /* @__PURE__ */ new Map();
+    for (const r of cpRes.data || []) {
+      if (!r.user_id) continue;
+      courseAvg.set(r.user_id, Number(r.progress) || 0);
+    }
+    const hw = /* @__PURE__ */ new Map();
+    for (const r of subRes.data || []) {
+      if (!r.user_id) continue;
+      const cur = hw.get(r.user_id) || { count: 0, graded: 0, sum: 0, n: 0 };
+      cur.count++;
+      if (typeof r.score === "number") {
+        cur.graded++;
+        cur.sum += r.score;
+        cur.n++;
+      }
+      hw.set(r.user_id, cur);
+    }
+    const exams = /* @__PURE__ */ new Map();
+    for (const r of attemptRes.data || []) {
+      if (!r.user_id) continue;
+      const cur = exams.get(r.user_id) || { count: 0, sum: 0, n: 0 };
+      cur.count++;
+      if (typeof r.score === "number") {
+        cur.sum += r.score;
+        cur.n++;
+      }
+      exams.set(r.user_id, cur);
+    }
+    let rows = (profilesRes.data || []).map((p) => {
+      const h = hw.get(p.id);
+      const e = exams.get(p.id);
+      const completedLessons = lessonCount.get(p.id)?.size || 0;
+      return {
+        id: p.id,
+        name: p.full_name || "",
+        email: p.email || "",
+        phone: p.phone || "",
+        school: p.school || "",
+        branch: p.branch || "",
+        grade: p.grade || "",
+        section: p.section || "",
+        gender: p.gender || "",
+        status: p.status || "\u0646\u0634\u0637",
+        studentNumber: p.student_number || "",
+        createdAt: p.created_at || "",
+        progress: Math.round(courseAvg.get(p.id) || 0),
+        completedLessons,
+        hwSubmitted: h?.count || 0,
+        hwGraded: h?.graded || 0,
+        hwAvg: h && h.n ? Math.round(h.sum / h.n * 10) / 10 : null,
+        examsTaken: e?.count || 0,
+        examAvg: e && e.n ? Math.round(e.sum / e.n * 10) / 10 : null,
+        lastActive: lastLessonAt.get(p.id) || ""
+      };
+    });
+    if (grade) rows = rows.filter((r) => r.grade === grade);
+    if (school) rows = rows.filter((r) => r.school === school);
+    if (gender) rows = rows.filter((r) => r.gender === gender);
+    const allRows = (profilesRes.data || []).map((p) => ({
+      school: p.school || "",
+      grade: p.grade || ""
+    }));
+    const schools = [...new Set(allRows.map((r) => r.school).filter(Boolean))].sort(
+      (a, b) => a.localeCompare(b, "ar")
+    );
+    const grades = [...new Set(allRows.map((r) => r.grade).filter(Boolean))].sort(
+      (a, b) => a.localeCompare(b, "ar")
+    );
+    res.json({
+      success: true,
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      students: rows,
+      schools,
+      grades
+    });
+  } catch (err) {
+    logger.error({ err }, "Error in GET /teacher/students/report");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062C\u0647\u064A\u0632 \u0643\u0634\u0641 \u0627\u0644\u0637\u0644\u0627\u0628" });
+  }
+});
+router3.post("/teacher/schools/merge", requireAdmin, async (req, res) => {
+  try {
+    const { from, to } = req.body || {};
+    if (!from || !to) {
+      res.status(400).json({ error: "\u062D\u062F\u0651\u062F \u0627\u0644\u0645\u062F\u0631\u0633\u0629 \u0627\u0644\u0645\u0635\u062F\u0631 \u0648\u0627\u0644\u0648\u062C\u0647\u0629" });
+      return;
+    }
+    if (from === to) {
+      res.status(400).json({ error: "\u0627\u0644\u0645\u0635\u062F\u0631 \u0648\u0627\u0644\u0648\u062C\u0647\u0629 \u0645\u062A\u0637\u0627\u0628\u0642\u0627\u0646" });
+      return;
+    }
+    const { error } = await supabaseQuery(
+      `profiles?school=eq.${encodeURIComponent(from)}`,
+      { method: "PATCH", body: { school: to, updated_at: (/* @__PURE__ */ new Date()).toISOString() } }
+    );
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: `\u062A\u0645 \u062A\u0648\u062D\u064A\u062F \xAB${from}\xBB \u0625\u0644\u0649 \xAB${to}\xBB` });
+  } catch (err) {
+    logger.error({ err }, "Error in POST /teacher/schools/merge");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u0648\u062D\u064A\u062F \u0627\u0644\u0645\u062F\u0631\u0633\u0629" });
+  }
+});
 router3.post("/teacher/students", requireAdmin, async (req, res) => {
   try {
     const { name, email, school, grade, section, gender, phone } = req.body;
@@ -35317,7 +35595,7 @@ router3.post("/teacher/students", requireAdmin, async (req, res) => {
     const newStudent = {
       full_name: name,
       email: email || `${Date.now()}@student.local`,
-      school: school || "\u0645\u062F\u0631\u0633\u0629 \u0648\u0627\u064A\u0644\u062F",
+      school: school || DEFAULT_SCHOOL,
       grade: grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
       section: section || "\u0623",
       gender: gender || "\u0637\u0627\u0644\u0628",
@@ -35678,6 +35956,43 @@ router3.patch("/student/profile", requireAuth, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u062F\u064A\u062B \u0627\u0644\u0645\u0644\u0641 \u0627\u0644\u0634\u062E\u0635\u064A" });
   }
 });
+router3.get("/teacher/students/grade-page", requireAdmin, async (req, res) => {
+  try {
+    const grade = String(req.query?.grade || "").trim();
+    if (!grade) {
+      res.status(400).json({ error: "\u062D\u062F\u0651\u062F \u0627\u0644\u0635\u0641 \u0627\u0644\u0645\u0637\u0644\u0648\u0628" });
+      return;
+    }
+    const { data } = await supabaseQuery(
+      `profiles?role=eq.student&grade=eq.${encodeURIComponent(grade)}&order=school.asc&limit=2000`
+    );
+    const rows = (data || []).map((p) => ({
+      id: p.id,
+      name: p.full_name || "",
+      email: p.email || "",
+      phone: p.phone || "",
+      school: p.school || "",
+      grade: p.grade || grade,
+      section: p.section || "",
+      gender: p.gender || "",
+      status: p.status || "\u0646\u0634\u0637",
+      studentNumber: p.student_number || "",
+      createdAt: p.created_at || "",
+      progress: 0,
+      completedLessons: 0,
+      hwSubmitted: 0,
+      hwGraded: 0,
+      hwAvg: null,
+      examsTaken: 0,
+      examAvg: null,
+      lastActive: ""
+    }));
+    res.json({ success: true, grade, students: rows });
+  } catch (err) {
+    logger.error({ err }, "Error in GET /teacher/students/grade-page");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0637\u0644\u0627\u0628 \u0627\u0644\u0635\u0641" });
+  }
+});
 var platform_default = router3;
 
 // src/routes/index.ts
@@ -35694,6 +36009,7 @@ var ALLOWED_FOLDERS = [
   "/ard-al-lughah/avatars",
   "/ard-al-lughah/lessons",
   "/ard-al-lughah/html",
+  "/ard-al-lughah/bundles",
   "/ard-al-lughah/teacher",
   "/ard-al-lughah/books"
 ];
@@ -35709,6 +36025,25 @@ router4.get("/teacher/storage", requireAdmin, async (_req, res) => {
   } catch (err) {
     logger.error({ err }, "GET /teacher/storage failed");
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u062D\u0627\u0644\u0629 \u0627\u0644\u062A\u062E\u0632\u064A\u0646" });
+  }
+});
+router4.get("/teacher/upload-auth", requireAdmin, async (req, res) => {
+  try {
+    const folder = sanitizeFolder(req.query.folder || "/ard-al-lughah/bundles");
+    const auth = createUploadAuth(folder, req.query.accountId);
+    res.json({ success: true, ...auth });
+  } catch (err) {
+    logger.error({ err }, "GET /teacher/upload-auth failed");
+    res.status(500).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u062A\u062C\u0647\u064A\u0632 \u0627\u0644\u0631\u0641\u0639 \u0627\u0644\u0645\u0628\u0627\u0634\u0631" });
+  }
+});
+router4.get("/teacher/storage-usage", requireAdmin, async (_req, res) => {
+  try {
+    const usage = await getAccountUsage();
+    res.json({ success: true, usage });
+  } catch (err) {
+    logger.error({ err }, "GET /teacher/storage-usage failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0642\u0631\u0627\u0621\u0629 \u0627\u0644\u0627\u0633\u062A\u0647\u0644\u0627\u0643" });
   }
 });
 router4.post("/teacher/upload", requireAdmin, async (req, res) => {
@@ -36730,11 +37065,16 @@ app.use((0, import_cookie_parser.default)());
 app.use("/api", routes_default);
 var app_default = app;
 
-// src/vercel.ts
-var vercel_default = app_default;
-export {
-  vercel_default as default
-};
+// src/index.ts
+init_logger();
+var rawPort = process.env["PORT"] || "5000";
+var port = Number(rawPort);
+if (Number.isNaN(port) || port <= 0) {
+  throw new Error(`Invalid PORT value: "${rawPort}"`);
+}
+app_default.listen(port, "0.0.0.0", () => {
+  logger.info({ port, host: "0.0.0.0" }, "Server listening on 0.0.0.0");
+});
 /*! Bundled license information:
 
 depd/index.js:
@@ -37041,4 +37381,4 @@ cookie-parser/index.js:
    * MIT Licensed
    *)
 */
-//# sourceMappingURL=vercel.mjs.map
+//# sourceMappingURL=index.mjs.map
