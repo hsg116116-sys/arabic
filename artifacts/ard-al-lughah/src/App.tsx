@@ -95,7 +95,15 @@ import {
   downloadCsv,
   type SheetSpec,
 } from '@/lib/xlsx';
-import { buildStudentsReport, REPORT_HEADERS, REPORT_WIDTHS, groupStudents, SHEET_LABELS, type ReportStudent, type ReportBundle } from '@/lib/students-report';
+import {
+  buildStudentsReport,
+  groupStudents,
+  groupRows,
+  normalizeText,
+  reportFileName,
+  type ReportStudent,
+  type ReportBundle,
+} from '@/lib/students-report';
 import {
   isBundleUrl,
   isArchiveFileName,
@@ -4753,6 +4761,7 @@ const SOURCE_FRAME_SANDBOX = 'allow-scripts';
 function useSourceContainer(url?: string | null, title?: string) {
   const [srcdoc, setSrcdoc] = useState<string | null>(null);
   const [meta, setMeta] = useState<SourceContainer | null>(null);
+  const [notes, setNotes] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -4761,6 +4770,7 @@ function useSourceContainer(url?: string | null, title?: string) {
     if (!active || !url) {
       setSrcdoc(null);
       setMeta(null);
+      setNotes([]);
       setLoading(false);
       setError('');
       return;
@@ -4770,6 +4780,7 @@ function useSourceContainer(url?: string | null, title?: string) {
     const timer = window.setTimeout(() => ctrl.abort(), 90000);
     setLoading(true);
     setError('');
+    setNotes([]);
     setSrcdoc(null);
     setMeta(null);
     fetch(url, { signal: ctrl.signal })
@@ -4782,7 +4793,7 @@ function useSourceContainer(url?: string | null, title?: string) {
         if (!live) return;
         // شفاء روابط CDN القديمة داخل الحاوية المحفوظة (دون إعادة رفع)
         healSourceJs(c.js, (m) => {
-          if (live) setSourceErrors((arr) => (arr.includes(m) ? arr : [...arr, m].slice(-3)));
+          if (live) setNotes((arr) => (arr.includes(m) ? arr : [...arr, m].slice(-3)));
         }).then((fixedJs) => {
           if (!live) return;
           setMeta(c);
@@ -4812,7 +4823,7 @@ function useSourceContainer(url?: string | null, title?: string) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, active, attempt]);
-  return { active, srcdoc, meta, loading, error, retry: () => setAttempt((a) => a + 1) };
+  return { active, srcdoc, meta, notes, loading, error, retry: () => setAttempt((a) => a + 1) };
 }
 
 /** حجم تقريبي للنص بالكيلوبايت (العربية = 2 بايت للحرف غالباً) */
@@ -4925,6 +4936,8 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
   // ارتفاع وتقدم يبلّغهما الإطار المعزول (لا يمكن قراءته من الخارج بدون same-origin)
   const [srcHeight, setSrcHeight] = useState<number | null>(null);
   const [srcProgress, setSrcProgress] = useState<number | null>(null);
+  const [sourceNotes, setSourceNotes] = useState<string[]>([]);
+  useEffect(() => setSourceNotes(source.notes || []), [source.notes]);
 
   // جسر رسائل الإطار المعزول: أخطاء + ارتفاع + تقدم القراءة
   useEffect(() => {
@@ -5111,6 +5124,16 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
           </span>
           {sourceErrors.map((m, i) => <span key={i} className="mt-1 block rounded-lg bg-background/60 px-2.5 py-1" dir="auto">{m}</span>)}
           <span className="mt-1 block font-normal">أخبر الأستاذ بهذه الرسالة — وغالباً السبب مكتبة تحتاج شبكة أو ميزة غير مدعومة.</span>
+        </div>
+      ) : null}
+      {/* رسائل الشفاء التلقائي (استبدال نسخة مكتبة معطوبة على CDN) */}
+      {sourceUrl && source.notes.length > 0 ? (
+        <div className="border-b border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-[11px] font-bold leading-6 text-emerald-900">
+          <span className="flex items-center justify-between gap-2">
+            <span>🔧 تم إصلاح تلقائي قبل العرض:</span>
+            <button type="button" onClick={() => setSourceNotes([])} className="rounded-lg px-2 py-0.5 text-emerald-900 hover:bg-emerald-500/20">إخفاء</button>
+          </span>
+          {source.notes.map((m, i) => <span key={i} className="mt-1 block rounded-lg bg-background/60 px-2.5 py-1">{m}</span>)}
         </div>
       ) : null}
       {/* المحتوى المدمج */}
