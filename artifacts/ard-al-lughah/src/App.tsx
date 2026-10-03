@@ -4300,6 +4300,8 @@ function useSourceContainer(url?: string | null, title?: string) {
           reactVersion: (c.deps?.react || '18.3.1').replace(/^[~^>=<\s]+/, '').split(/[,\s|]+/)[0] || '18.3.1',
           reactDomVersion: (c.deps?.['react-dom'] || c.deps?.react || '18.3.1').replace(/^[~^>=<\s]+/, '').split(/[,\s|]+/)[0] || '18.3.1',
           title,
+          tailwind: (c as any)?.tailwind === 3 || (c as any)?.tailwind === 4 ? (c as any).tailwind : null,
+          fonts: Array.isArray((c as any)?.fonts) ? (c as any).fonts : [],
         }));
       })
       .catch((e: any) => {

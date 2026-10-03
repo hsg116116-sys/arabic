@@ -69,6 +69,10 @@ export type SourceBuildResult = {
   reactDomVersion: string;
   warnings: string[];
   sizes: { js: number; css: number; total: number };
+  tailwind: 3 | 4 | null;
+  fonts: string[];
+  autoEntry: boolean;
+  strippedCssImports: string[];
 };
 
 export type SourceContainer = {
@@ -82,6 +86,8 @@ export type SourceContainer = {
   builtAt: string;
   sizes: { js: number; css: number; total: number; gz: number };
   warnings: string[];
+  tailwind: 3 | 4 | null;
+  fonts: string[];
 };
 
 /* ---------------- فك الأرشيف الخام (مشترك للجاهز والمصدر) ---------------- */
@@ -340,7 +346,7 @@ export function classifyAndPrepare(
     );
   }
   if (/(^|\/)app\/page\.[jt]sx?$/.test(entry) || /(^|\/)pages\/index\.[jt]sx?$/.test(entry)) {
-    warnings.push('يبدو مشروع Next.js (يحتاج سيرفراً عادة) — سيُحاوَل بناؤه كصفحة عميلة، وإن فشل ارفع مجلد dist المبني');
+    warnings.push('مشروع Next.js — سيُبنى كصفحة عميلة (روابط/صور/خطوط Next تُحاكى تلقائياً، وهيئات السيرفر غير مدعومة)');
   }
   return { kind: 'source', files, ignored, warnings, entry, packageJson, tsPaths: paths, baseUrl: effectiveBase };
 }
@@ -437,6 +443,25 @@ const DIST_ADVICE = 'الحل المضمون 100%: نفّذ npm run build على
 
 function toArabicBuildError(rawText: string, entry: string): Error {
   const t = rawText || '';
+  const serverDep = t.match(/SERVER_DEP:([^\s"']+)/);
+  if (serverDep) {
+    return new Error(
+      `المشروع يعتمد على «${serverDep[1]}» وهي مكتبة سيرفر (قاعدة بيانات/مصادقة/ملفات) لا تعمل في المتصفح أبداً. ` +
+        `الحل: ابنِ نسخة لا تستوردها في الصفحة المعروضة، أو ارفع موقعاً لا يحتاج سيرفراً. ${DIST_ADVICE}`,
+    );
+  }
+  if (/No matching export/i.test(t)) {
+    const nm = t.match(/No matching export in "([^"]+)" for import "([^"]+)"/);
+    const file = (nm?.[1] || '').replace(/^vfs:/, '');
+    const name = nm?.[2] || '';
+    if (/reactcomponent/i.test(name)) {
+      return new Error(`استيراد غير مدعوم (SVG كمكوّن ReactComponent — يحتاج إضافة Vite). استخدم الصور كروابط <img src={...}> بدل المكوّنات. ${DIST_ADVICE}`);
+    }
+    return new Error(
+      `«${file || entry}» يستورد «${name || 'اسماً'}» وهو غير مصدَّر من الملف المقصود — تحقق من اسم الاستيراد، ` +
+        `وإن كانت صفحة الدخول بلا export default فصدّر المكوّن الرئيسي افتراضياً ثم أعد الضغط. ${DIST_ADVICE}`,
+    );
+  }
   if (/Could not resolve ["']([^"']+)["']/.test(t)) {
     const m = t.match(/Could not resolve ["']([^"']+)["']/);
     const miss = m?.[1] || '';
@@ -444,9 +469,6 @@ function toArabicBuildError(rawText: string, entry: string): Error {
       return new Error(`المشروع يستخدم واجهة Node (‎${miss}‎) وهي لا تعمل في المتصفح. ${DIST_ADVICE}`);
     }
     return new Error(`تعذّر العثور على الملف/الحزمة «${miss}» — تحقق أن الملف موجود داخل الأرشيف وأن الحزمة مذكورة في package.json. ${DIST_ADVICE}`);
-  }
-  if (/No matching export/.test(t)) {
-    return new Error(`استيراد غير مدعوم (غالباً SVG كمكوّن ReactComponent — يحتاج إضافة Vite). استخدم الصور كروابط <img src={...}> بدل المكوّنات. ${DIST_ADVICE}`);
   }
   if (/import\.meta\.glob|import\.meta\.env\.\w+\(|["']\?raw["']|["']\?url["']/.test(t)) {
     return new Error(`المشروع يستخدم ميزة خاصة بـ Vite (glob/?raw/?url) لا تعمل خارج Vite. ${DIST_ADVICE}`);
@@ -456,6 +478,219 @@ function toArabicBuildError(rawText: string, entry: string): Error {
   }
   const first = t.split('\n').slice(0, 4).join('\n');
   return new Error(`فشل بناء المشروع:\n${first}\n${DIST_ADVICE}`);
+}
+
+/* ---------------- طبقة توافق Next.js (صفحات عميلة فقط) ---------------- */
+
+/** اعتماديات سيرفر خالص — وجودها يعني المشروع لا يعمل بلا سيرفر */
+const SERVER_ONLY_MODULES = new Set([
+  'server-only', '@prisma/client', 'prisma', 'sharp', 'next-auth', '@auth/core',
+  '@auth/prisma-adapter', 'next/headers', 'next/cache', 'next/og',
+  'pg', 'mysql2', 'better-sqlite3', 'ioredis', 'nodemailer',
+]);
+
+const NEXT_CLIENT_SHIMS: Record<string, string> = {
+  'next/link': `import React from "react";
+export default function Link(p) {
+  const { href, children, ...rest } = p || {};
+  const to = typeof href === "string" ? href : (href && (href.pathname || href.href)) || "#";
+  return React.createElement("a", { href: to, ...rest }, children);
+}`,
+  'next/image': `import React from "react";
+export default function Image(p) {
+  const { src, alt, fill, priority, loader, quality, placeholder, blurDataURL, ...rest } = p || {};
+  const realSrc = typeof src === "string" ? src : (src && (src.src || "")) || "";
+  const style = { ...(rest.style || {}) };
+  if (fill) { style.position = "absolute"; style.width = "100%"; style.height = "100%"; style.objectFit = style.objectFit || "cover"; }
+  return React.createElement("img", { src: realSrc, alt: alt || "", ...rest, style });
+}`,
+  'next/navigation': `export function useRouter() {
+  return {
+    push: (u) => { try { window.location.hash = ""; window.location.assign(String(u)); } catch (e) {} },
+    replace: (u) => { try { window.location.replace(String(u)); } catch (e) {} },
+    back: () => { try { window.history.back(); } catch (e) {} },
+    forward: () => { try { window.history.forward(); } catch (e) {} },
+    refresh: () => { try { window.location.reload(); } catch (e) {} },
+    prefetch: () => {},
+  };
+}
+export function usePathname() { return "/"; }
+export function useSearchParams() { return new URLSearchParams(""); }
+export function useParams() { return {}; }
+export function redirect() { throw new Error("redirect()‎ تحتاج سيرفر Next.js"); }
+export function notFound() { throw new Error("notFound()‎ تحتاج سيرفر Next.js"); }
+export function permanentRedirect() { throw new Error("permanentRedirect()‎ تحتاج سيرفر Next.js"); }`,
+  'next/dynamic': `import { lazy, Suspense, createElement } from "react";
+export default function dynamic(factory, opts) {
+  const C = lazy(factory);
+  return function Dynamic(p) {
+    const fb = opts && opts.loading ? opts.loading() : null;
+    return createElement(Suspense, { fallback: fb }, createElement(C, p));
+  };
+}`,
+  'next/script': `import { useEffect } from "react";
+export default function Script(p) {
+  const { src, children, ...rest } = p || {};
+  useEffect(() => {
+    if (!src) return;
+    if (document.querySelector('script[data-next-shim="' + src + '"]')) return;
+    const s = document.createElement("script");
+    s.src = src;
+    s.async = true;
+    s.setAttribute("data-next-shim", src);
+    document.head.appendChild(s);
+  }, [src]);
+  return null;
+}`,
+  'next/head': `import { createPortal } from "react-dom";
+export default function Head(p) {
+  try {
+    return createPortal(p && p.children, document.head);
+  } catch (e) {
+    return null;
+  }
+}`,
+  'next': `export default {};
+export const version = "client-shim";`,
+};
+
+/** يولّد shim لخطوط next/font بالأسماء المستوردة فعلاً في المشروع كله */
+function fontShimForSpec(names: string[]): { code: string; families: string[] } {
+  const uniq = [...new Set(names.filter((n) => /^[A-Za-z_$][\w$]*$/.test(n) && n !== 'default' && n !== 'React'))];
+  const use = uniq.length ? uniq : ['Inter'];
+  const lines = use.map(
+    (n) => `export const ${n} = (...a) => ({ className: "", variable: "--font-${n.toLowerCase()}", style: {} });`,
+  );
+  lines.push(`export default (...a) => ({ className: "", variable: "--font-default", style: {} });`);
+  return { code: lines.join('\n'), families: use };
+}
+
+/** يمسح كل ملفات الكود مرة واحدة: { 'next/font/google': { exports: Set, families: Set } } */
+function collectFontImports(files: Map<string, Uint8Array>): Map<string, { exports: Set<string>; families: Set<string> }> {
+  const out = new Map<string, { exports: Set<string>; families: Set<string> }>();
+  const dec = new TextDecoder('utf-8');
+  const ensure = (spec: string) => {
+    let e = out.get(spec);
+    if (!e) {
+      e = { exports: new Set(), families: new Set() };
+      out.set(spec, e);
+    }
+    return e;
+  };
+  for (const [p, data] of files) {
+    if (!/\.(tsx|ts|jsx|js|mjs)$/i.test(p) || data.length > 300_000) continue;
+    let src = '';
+    try {
+      src = dec.decode(data.subarray(0, 60000));
+    } catch {
+      continue;
+    }
+    const re = /import\s+(?:([\w$]+)\s*,\s*)?(?:\{([^}]*)\})?\s*from\s*['"]((?:next\/font\/\w+))['"]/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(src))) {
+      const spec = m[3]!;
+      const e = ensure(spec);
+      if (m[1] && m[1] !== 'React') e.exports.add(m[1]);
+      if (m[2]) {
+        for (const part of m[2].split(',')) {
+          const [orig, alias] = part.split(/\s+as\s+/).map((s) => s.trim());
+          if (orig && /^[A-Za-z_$][\w$]*$/.test(orig)) {
+            e.families.add(orig);
+            if (alias && /^[A-Za-z_$][\w$]*$/.test(alias) && alias !== 'default') e.exports.add(alias);
+            else if (orig !== 'default') e.exports.add(orig);
+          }
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function googleFontsLink(families: string[]): string | null {
+  const clean = [...new Set(families.map((f) => f.trim()).filter(Boolean))].slice(0, 6);
+  if (!clean.length) return null;
+  const q = clean.map((f) => `family=${encodeURIComponent(f)}:wght@400;500;600;700;800`).join('&');
+  return `https://fonts.googleapis.com/css2?${q}&display=swap`;
+}
+
+const TAILWIND_BROWSER_V4 = 'https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4';
+const TAILWIND_PLAY_V3 = 'https://cdn.tailwindcss.com';
+
+/** يكشف Tailwind (v3/v4) من الاعتماديات أو محتوى CSS */
+function detectTailwind(
+  files: Map<string, Uint8Array>,
+  deps: Record<string, string>,
+  devDeps: Record<string, string>,
+): 3 | 4 | null {
+  const ver = (v: unknown) => String(v || '');
+  const raw = ver(deps['tailwindcss']) + ' ' + ver(devDeps['tailwindcss']);
+  if (/(^|[^0-9])4(\.|$|[^0-9])/.test(raw)) return 4;
+  if (/(^|[^0-9])3(\.|$|[^0-9])/.test(raw)) return 3;
+  if (raw.trim() && raw.trim() !== '') return 4; // مذكور بلا إصدار واضح — الأحدث هو الغالب
+  // احتياط: ابحث في CSS عن توجيهات Tailwind
+  const dec = new TextDecoder('utf-8');
+  for (const [p, data] of files) {
+    if (!p.endsWith('.css') || data.length > 300_000) continue;
+    const head = dec.decode(data.subarray(0, 4000));
+    if (/@import\s+["']tailwindcss["']|@tailwind\s+\w|@theme\b/.test(head)) return 4;
+  }
+  return null;
+}
+
+/**
+ * ينزع من CSS ما لا يعمل في المتصفح (استيرادات حزم عارية وتوجيهات البناء)،
+ * ويعيد قائمة ما نُزع للتحذير. النسبي يُترك لـ esbuild.
+ */
+function stripUnbundeledCss(css: string): { css: string; stripped: string[] } {
+  const stripped: string[] = [];
+  const lines = css.split('\n');
+  const kept: string[] = [];
+  for (const line of lines) {
+    const m = line.match(/^\s*@import\s+["']([^"']+)["']/);
+    if (m && !/^(.N?\/|~|#|https?:|data:|blob:)/.test(m[1]!) && !m[1]!.endsWith('.css')) {
+      stripped.push(m[1]!);
+      continue;
+    }
+    if (/^\s*@tailwind\s+\w+\s*;?\s*$/.test(line)) {
+      stripped.push('@tailwind');
+      continue;
+    }
+    kept.push(line);
+  }
+  return { css: kept.join('\n'), stripped: [...new Set(stripped)] };
+}
+
+function hasServerDirective(src: string): boolean {
+  const lines = src.split('\n');
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t || t.startsWith('import ') || t.startsWith('export ') || t.startsWith('//') || t.startsWith('/*') || t.startsWith('*')) continue;
+    return /^["']use server["']/.test(t);
+  }
+  return false;
+}
+
+/** سلسلة layout regressively من مجلد الدخول صعوداً (الأبعد أولاً) */
+function layoutChain(files: Map<string, Uint8Array>, entryDir: string): string[] {
+  const chain: string[] = [];
+  let dir = entryDir;
+  for (let i = 0; i < 6; i++) {
+    for (const ext of ['.tsx', '.ts', '.jsx', '.js']) {
+      const cand = dir ? `${dir}/layout${ext}` : `layout${ext}`;
+      if (files.has(cand)) {
+        chain.unshift(cand);
+        break;
+      }
+    }
+    if (!dir) break;
+    const cut = dir.lastIndexOf('/');
+    dir = cut >= 0 ? dir.slice(0, cut) : '';
+  }
+  return chain;
+}
+
+function isPageEntry(entry: string): boolean {
+  return /(^|\/)(page|index)\.[jt]sx?$/.test(entry) || /(^|\/)pages\/[^/]+\.[jt]sx?$/.test(entry);
 }
 
 /**
@@ -479,10 +714,27 @@ export async function buildSourceBundle(
     prep.warnings.push('لم تُذكر react في dependencies — استُخدمت 18.3.1 افتراضياً');
   }
   const dec = new TextDecoder('utf-8');
+  const enc = new TextEncoder();
   const textOf = (p: string): string | null => {
     const b = files.get(p);
     return b ? dec.decode(b) : null;
   };
+
+  // فحص مبكر: Server Actions لا تعمل في المتصفح أبداً
+  for (const [p, data] of files) {
+    if (!/\.(tsx|ts|jsx|js)$/i.test(p) || data.length > 300_000) continue;
+    let head = '';
+    try {
+      head = dec.decode(data.subarray(0, 4000));
+    } catch {
+      continue;
+    }
+    if (hasServerDirective(head)) {
+      throw new Error(
+        `الملف ${p} يستخدم "use server" (Server Actions) — تُنفَّذ على سيرفر Next.js فقط ولا تعمل في المتصفح أبداً. الحل: انقل المنطق التفاعلي إلى مكوّن عميل ("use client") أو ارفع نسخة لا تعتمد على السيرفر.`,
+      );
+    }
+  }
 
   // تحذير مبكر: متغيرات VITE_* لن تُعرَّف
   const viteVars = new Set<string>();
@@ -497,14 +749,43 @@ export async function buildSourceBundle(
     prep.warnings.push(`متغيرات البيئة لن تعمل (${[...viteVars].slice(0, 3).join('، ')}) — ضع قيمها مباشرة في الكود`);
   }
 
+  // Tailwind: يُكتشف هنا ويُعالَج CSS لاحقاً ويُحقن محركه في صفحة العرض
+  const devDeps = (packageJson.devDependencies || {}) as Record<string, string>;
+  const tailwind = detectTailwind(files, deps, devDeps);
+  const strippedCssImports: string[] = [];
+  const collectedFonts: string[] = [];
+  const fontImportMap = collectFontImports(files);
+
+  // نقطة الدخول: صفحة Next لا تستدعي render بنفسها — نغلّفها تلقائياً
+  // (مع سلسلة layout للآثار الجانبية: CSS والخطوط) وإلا تُستخدم كما هي.
+  const vfs = new Map(files);
+  const entrySrc = textOf(entry) || '';
+  const selfRendering = /createRoot|hydrateRoot|ReactDOM\s*\.\s*render/.test(entrySrc);
+  let buildEntry = entry;
+  let autoEntry = false;
+  if (!selfRendering && isPageEntry(entry)) {
+    const layouts = layoutChain(files, dirOf(entry));
+    const lines = layouts.map((l) => `import "./${l}";`);
+    lines.push(`import Page from "./${entry}";`);
+    lines.push(`import React from "react";`);
+    lines.push(`import { createRoot } from "react-dom/client";`);
+    lines.push(`createRoot(document.getElementById("root")).render(React.createElement(Page));`);
+    vfs.set('__srcbundle_auto_entry__.tsx', enc.encode(lines.join('\n')));
+    buildEntry = '__srcbundle_auto_entry__.tsx';
+    autoEntry = true;
+    if (layouts.length) {
+      prep.warnings.push(`أُدرجت سلسلة الهيكل تلقائياً (${layouts.join(' ← ')}) للأنماط والخطوط`);
+    }
+  }
+
   const tryResolveFile = (base: string): string | null => {
     for (const ext of TRY_EXTS) {
       const cand = normalizeRel(base + ext);
-      if (cand && files.has(cand)) return cand;
+      if (cand && vfs.has(cand)) return cand;
     }
     for (const idx of INDEX_FILES) {
       const cand = normalizeRel(base + '/' + idx);
-      if (cand && files.has(cand)) return cand;
+      if (cand && vfs.has(cand)) return cand;
     }
     return null;
   };
@@ -574,22 +855,69 @@ export async function buildSourceBundle(
         // مسارات tsconfig (@/...)
         const mapped = resolveTsPath(spec);
         if (mapped) return { path: mapped, namespace: 'vfs' };
-        // Node المدمجة ← خطأ واضح
+        // مكتبات السيرفر الخالص ← خطأ عربي واضح بدل فشل غامض
         const { name } = splitBare(spec);
         if (NODE_BUILTINS.has(name) || name.startsWith('node:')) {
           return { errors: [{ text: `Node builtin "${spec}" لا يعمل في المتصفح` }] };
+        }
+        if (SERVER_ONLY_MODULES.has(name) || SERVER_ONLY_MODULES.has(spec)) {
+          return { errors: [{ text: `SERVER_DEP:${spec}` }] };
+        }
+        // محاكيات Next العميلة ← تُقدَّم محلياً بلا شبكة
+        if (
+          spec === 'next' || spec === 'next/link' || spec === 'next/image' ||
+          spec === 'next/navigation' || spec === 'next/dynamic' ||
+          spec === 'next/script' || spec === 'next/head' ||
+          spec.startsWith('next/font/')
+        ) {
+          return { path: spec, namespace: 'next-shim' };
         }
         // حزمة npm ← esm.sh
         return { path: esmUrlFor(spec), external: true };
       });
 
+      build.onLoad({ filter: /.*/, namespace: 'next-shim' }, (args: any) => {
+        const spec: string = String(args.path);
+        if (spec.startsWith('next/font/')) {
+          // ملاحظة: onLoad لا يستقبل المستورِد — الأسماء جُمعت مسبقاً من كل الملفات
+          const found = fontImportMap.get(spec);
+          const { code, families } = fontShimForSpec([
+            ...(found ? [...found.exports] : []),
+            ...(spec === 'next/font/google' && !found ? ['Inter'] : []),
+          ]);
+          const fams = found && found.families.size ? [...found.families] : families;
+          for (const fam of fams) {
+            if (!collectedFonts.includes(fam)) collectedFonts.push(fam);
+          }
+          if (spec !== 'next/font/google') {
+            warnings.push(`خطوط محلية (${spec}) استُبدلت بفراغ — ارفع الخط كملف أو استخدم Google Fonts`);
+          }
+          return { contents: code, loader: 'jsx' as any };
+        }
+        const shim = NEXT_CLIENT_SHIMS[spec];
+        if (shim) return { contents: shim, loader: 'jsx' as any };
+        return { errors: [{ text: `وحدة Next غير مدعومة في المتصفح: ${spec}` }] };
+      });
+
       build.onLoad({ filter: /.*/, namespace: 'vfs' }, (args: any) => {
         const p: string = String(args.path).replace(/^vfs:/, '');
-        const data = files.get(p);
+        const data = vfs.get(p);
         if (!data) return { errors: [{ text: `الملف غير موجود في الحزمة: ${p}` }] };
         const ext = (p.split('.').pop() || '').toLowerCase();
         if (ext === 'css' && p.endsWith('.module.css')) {
+          if (tailwind && /@apply|@tailwind/.test(dec.decode(data.subarray(0, 8000)))) {
+            warnings.push(`ملف ${p} يستخدم @apply — عُولج جزئياً فقط`);
+          }
           return { contents: data, loader: 'local-css' as any };
+        }
+        if (ext === 'css' && tailwind) {
+          let text = dec.decode(data);
+          const stripped = stripUnbundeledCss(text);
+          text = stripped.css;
+          for (const s of stripped.stripped) {
+            if (!strippedCssImports.includes(s)) strippedCssImports.push(s);
+          }
+          return { contents: text, loader: 'css' as any };
         }
         const loader = TEXT_LOADER[ext];
         if (loader) {
@@ -613,11 +941,11 @@ export async function buildSourceBundle(
     },
   };
 
-  log('بدء البناء…');
+  log(autoEntry ? 'بدء البناء (بتغليف تلقائي للصفحة)…' : 'بدء البناء…');
   let result: esbuildTypes.BuildResult;
   try {
     result = await esbuild.build({
-      entryPoints: [entry],
+      entryPoints: [buildEntry],
       bundle: true,
       format: 'esm',
       minify: true,
@@ -660,13 +988,16 @@ export async function buildSourceBundle(
   if (dynBare.length) {
     warnings.push(`استيرادات ديناميكية لحزم (${[...new Set(dynBare)].slice(0, 3).join('، ')}) قد لا تعمل — الأفضل استيراد ثابت`);
   }
+  if (strippedCssImports.length) {
+    warnings.push(`حُذف من CSS ما يحتاج بناءً خارجياً (${strippedCssImports.slice(0, 3).join('، ')}) — التصميم الأساسي يعمل وبعض الإضافات قد تغيب`);
+  }
   const sizes = {
     js: jsFile.contents.length,
     css: cssFile ? cssFile.contents.length : 0,
     total: jsFile.contents.length + (cssFile ? cssFile.contents.length : 0),
   };
   log('اكتمل البناء ✓');
-  return { js, css, entry, deps, reactVersion, reactDomVersion, warnings, sizes };
+  return { js, css, entry, deps, reactVersion, reactDomVersion, warnings, sizes, tailwind, fonts: collectedFonts, autoEntry, strippedCssImports };
 }
 
 /* ---------------- الحاوية المضغوطة للتخزين ---------------- */
@@ -734,6 +1065,8 @@ export async function packSourceContainer(res: SourceBuildResult): Promise<{
     builtAt: new Date().toISOString(),
     sizes: { js: res.sizes.js, css: res.sizes.css, total: res.sizes.total, gz: 0 },
     warnings: res.warnings.slice(0, 5),
+    tailwind: res.tailwind,
+    fonts: res.fonts.slice(0, 6),
   };
   const bytes = await gzipBytes(enc.encode(JSON.stringify(container)));
   container.sizes.gz = bytes.length;
@@ -768,7 +1101,7 @@ function escapeForScript(s: string, tag: 'script' | 'style'): string {
 const ERROR_BRIDGE = `(function(){function send(m,s){try{parent.postMessage({__srcbundle:1,type:'error',message:String(m).slice(0,500),source:String(s||'').slice(0,200)},'*')}catch(e){}}window.addEventListener('error',function(e){var t=e&&e.target;if(t&&t!==window&&(t.src||t.href)){send('تعذر تحميل مورد: '+((t.src||t.href)||''),'resource');return}send((e&&(e.message||(e.error&&e.error.message)))||'خطأ غير معروف','runtime')},true);window.addEventListener('unhandledrejection',function(e){var r=e&&e.reason;send((r&&(r.message||r))||'وعد مرفوض','promise')});window.__srcReady=false;})();`;
 
 /**
- * يبني صفحة srcdoc كاملة: جسر الأخطاء + importmap مثبّت + CSS + JS.
+ * يبني صفحة srcdoc كاملة: جسر الأخطاء + خطوط Google + Tailwind + importmap + CSS + JS.
  * تُعرض داخل iframe بخاصية sandbox="allow-scripts" فقط.
  */
 export function buildSourceSrcdoc(input: {
@@ -777,6 +1110,8 @@ export function buildSourceSrcdoc(input: {
   reactVersion: string;
   reactDomVersion?: string;
   title?: string;
+  tailwind?: 3 | 4 | null;
+  fonts?: string[];
 }): string {
   const rv = input.reactVersion || '18.3.1';
   const dv = input.reactDomVersion || rv;
@@ -790,14 +1125,28 @@ export function buildSourceSrcdoc(input: {
     },
   };
   const title = (input.title || 'المحتوى التفاعلي').replace(/</g, '‹');
+  const fontsLink = googleFontsLink(input.fonts || []);
+  const tw = input.tailwind === 3 || input.tailwind === 4 ? input.tailwind : null;
+  const twScript = tw === 4 ? TAILWIND_BROWSER_V4 : tw === 3 ? TAILWIND_PLAY_V3 : null;
+  const bodyFont =
+    input.fonts && input.fonts.length
+      ? ` style="font-family:'${input.fonts.slice(0, 2).join("','")}',system-ui,sans-serif"`
+      : '';
   return (
     '<!DOCTYPE html>\n<html lang="ar" dir="rtl">\n<head>\n<meta charset="utf-8">\n' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
     `<title>${title}</title>\n` +
+    (fontsLink ? `<link rel="preconnect" href="https://fonts.googleapis.com">\n<link rel="stylesheet" href="${fontsLink}">\n` : '') +
+    (twScript ? `<script src="${twScript}"></script>\n` : '') +
     `<script>${ERROR_BRIDGE}</script>\n` +
     `<script type="importmap">${JSON.stringify(map)}</script>\n` +
-    (input.css ? `<style>${escapeForScript(input.css, 'style')}</style>\n` : '') +
-    '</head>\n<body>\n<div id="root"></div>\n' +
+    (input.css
+      ? tw
+        ? `<style type="text/tailwindcss">${escapeForScript(input.css, 'style')}</style>\n`
+        : `<style>${escapeForScript(input.css, 'style')}</style>\n`
+      : '') +
+    '</head>\n' +
+    `<body${bodyFont}>\n<div id="root"></div>\n` +
     `<script type="module">${escapeForScript(input.js, 'script')}</script>\n` +
     '</body>\n</html>'
   );
