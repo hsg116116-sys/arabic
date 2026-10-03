@@ -311,7 +311,7 @@ export function parseTar(data: Uint8Array, warnings: string[]): Map<string, Uint
     if (total > BUNDLE_LIMITS.maxTotalBytes) throw new Error('حجم الموقع بعد الفك يتجاوز 100MB — قسّمه إلى درسين أو صغّر الصور/الفيديو');
     out.set(clean, content.slice());
   }
-  if (!out.size) throw new Error('الأرشيف فارغ أو بلا ملفات صالحة — تأكد أنك ضغطت محتويات الموقع نفسه');
+  if (!out.size) throw new Error('الأرشيف فارغ أو تالف أو ليس TAR حقيقياً — أعد إنشاء الأرشيف بصيغة TAR من مجلد الموقع');
   return out;
 }
 
@@ -371,6 +371,13 @@ function findEntry(files: Map<string, BundleFile>): string {
 export async function extractSiteBundle(buffer: ArrayBuffer, fileName: string): Promise<SiteBundle> {
   const bytes = new Uint8Array(buffer);
   if (!bytes.length) throw new Error('الملف فارغ — أعد رفعه');
+  // نفس حد الفحص المحلي في source-build (مكرر هنا لتفادي استيراد دائري)
+  if (bytes.length > 64 * 1024 * 1024) {
+    const mb = (n: number) => (n / 1024 / 1024).toFixed(n >= 10 * 1024 * 1024 ? 0 : 1);
+    throw new Error(
+      `حجم الأرشيف ${mb(bytes.length)}MB يتجاوز حد الفحص المحلي (64MB) — اضغطه بصيغة TAR.GZ ثم أعد الرفع`,
+    );
+  }
   const warnings: string[] = [];
   const kind = detectKind(bytes, fileName);
   if (!kind) {
@@ -386,7 +393,11 @@ export async function extractSiteBundle(buffer: ArrayBuffer, fileName: string): 
     } catch {
       throw new Error('تعذّر فك ضغط GZIP — الملف تالف أو ليس tar.gz حقيقياً');
     }
-    raw = parseTar(tar, warnings);
+    try {
+      raw = parseTar(tar, warnings);
+    } catch {
+      throw new Error('ملف GZIP سليم لكنه ليس أرشيف TAR — اضغط مجلد الموقع كاملاً بصيغة TAR.GZ لا ملفاً واحداً');
+    }
   } else {
     raw = parseTar(bytes, warnings);
   }

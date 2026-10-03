@@ -29,7 +29,9 @@ async function getEsbuild(): Promise<Esbuild> {
 }
 
 export const SOURCE_LIMITS = {
-  maxZipBytes: 20 * 1024 * 1024, // 20MB للأرشيف المرفوع
+  // الأرشيف المرفوع: TAR غير مضغوط يكبر بسرعة (صور/فيديو) — 64MB للفحص المحلي،
+  // والرفع المباشر نفسه حتى 100MB. من تجاوز الحد: TAR.GZ يصغّر 3-5 أضعاف عادة.
+  maxArchiveBytes: 64 * 1024 * 1024,
   maxFiles: 2000,
   maxScanFileBytes: 2 * 1024 * 1024, // ملفات أكبر من 2MB تُتجاهل مع تنبيه
   maxInlineAssetBytes: 512 * 1024, // وسائط أكبر من 512KB تُستبعد مع تحذير
@@ -86,9 +88,10 @@ export async function extractRawArchive(
 ): Promise<{ files: Map<string, Uint8Array>; kind: BundleKind; warnings: string[] }> {
   const bytes = new Uint8Array(buffer);
   if (!bytes.length) throw new Error('الملف فارغ — أعد رفعه');
-  if (bytes.length > SOURCE_LIMITS.maxZipBytes) {
+  if (bytes.length > SOURCE_LIMITS.maxArchiveBytes) {
+    const mb = (n: number) => (n / 1024 / 1024).toFixed(n >= 10 * 1024 * 1024 ? 0 : 1);
     throw new Error(
-      `حجم الأرشيف ${Math.round(bytes.length / 1024 / 1024)}MB يتجاوز الحد ${SOURCE_LIMITS.maxZipBytes / 1024 / 1024}MB — صغّر الصور والفيديو ثم أعد الضغط`,
+      `حجم الأرشيف ${mb(bytes.length)}MB يتجاوز حد الفحص المحلي (${SOURCE_LIMITS.maxArchiveBytes / 1024 / 1024}MB) — اضغطه بصيغة TAR.GZ (تصغّر الحجم كثيراً) ثم أعد الرفع، أو أخرج الصور الكبيرة منه`,
     );
   }
   const warnings: string[] = [];
@@ -96,8 +99,19 @@ export async function extractRawArchive(
   if (!kind) throw new Error('صيغة غير مدعومة — ارفع TAR أو TAR.GZ (الأفضل) أو ZIP فقط');
   let raw: Map<string, Uint8Array>;
   if (kind === 'zip') raw = await parseZip(bytes, warnings);
-  else if (kind === 'tgz') raw = parseTar(await gunzipBuffer(bytes), warnings);
-  else raw = parseTar(bytes, warnings);
+  else if (kind === 'tgz') {
+    let tar: Uint8Array;
+    try {
+      tar = await gunzipBuffer(bytes);
+    } catch {
+      throw new Error('تعذّر فك ضغط GZIP — الملف تالف أو ليس gzip حقيقياً');
+    }
+    try {
+      raw = parseTar(tar, warnings);
+    } catch {
+      throw new Error('ملف GZIP سليم لكنه ليس أرشيف TAR — اضغط مجلد الموقع كاملاً بصيغة TAR.GZ لا ملفاً واحداً');
+    }
+  } else raw = parseTar(bytes, warnings);
   return { files: raw, kind, warnings };
 }
 
