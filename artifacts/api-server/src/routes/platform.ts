@@ -85,6 +85,9 @@ async function getActiveStudent(req?: any): Promise<any | null> {
   return sessionProfile || null;
 }
 
+/** المدرسة الافتراضية — تُستخدم فقط عند إضافة طالب بلا مدرسة */
+const DEFAULT_SCHOOL = "مدرسة وايلد";
+
 /** تحويل سجل الملف الشخصي إلى الشكل المطلوب في واجهات المنصة */
 function toStudentShape(profile: any, progress: number): any {
   return {
@@ -979,6 +982,148 @@ router.get("/teacher/students", requireAdmin, async (_req, res) => {
   }
 });
 
+// 9.05 تقرير الطلاب للكشف — يجمع كل المؤشرات دفعة واحدة (صف/مدرسة/جنس)
+router.get("/teacher/students/report", requireAdmin, async (req, res) => {
+  try {
+    const q = (req.query || {}) as Record<string, string>;
+    const grade = (q.grade || "").trim();
+    const school = (q.school || "").trim();
+    const gender = (q.gender || "").trim();
+
+    const [profilesRes, lessonsRes, cpRes, subRes, attemptRes] = await Promise.all([
+      supabaseQuery<any[]>("profiles?role=eq.student&order=full_name.asc&limit=2000"),
+      // آخر إكمال درس لكل طالب (لحساب الدروس المكتملة وتاريخ آخر نشاط)
+      supabaseQuery<any[]>("lesson_progress?select=user_id,completed_at,lesson_id&limit=20000"),
+      supabaseQuery<any[]>("course_progress?select=user_id,progress&limit=20000"),
+      supabaseQuery<any[]>("assignment_submissions?select=user_id,score,status&limit=20000"),
+      supabaseQuery<any[]>(
+        "assessment_attempts?select=user_id,score,total,completed_at&limit=20000",
+      ),
+    ]);
+
+    const lessonCount = new Map<string, Set<string>>();
+    const lastLessonAt = new Map<string, string>();
+    for (const r of lessonsRes.data || []) {
+      if (!r.user_id) continue;
+      if (r.lesson_id) {
+        if (!lessonCount.has(r.user_id)) lessonCount.set(r.user_id, new Set());
+        lessonCount.get(r.user_id)!.add(String(r.lesson_id));
+      }
+      const at = r.completed_at ? String(r.completed_at) : "";
+      if (at && (!lastLessonAt.get(r.user_id) || at > lastLessonAt.get(r.user_id)!)) {
+        lastLessonAt.set(r.user_id, at);
+      }
+    }
+    const courseAvg = new Map<string, number>();
+    for (const r of cpRes.data || []) {
+      if (!r.user_id) continue;
+      courseAvg.set(r.user_id, Number(r.progress) || 0);
+    }
+    const hw = new Map<string, { count: number; graded: number; sum: number; n: number }>();
+    for (const r of subRes.data || []) {
+      if (!r.user_id) continue;
+      const cur = hw.get(r.user_id) || { count: 0, graded: 0, sum: 0, n: 0 };
+      cur.count++;
+      if (typeof r.score === "number") {
+        cur.graded++;
+        cur.sum += r.score;
+        cur.n++;
+      }
+      hw.set(r.user_id, cur);
+    }
+    const exams = new Map<string, { count: number; sum: number; n: number }>();
+    for (const r of attemptRes.data || []) {
+      if (!r.user_id) continue;
+      const cur = exams.get(r.user_id) || { count: 0, sum: 0, n: 0 };
+      cur.count++;
+      if (typeof r.score === "number") {
+        cur.sum += r.score;
+        cur.n++;
+      }
+      exams.set(r.user_id, cur);
+    }
+
+    let rows = (profilesRes.data || []).map((p) => {
+      const h = hw.get(p.id);
+      const e = exams.get(p.id);
+      const completedLessons = lessonCount.get(p.id)?.size || 0;
+      return {
+        id: p.id,
+        name: p.full_name || "",
+        email: p.email || "",
+        phone: p.phone || "",
+        school: p.school || "",
+        branch: p.branch || "",
+        grade: p.grade || "",
+        section: p.section || "",
+        gender: p.gender || "",
+        status: p.status || "نشط",
+        studentNumber: p.student_number || "",
+        createdAt: p.created_at || "",
+        progress: Math.round(courseAvg.get(p.id) || 0),
+        completedLessons,
+        hwSubmitted: h?.count || 0,
+        hwGraded: h?.graded || 0,
+        hwAvg: h && h.n ? Math.round((h.sum / h.n) * 10) / 10 : null,
+        examsTaken: e?.count || 0,
+        examAvg: e && e.n ? Math.round((e.sum / e.n) * 10) / 10 : null,
+        lastActive: lastLessonAt.get(p.id) || "",
+      };
+    });
+
+    if (grade) rows = rows.filter((r) => r.grade === grade);
+    if (school) rows = rows.filter((r) => r.school === school);
+    if (gender) rows = rows.filter((r) => r.gender === gender);
+
+    // قائمة المدارس كما هي من البيانات + الصفوف (بلا قيم فارغة)
+    const allRows = (profilesRes.data || []).map((p) => ({
+      school: p.school || "",
+      grade: p.grade || "",
+    }));
+    const schools = [...new Set(allRows.map((r) => r.school).filter(Boolean))].sort((a, b) =>
+      a.localeCompare(b, "ar"),
+    );
+    const grades = [...new Set(allRows.map((r) => r.grade).filter(Boolean))].sort((a, b) =>
+      a.localeCompare(b, "ar"),
+    );
+
+    res.json({
+      success: true,
+      generatedAt: new Date().toISOString(),
+      students: rows,
+      schools,
+      grades,
+    });
+  } catch (err: any) {
+    logger.error({ err }, "Error in GET /teacher/students/report");
+    res.status(500).json({ error: "تعذر تجهيز كشف الطلاب" });
+  }
+});
+
+// 9.06 دمج/تنظيف أسماء المدارس — يوحّد اسم غريب أو فارغ إلى مدرسة موجودة
+router.post("/teacher/schools/merge", requireAdmin, async (req, res) => {
+  try {
+    const { from, to } = (req.body || {}) as { from?: string; to?: string };
+    if (!from || !to) {
+      res.status(400).json({ error: "حدّد المدرسة المصدر والوجهة" });
+      return;
+    }
+    if (from === to) {
+      res.status(400).json({ error: "المصدر والوجهة متطابقان" });
+      return;
+    }
+    const { error } = await supabaseQuery(
+      `profiles?school=eq.${encodeURIComponent(from)}`,
+      { method: "PATCH", body: { school: to, updated_at: new Date().toISOString() } },
+    );
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: `تم توحيد «${from}» إلى «${to}»` });
+  } catch (err: any) {
+    logger.error({ err }, "Error in POST /teacher/schools/merge");
+    res.status(500).json({ error: "تعذر توحيد المدرسة" });
+  }
+});
+
 // 9.1 Add Student
 router.post("/teacher/students", requireAdmin, async (req, res) => {
   try {
@@ -991,7 +1136,7 @@ router.post("/teacher/students", requireAdmin, async (req, res) => {
     const newStudent = {
       full_name: name,
       email: email || `${Date.now()}@student.local`,
-      school: school || "مدرسة وايلد",
+      school: school || DEFAULT_SCHOOL,
       grade: grade || "الصف العاشر",
       section: section || "أ",
       gender: gender || "طالب",
@@ -1394,4 +1539,43 @@ router.patch("/student/profile", requireAuth, async (req, res) => {
 });
 
 export { getAdminEmails };
+// 9.07 صفحة صف واحد — بطاقة مفصّلة لكل مدرسة داخل الصف (طلاب/طالبات)
+router.get("/teacher/students/grade-page", requireAdmin, async (req, res) => {
+  try {
+    const grade = String((req.query as Record<string, string>)?.grade || "").trim();
+    if (!grade) {
+      res.status(400).json({ error: "حدّد الصف المطلوب" });
+      return;
+    }
+    const { data } = await supabaseQuery<any[]>(
+      `profiles?role=eq.student&grade=eq.${encodeURIComponent(grade)}&order=school.asc&limit=2000`,
+    );
+    const rows = (data || []).map((p) => ({
+      id: p.id,
+      name: p.full_name || "",
+      email: p.email || "",
+      phone: p.phone || "",
+      school: p.school || "",
+      grade: p.grade || grade,
+      section: p.section || "",
+      gender: p.gender || "",
+      status: p.status || "نشط",
+      studentNumber: p.student_number || "",
+      createdAt: p.created_at || "",
+      progress: 0,
+      completedLessons: 0,
+      hwSubmitted: 0,
+      hwGraded: 0,
+      hwAvg: null,
+      examsTaken: 0,
+      examAvg: null,
+      lastActive: "",
+    }));
+    res.json({ success: true, grade, students: rows });
+  } catch (err: any) {
+    logger.error({ err }, "Error in GET /teacher/students/grade-page");
+    res.status(500).json({ error: "تعذر جلب طلاب الصف" });
+  }
+});
+
 export default router;

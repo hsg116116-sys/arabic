@@ -24,6 +24,7 @@ import {
 } from '@workspace/api-client-react';
 import {
   ArrowLeft,
+  ArrowRight,
   ArrowUpLeft,
   Award,
   Bell,
@@ -89,6 +90,12 @@ import {
 } from 'lucide-react';
 import { Link, Route, Switch, Router as WouterRouter, useLocation, useParams } from 'wouter';
 import NotFound from '@/pages/not-found';
+import {
+  downloadWorkbook,
+  downloadCsv,
+  type SheetSpec,
+} from '@/lib/xlsx';
+import { buildStudentsReport, REPORT_HEADERS, REPORT_WIDTHS, groupStudents, SHEET_LABELS, type ReportStudent, type ReportBundle } from '@/lib/students-report';
 import {
   isBundleUrl,
   isArchiveFileName,
@@ -3371,10 +3378,308 @@ function TeacherDashboard() {
   );
 }
 
+/** جلب تقرير الطلاب الكامل (كل المؤشرات) — مع_cache خفيف لتفادي تكرار الطلبات */
+function useStudentsReport(filters?: { grade?: string; school?: string; gender?: string }) {
+  const key = `${filters?.grade || ''}|${filters?.school || ''}|${filters?.gender || ''}`;
+  const [data, setData] = useState<ReportBundle | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    const q = new URLSearchParams();
+    if (filters?.grade) q.set('grade', filters.grade);
+    if (filters?.school) q.set('school', filters.school);
+    if (filters?.gender) q.set('gender', filters.gender);
+    let live = true;
+    setLoading(true);
+    setError('');
+    fetch(`/api/teacher/students/report${q.toString() ? `?${q.toString()}` : ''}`, { credentials: 'include' })
+      .then((r) => {
+        if (!r.ok) throw new Error('تعذر تحميل كشف الطلاب');
+        return r.json();
+      })
+      .then((d) => {
+        if (live) setData({ students: d?.students || [], schools: d?.schools || [], grades: d?.grades || [], generatedAt: d?.generatedAt || '' });
+      })
+      .catch((e: any) => {
+        if (live) setError(e?.message || 'تعذر تحميل كشف الطلاب');
+      })
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, attempt]);
+  return { data, loading, error, reload: () => setAttempt((a) => a + 1) };
+}
+
+/** بطاقة إحصائية صغيرة */
+function ReportStat({ label, value, tone = 'primary' }: { label: string; value: string | number; tone?: 'primary' | 'accent' | 'rose' | 'purple' }) {
+  const tones = {
+    primary: 'from-[#0c2725] via-[#17413f] to-[#25655f] text-white',
+    accent: 'from-[#8a6d1f] to-[#d7b65e] text-[#2b2106]',
+    rose: 'from-[#7a2f3d] to-[#c0566b] text-white',
+    purple: 'from-[#4a2358] to-[#8a508f] text-white',
+  } as const;
+  return (
+    <div className={`rounded-2xl bg-gradient-to-l ${tones[tone]} px-4 py-3 shadow-sm`}>
+      <p className="font-display text-2xl font-bold tabular-nums">{value}</p>
+      <p className="mt-0.5 text-[11px] font-semibold opacity-80">{label}</p>
+    </div>
+  );
+}
+
+/** جدول طلاب مختصر (يُستخدم داخل بطاقات المدارس) */
+function StudentsMiniTable({ rows, onEdit }: { rows: ReportStudent[]; onEdit: (s: any) => void }) {
+  if (!rows.length) return <p className="px-3 py-6 text-center text-xs font-bold text-muted-foreground">لا يوجد طلاب في هذه المجموعة</p>;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[640px] text-right text-xs">
+        <thead>
+          <tr className="border-b border-border bg-secondary/40 text-[11px] font-extrabold text-primary">
+            <th className="px-3 py-2">الاسم</th>
+            <th className="px-3 py-2">القسم</th>
+            <th className="px-3 py-2">رقم الطالب</th>
+            <th className="px-3 py-2">الهاتف</th>
+            <th className="px-3 py-2">التقدّم</th>
+            <th className="px-3 py-2">واجبات</th>
+            <th className="px-3 py-2">آخر نشاط</th>
+            <th className="px-3 py-2"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((s) => (
+            <tr key={s.id} className="border-b border-border/60 transition-colors hover:bg-secondary/30">
+              <td className="px-3 py-2.5 font-bold text-foreground">{s.name}</td>
+              <td className="px-3 py-2.5 text-muted-foreground">{s.section}</td>
+              <td className="px-3 py-2.5 text-muted-foreground tabular-nums">{s.studentNumber || '—'}</td>
+              <td className="px-3 py-2.5 text-muted-foreground tabular-nums" dir="ltr">{s.phone || '—'}</td>
+              <td className="px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
+                    <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, s.progress || 0)}%` }} />
+                  </div>
+                  <span className="tabular-nums text-[11px] font-bold text-primary">{s.progress || 0}%</span>
+                </div>
+              </td>
+              <td className="px-3 py-2.5 tabular-nums text-muted-foreground">{s.hwSubmitted || 0}</td>
+              <td className="px-3 py-2.5 text-[11px] text-muted-foreground">{s.lastActive ? String(s.lastActive).slice(0, 10) : '—'}</td>
+              <td className="px-3 py-2.5">
+                <button type="button" onClick={() => onEdit(s)} title="تعديل" className="rounded-lg bg-secondary/70 p-1.5 text-primary transition-colors hover:bg-secondary"><Pencil size={13} /></button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** بطاقة مدرسة داخل صف: طلاب لحال وطالبات لحال */
+function SchoolGroupCard({ schoolBlock, grade, onExport, onEdit }: {
+  schoolBlock: { school: string; total: number; groups: any[] };
+  grade: string;
+  onExport: (rows: ReportStudent[], label: string) => void;
+  onEdit: (s: any) => void;
+}) {
+  const boys = schoolBlock.groups.find((g) => g.gender === 'طالب');
+  const girls = schoolBlock.groups.find((g) => g.gender === 'طالبة');
+  const other = schoolBlock.groups.find((g) => g.gender === 'غير محدد');
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-3 bg-gradient-to-l from-secondary/70 to-card px-4 py-3.5 text-right transition-colors hover:from-secondary">
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-primary font-display text-sm font-extrabold text-primary-foreground shadow-md">
+          <Castle size={20} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-display text-base font-extrabold text-primary">{schoolBlock.school}</p>
+          <p className="mt-0.5 text-[11px] font-semibold text-muted-foreground">
+            {grade} · {schoolBlock.total} طالب · {boys?.students.length || 0} طالب · {girls?.students.length || 0} طالبة
+          </p>
+        </div>
+        <span className="shrink-0 rounded-xl bg-accent/25 px-3 py-1.5 text-xs font-extrabold text-accent-foreground tabular-nums">{schoolBlock.total}</span>
+        <ChevronLeft size={18} className={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`} />
+      </button>
+      {open ? (
+        <div className="space-y-4 p-4">
+          {[
+            { label: 'طلاب', rows: boys?.students || [], tone: 'from-[#0d47a1] to-[#3f7dc2]', icon: UsersRound },
+            { label: 'طالبات', rows: girls?.students || [], tone: 'from-[#6a1b9a] to-[#8a508f]', icon: UsersRound },
+            { label: 'غير محدد', rows: other?.students || [], tone: 'from-[#5d4037] to-[#8d6e63]', icon: HelpCircle },
+          ].map((sec) => (
+            <div key={sec.label} className="overflow-hidden rounded-2xl border border-border">
+              <div className="flex items-center justify-between gap-2 bg-secondary/50 px-3 py-2">
+                <p className="flex items-center gap-2 text-xs font-extrabold text-primary">
+                  <span className={`grid h-7 w-7 place-items-center rounded-lg bg-gradient-to-br ${sec.tone} text-white`}><sec.icon size={13} /></span>
+                  {sec.label} ({sec.rows.length})
+                </p>
+                {sec.rows.length ? (
+                  <button type="button" onClick={() => onExport(sec.rows, `${schoolBlock.school} - ${grade} - ${sec.label}`)} className="rounded-lg bg-primary px-2.5 py-1 text-[10px] font-extrabold text-primary-foreground hover:brightness-110">تصدير Excel</button>
+                ) : null}
+              </div>
+              <StudentsMiniTable rows={sec.rows} onEdit={onEdit} />
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** صفحة الطلاب: بطاقات لكل صف ← كل مدرسة ← طلاب/طالبات */
+/** صفحة صف واحد مستقلة — كل مدرسة ببطاقة مستقلة فيها طلاب وطالبات */
+function GradeStudentsPage({ grade }: { grade: string }) {
+  const decoded = decodeURIComponent(grade || '');
+  const report = useStudentsReport({ grade: decoded });
+  const [schoolFilter, setSchoolFilter] = useState('');
+  const [genderFilter, setGenderFilter] = useState<'الكل' | 'طالب' | 'طالبة'>('الكل');
+  const [search, setSearch] = useState('');
+  const [exporting, setExporting] = useState(false);
+
+  const rows: ReportStudent[] = report.data?.students || [];
+  const schools = report.data?.schools || [];
+  const filtered = useMemo(() => {
+    const q = normalizeText(search);
+    return rows.filter((s) => {
+      if (schoolFilter && s.school !== schoolFilter) return false;
+      if (genderFilter !== 'الكل' && s.gender !== genderFilter) return false;
+      if (q && !normalizeText(s.name).includes(q) && !normalizeText(s.studentNumber).includes(q)) return false;
+      return true;
+    });
+  }, [rows, schoolFilter, genderFilter, search]);
+  const grouped = useMemo(() => groupStudents(filtered), [filtered]);
+
+  const exportGrade = (csv = false) => {
+    if (!rows.length) return;
+    setExporting(true);
+    try {
+      const bundle: ReportBundle = { students: filtered, schools, grades: [decoded], generatedAt: new Date().toISOString() };
+      if (csv) {
+        const sheets = buildStudentsReport(bundle, { onlyGrade: decoded });
+        for (const s of sheets) downloadCsv(reportFileName(s.name), s.rows);
+      } else {
+        downloadWorkbook(reportFileName('كشف الطلاب', decoded), buildStudentsReport(bundle, { onlyGrade: decoded }), {
+          title: `كشف ${decoded}`,
+          subject: 'كشف الطلاب حسب المدرسة والقسم',
+        });
+      }
+    } finally {
+      setTimeout(() => setExporting(false), 400);
+    }
+  };
+
+  return (
+    <Shell mode="teacher">
+      <PageHeading
+        eyebrow="صفحة الصف"
+        title={decoded}
+        body={`جميع طلاب ${decoded} مقسّمين حسب المدرسة، وداخل كل مدرسة طلاب لحال وطالبات لحال — مع كشف Excel جاهز.`}
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href="/teacher/students" className="inline-flex items-center gap-1.5 rounded-xl bg-secondary px-4 py-2.5 text-sm font-bold text-primary transition-colors hover:bg-accent/40">
+              <ArrowRight size={16} /> كل الطلاب
+            </Link>
+            <Button type="button" onClick={() => exportGrade(false)} disabled={exporting || !rows.length} variant="primary" data-testid="button-export-grade">
+              {exporting ? <><RefreshCw size={16} className="animate-spin" /> جارٍ التصدير...</> : <><Download size={16} /> كشف Excel للصف</>}
+            </Button>
+            <Button type="button" onClick={() => exportGrade(true)} disabled={!rows.length} variant="soft" title="ملف CSV لكل مجموعة">
+              <FileText size={16} /> CSV لكل مجموعة
+            </Button>
+          </div>
+        }
+      />
+
+      {report.loading ? <StateNotice type="loading" /> : report.error ? (
+        <StateNotice type="error" onRetry={report.reload} />
+      ) : !rows.length ? (
+        <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-16 text-center">
+          <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-secondary text-primary"><GraduationCap size={26} /></span>
+          <p className="font-display text-lg font-bold text-primary">لا يوجد طلاب في {decoded}</p>
+          <p className="mt-1 text-sm text-muted-foreground">سجّل طلاباً لهذا الصف لتظهر أرقامهم هنا.</p>
+          <Link href="/teacher/students" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground shadow-sm"><Plus size={16} /> إضافة طالب</Link>
+        </div>
+      ) : (
+        <>
+          <SectionHero
+            eyebrow="توزيع الطلاب"
+            title={`${decoded} — ${grouped.totals.students} طالب`}
+            body="كل بطاقة مدرسة تحتوي students لحال وطالبات لحال مع نسبة التقدم وآخر نشاط."
+            tone="dark"
+            stats={[
+              { value: grouped.totals.students, label: 'إجمالي الطلاب' },
+              { value: grouped.totals.schools, label: 'المدارس' },
+              { value: filtered.filter((s) => s.gender === 'طالب').length, label: 'طلاب' },
+              { value: filtered.filter((s) => s.gender === 'طالبة').length, label: 'طالبات' },
+            ]}
+          />
+
+          {/* فلاتر */}
+          <div className="mb-5 grid gap-3 rounded-3xl border border-border bg-card p-4 shadow-sm lg:grid-cols-[1.4fr_1fr_auto]">
+            <div className="flex items-center gap-2.5 rounded-2xl border border-border bg-background px-4 py-2.5">
+              <Search size={17} className="shrink-0 text-muted-foreground" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ابحث بالاسم أو رقم الطالب..." className="w-full bg-transparent text-sm outline-none" data-testid="input-grade-search" />
+            </div>
+            <select value={schoolFilter} onChange={(e) => setSchoolFilter(e.target.value)} className="rounded-2xl border border-input bg-background px-4 py-2.5 text-sm font-semibold outline-none focus:border-primary" data-testid="select-grade-school">
+              <option value="">كل المدارس</option>
+              {schools.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <div className="flex items-center gap-2">
+              {(['الكل', 'طالب', 'طالبة'] as const).map((g) => (
+                <button key={g} type="button" onClick={() => setGenderFilter(g)} className={`rounded-xl px-3.5 py-2.5 text-xs font-extrabold transition-colors ${genderFilter === g ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:text-primary'}`}>
+                  {g}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* بطاقات المدارس */}
+          {grouped.byGrade.length === 0 ? (
+            <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-14 text-center">
+              <p className="font-display text-lg font-bold text-primary">لا نتائج</p>
+              <p className="mt-1 text-sm text-muted-foreground">غيّر الفلاتر لعرض الطلاب.</p>
+            </div>
+          ) : (
+            <div className="grid gap-4 xl:grid-cols-2">
+              {grouped.byGrade[0]!.schools.map((s) => (
+                <SchoolGroupCard
+                  key={s.school}
+                  schoolBlock={s}
+                  grade={decoded}
+                  onEdit={() => undefined}
+                  onExport={(r, label) => {
+                    const g0 = groupStudents(r).byGrade[0];
+                    const g1 = g0?.schools[0]?.groups[0];
+                    if (g1) downloadCsv(reportFileName(label), groupRows(g1));
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </Shell>
+  );
+}
+
+/** يمرر معامل الصف من المسار إلى الصفحة */
+function GradeStudentsRoute() {
+  const params = useParams<{ grade?: string }>();
+  return <GradeStudentsPage grade={params.grade || ''} />;
+}
+
 function StudentsPage() {
   const query = useListStudents();
+  const report = useStudentsReport();
   const [search, setSearch] = useState('');
   const [genderFilter, setGenderFilter] = useState<'الكل' | 'طالب' | 'طالبة'>('الكل');
+  const [gradeFilter, setGradeFilter] = useState('');
+  const [schoolFilter, setSchoolFilter] = useState('');
+  const [exporting, setExporting] = useState('');
+  const [mergeMsg, setMergeMsg] = useState('');
+  const [view, setView] = useState<'groups' | 'table'>('groups');
   const [showAdd, setShowAdd] = useState(false);
   const [newStudent, setNewStudent] = useState({ name: '', email: '', school: 'مدرسة وايلد', grade: 'الصف العاشر', section: 'أ', gender: 'طالب', phone: '' });
   const [adding, setAdding] = useState(false);
@@ -3384,6 +3689,51 @@ function StudentsPage() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [opMsg, setOpMsg] = useState('');
   const [opOk, setOpOk] = useState(true);
+
+  const allReportStudents: ReportStudent[] = report.data?.students || [];
+  const grouped = useMemo(() => groupStudents(allReportStudents), [allReportStudents]);
+
+  const filteredReport = useMemo(() => {
+    const q = normalizeText(search);
+    return allReportStudents.filter((s) => {
+      if (gradeFilter && s.grade !== gradeFilter) return false;
+      if (schoolFilter && s.school !== schoolFilter) return false;
+      if (genderFilter !== 'الكل' && s.gender !== genderFilter) return false;
+      if (q && !normalizeText(s.name).includes(q) && !normalizeText(s.school).includes(q) && !normalizeText(s.studentNumber).includes(q)) return false;
+      return true;
+    });
+  }, [allReportStudents, search, gradeFilter, schoolFilter, genderFilter]);
+
+  const visibleGroups = useMemo(() => {
+    const g = groupStudents(filteredReport);
+    return g.byGrade.filter((gr) => (!gradeFilter || gr.grade === gradeFilter));
+  }, [filteredReport, gradeFilter]);
+
+  const schoolsFromData = report.data?.schools?.length ? report.data.schools : SCHOOLS;
+  const gradesFromData = report.data?.grades?.length ? report.data.grades : GRADES;
+  const knownSchools = useMemo(() => [...new Set([...SCHOOLS, ...schoolsFromData])], [schoolsFromData]);
+  /** مدارس موجودة في البيانات لكنها خارج القائمة الرسمية → نافذة دمج */
+  const straySchools = useMemo(() => schoolsFromData.filter((s) => !SCHOOLS.includes(s)), [schoolsFromData]);
+
+  const exportExcel = (bundle: { students: ReportStudent[]; schools: string[]; grades: string[]; generatedAt: string }, onlyGrade?: string) => {
+    setExporting(onlyGrade || 'all');
+    try {
+      const sheets = buildStudentsReport(bundle, { onlyGrade });
+      downloadWorkbook(reportFileName('كشف الطلاب', onlyGrade || 'كل الصفوف'), sheets, {
+        title: onlyGrade ? `كشف الطلاب — ${onlyGrade}` : 'كشف الطلاب الكامل',
+        subject: 'كشف الطلاب حسب الصف والمدرسة والقسم',
+      });
+    } finally {
+      setTimeout(() => setExporting(''), 400);
+    }
+  };
+
+  const exportGroupCsv = (rows: ReportStudent[], label: string) => {
+    const grp = groupStudents(rows).byGrade[0];
+    const g = grp?.schools[0]?.groups[0];
+    if (!g) return;
+    downloadCsv(reportFileName(label), groupRows(g));
+  };
 
   const students = useMemo(
     () => (query.data ?? []).filter((s) =>
@@ -3489,7 +3839,143 @@ function StudentsPage() {
           <button key={f.id} type="button" onClick={() => setGenderFilter(f.id)} className={`rounded-xl px-4 py-2.5 text-sm font-bold transition-colors ${genderFilter === f.id ? 'bg-primary text-primary-foreground shadow-sm' : 'border border-border bg-card text-muted-foreground hover:text-primary'}`} data-testid={`filter-gender-${f.id}`}>{f.label}</button>
         ))}
       </div>
-      {query.isLoading ? (
+      {view === 'groups' ? (
+        report.loading ? (
+          <StateNotice type="loading" />
+        ) : report.error ? (
+          <StateNotice type="error" onRetry={report.reload} />
+        ) : (
+          <div className="space-y-6">
+            {/* شريط الأدوات: البحث + فلاتر الصف/المدرسة + التصدير */}
+            <div className="grid gap-3 rounded-3xl border border-border bg-card p-4 shadow-sm lg:grid-cols-[1.4fr_1fr_1fr_auto]">
+              <div className="flex items-center gap-2.5 rounded-2xl border border-border bg-background px-4 py-2.5">
+                <Search size={17} className="shrink-0 text-muted-foreground" />
+                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ابحث بالاسم أو الرقم أو المدرسة..." className="w-full bg-transparent text-sm outline-none" data-testid="input-report-search" />
+                {search ? <button type="button" onClick={() => setSearch('')} className="rounded-lg p-1 text-muted-foreground hover:bg-muted"><X size={14} /></button> : null}
+              </div>
+              <select value={gradeFilter} onChange={(e) => setGradeFilter(e.target.value)} className="rounded-2xl border border-input bg-background px-4 py-2.5 text-sm font-semibold outline-none focus:border-primary" data-testid="select-report-grade">
+                <option value="">كل الصفوف</option>
+                {gradesFromData.map((g) => <option key={g} value={g}>{g}</option>)}
+              </select>
+              <select value={schoolFilter} onChange={(e) => setSchoolFilter(e.target.value)} className="rounded-2xl border border-input bg-background px-4 py-2.5 text-sm font-semibold outline-none focus:border-primary" data-testid="select-report-school">
+                <option value="">كل المدارس</option>
+                {knownSchools.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" onClick={() => setView('table')} variant="soft" className="px-3 py-2.5 text-xs">جدول مسطح</Button>
+                <Button type="button" disabled={exporting === 'all'} onClick={() => exportExcel({ students: filteredReport, schools: knownSchools, grades: gradesFromData, generatedAt: report.data?.generatedAt || '' })} variant="primary" className="px-4 py-2.5 text-xs shadow-md" data-testid="button-export-all">
+                  {exporting === 'all' ? <><RefreshCw size={14} className="animate-spin" /> جارٍ التصدير...</> : <><Download size={14} /> كشف Excel</>}
+                </Button>
+              </div>
+            </div>
+
+            {/* أزرار الجنس + الأرقام */}
+            <div className="flex flex-wrap items-center gap-2">
+              {([
+                { id: 'الكل' as const, label: `الكل (${filteredReport.length})` },
+                { id: 'طالب' as const, label: `الطلاب (${filteredReport.filter((s) => s.gender === 'طالب').length})` },
+                { id: 'طالبة' as const, label: `الطالبات (${filteredReport.filter((s) => s.gender === 'طالبة').length})` },
+              ]).map((b) => (
+                <button key={b.id} type="button" onClick={() => setGenderFilter(b.id)} className={`rounded-xl px-4 py-2 text-xs font-extrabold transition-colors ${genderFilter === b.id ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-secondary text-muted-foreground hover:text-primary'}`} data-testid={`button-gender-${b.id}`}>
+                  {b.label}
+                </button>
+              ))}
+              <span className="mr-auto flex flex-wrap items-center gap-2">
+                <span className="rounded-xl bg-secondary px-3.5 py-2 text-xs font-extrabold text-primary">{filteredReport.length} طالب</span>
+                <span className="rounded-xl bg-secondary px-3.5 py-2 text-xs font-extrabold text-primary">{grouped.totals.schools} مدرسة</span>
+                <span className="rounded-xl bg-secondary px-3.5 py-2 text-xs font-extrabold text-primary">{grouped.totals.grades} صفوف</span>
+              </span>
+            </div>
+
+            {/* مدارس غير رسمية في البيانات → توحيدها */}
+            {straySchools.length ? (
+              <div className="rounded-3xl border-2 border-dashed border-amber-500/50 bg-amber-500/10 p-4">
+                <p className="flex items-center gap-2 text-sm font-extrabold text-amber-900">
+                  <CircleAlert size={16} /> مدارس في البيانات خارج قائمتك الرسمية: {straySchools.join('، ')}
+                </p>
+                <p className="mt-1 text-xs font-semibold text-amber-800">اختر المدرسة الصحيحة لتوحيد طلاب هذه المدرسة إليها — بعد التوحيد تختفي من الكشف ويُدمجون في الكشف الصحيح.</p>
+                <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                  {straySchools.map((s) => (
+                    <div key={s} className="flex items-center gap-1.5 rounded-xl bg-card px-2.5 py-1.5 text-xs font-bold ring-1 ring-amber-500/40">
+                      <span className="text-amber-900">{s}</span>
+                      <ArrowLeft size={13} className="text-amber-700" />
+                      <select
+                        className="rounded-lg border border-input bg-background px-2 py-1 text-xs font-bold outline-none"
+                        value=""
+                        data-testid={`select-merge-${s}`}
+                        onChange={async (e) => {
+                          const to = e.target.value;
+                          if (!to) return;
+                          try {
+                            const res = await fetch('/api/teacher/schools/merge', {
+                              method: 'POST',
+                              credentials: 'include',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ from: s, to }),
+                            });
+                            const d = await res.json().catch(() => ({}));
+                            if (!res.ok) throw new Error(d?.error || 'تعذر التوحيد');
+                            setMergeMsg(d.message || 'تم التوحيد ✓');
+                            query.refetch();
+                            report.reload();
+                          } catch (err: any) {
+                            setMergeMsg(err?.message || 'تعذر التوحيد');
+                          }
+                        }}
+                      >
+                        <option value="">وحّد إلى…</option>
+                        {knownSchools.filter((k) => !straySchools.includes(k)).map((k) => <option key={k} value={k}>{k}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                  {mergeMsg ? <span className="text-xs font-extrabold text-green-800">{mergeMsg}</span> : null}
+                </div>
+              </div>
+            ) : null}
+
+            {/* كل صف ← كل مدرسة ← طلاب/طالبات */}
+            {visibleGroups.length === 0 ? (
+              <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-14 text-center">
+                <p className="font-display text-lg font-bold text-primary">لا يوجد طلاب مطابقون</p>
+                <p className="mt-1 text-sm text-muted-foreground">جرّب تغيير الصف أو المدرسة أو البحث.</p>
+              </div>
+            ) : (
+              <div className="space-y-8">
+                {visibleGroups.map((g) => (
+                  <section key={g.grade}>
+                    <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
+                      <h3 className="flex items-center gap-2 font-display text-lg font-extrabold text-primary">
+                        <GraduationCap size={20} className="text-accent-foreground" /> {g.grade}
+                      </h3>
+                      <span className="rounded-xl bg-secondary px-3 py-1.5 text-xs font-extrabold text-primary">{g.total} طالب</span>
+                      <span className="rounded-xl bg-secondary px-3 py-1.5 text-xs font-extrabold text-muted-foreground">{g.schools.length} مدارس</span>
+                      <span className="mr-auto flex items-center gap-2">
+                        <Button type="button" onClick={() => exportExcel({ students: filteredReport, schools: knownSchools, grades: gradesFromData, generatedAt: report.data?.generatedAt || '' }, g.grade)} variant="soft" className="px-3 py-2 text-xs" title="كشف هذا الصف">
+                          <Download size={13} /> كشف {g.grade}
+                        </Button>
+                        <Link href={`/teacher/students/grade/${encodeURIComponent(g.grade)}`} className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-xs font-extrabold text-primary-foreground shadow-sm transition-transform hover:-translate-y-0.5 hover:shadow-md" data-testid={`link-grade-page-${g.grade}`}>
+                          صفحة {g.grade} <ArrowLeft size={13} />
+                        </Link>
+                      </span>
+                    </div>
+                    <div className="grid gap-4 xl:grid-cols-2">
+                      {g.schools.map((s) => (
+                        <SchoolGroupCard
+                          key={`${g.grade}-${s.school}`}
+                          schoolBlock={s}
+                          grade={g.grade}
+                          onEdit={(st) => { setEditItem(st); setEditForm({ ...st }); }}
+                          onExport={(rows, label) => exportGroupCsv(rows, label)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      ) : query.isLoading ? (
         <StateNotice type="loading" />
       ) : query.isError ? (
         <StateNotice type="error" onRetry={() => query.refetch()} />
@@ -8777,6 +9263,7 @@ function Router() {
         <Route path="/student/profile" component={ProfilePage} />
         <Route path="/teacher" component={TeacherDashboardNew} />
         <Route path="/teacher/students" component={StudentsPage} />
+        <Route path="/teacher/students/grade/:grade" component={GradeStudentsRoute} />
         <Route path="/teacher/content" component={CurriculumManagerPage} />
         <Route path="/teacher/exams" component={TeacherExamsPage} />
         <Route path="/teacher/assignments" component={TeacherAssignmentsPage} />
