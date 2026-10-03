@@ -697,6 +697,37 @@ export async function loadBundleHtml(
   }
 }
 
+/** هل هذا الرابط حاوية كود مصدري مبني؟ (نُقلت هنا لتفادي استيراد دائري) */
+export function isSourceBundleUrl(url?: string | null): boolean {
+  if (!url) return false;
+  return /\.srcbundle\.gz(\?|#|$)/i.test(url);
+}
+
+export type LessonHtmlMode =
+  | { mode: 'source'; url: string }
+  | { mode: 'bundle'; url: string }
+  | { mode: 'inline'; inline: string }
+  | { mode: 'external'; url: string }
+  | { mode: 'none' };
+
+/**
+ * القرار المركزي الوحيد لمحتوى HTML الدرس.
+ * القاعدة: رابط الحزمة (مضغوطة/مبنية) يفوز دائماً على الكود الملصق — لأن بقايا
+ * ثنائية في حقل اللصق كانت تسمّم العرض (تظهر بدل الموقع وتُعطّل المعاينة).
+ * الروابط الخارجية القديمة + اللصق يحتفظان بالسلوك الأصلي (اللصق يفوز).
+ */
+export function resolveLessonHtml(lesson?: {
+  htmlContent?: string | null;
+  htmlFileUrl?: string | null;
+} | null): LessonHtmlMode {
+  const url = (lesson?.htmlFileUrl || '').trim();
+  if (url && isSourceBundleUrl(url)) return { mode: 'source', url };
+  if (url && isBundleUrl(url)) return { mode: 'bundle', url };
+  if ((lesson?.htmlContent || '').trim()) return { mode: 'inline', inline: String(lesson?.htmlContent) };
+  if (url) return { mode: 'external', url };
+  return { mode: 'none' };
+}
+
 /* ---------------- أكواد تشخيص الرفع (للمعلم: انسخ التقرير والصقه للمطور) ---------------- */
 
 export type UploadDiag = {

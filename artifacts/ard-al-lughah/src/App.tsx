@@ -96,6 +96,7 @@ import {
   uploadBundleDirect,
   buildUploadDiag,
   formatUploadDiag,
+  resolveLessonHtml,
   type BuiltSite,
   type UploadDiag,
 } from '@/lib/site-bundle';
@@ -4416,12 +4417,14 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const endedRef = useRef(false);
   const scrollBoundRef = useRef(false);
-  const inline = !!lesson?.htmlContent;
+  // القرار المركزي: رابط الحزمة يفوز على اللصق (بقايا ثنائية في اللصق كانت تسمّمه)
+  const resolved = resolveLessonHtml(lesson);
+  const inline = resolved.mode === 'inline';
   // حزمة مضغوطة (ZIP/TAR): تُفك محلياً في المتصفح بدل جلب نص HTML
-  const bundleUrl = !inline && lesson?.htmlFileUrl && isBundleUrl(lesson.htmlFileUrl) ? String(lesson.htmlFileUrl) : null;
+  const bundleUrl = resolved.mode === 'bundle' ? resolved.url : null;
   const bundle = useBundleHtml(bundleUrl);
   // حاوية كود مصدري مبني (.srcbundle.gz): srcdoc معزول بلا same-origin
-  const sourceUrl = !inline && lesson?.htmlFileUrl && isSourceBundleUrl(lesson.htmlFileUrl) ? String(lesson.htmlFileUrl) : null;
+  const sourceUrl = resolved.mode === 'source' ? resolved.url : null;
   const source = useSourceContainer(sourceUrl, lesson?.title);
   const [sourceErrors, setSourceErrors] = useState<string[]>([]);
 
@@ -4472,7 +4475,7 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
     return () => { live = false; window.clearTimeout(timer); ctrl.abort(); };
   }, [lesson, inline, bundleUrl, sourceUrl, attempt]);
 
-  const html: string | null = inline ? lesson.htmlContent : sourceUrl ? source.srcdoc : bundleUrl ? bundle.html : extHtml;
+  const html: string | null = inline && resolved.mode === 'inline' ? resolved.inline : sourceUrl ? source.srcdoc : bundleUrl ? bundle.html : extHtml;
   const bundleMeta = bundleUrl ? bundle.meta : null;
   const sourceMeta = sourceUrl ? source.meta : null;
 
@@ -4519,7 +4522,7 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
   }, [html, attempt]);
 
   const openNewTab = () => {
-    const src = inline ? lesson.htmlContent : sourceUrl ? source.srcdoc : bundleUrl ? bundle.html : extHtml;
+    const src = inline && resolved.mode === 'inline' ? resolved.inline : sourceUrl ? source.srcdoc : bundleUrl ? bundle.html : extHtml;
     if (!src) return;
     const blob = new Blob([src], { type: 'text/html;charset=utf-8' });
     window.open(URL.createObjectURL(blob), '_blank', 'noopener');
@@ -4653,14 +4656,16 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
 function HtmlPreviewFrame({ content, fileUrl }: { content?: string; fileUrl?: string }) {
   const [text, setText] = useState<string | null>(content || null);
   const [failed, setFailed] = useState(false);
-  const bundleActive = !content && !!fileUrl && isBundleUrl(fileUrl);
-  const bundle = useBundleHtml(bundleActive ? fileUrl : null);
-  const sourceActive = !content && !!fileUrl && isSourceBundleUrl(fileUrl);
-  const source = useSourceContainer(sourceActive ? fileUrl : null);
+  // نفس القرار المركزي: رابط الحزمة يفوز على اللصق حتى في المعاينة
+  const previewResolved = resolveLessonHtml({ htmlContent: content, htmlFileUrl: fileUrl });
+  const bundleActive = previewResolved.mode === 'bundle';
+  const bundle = useBundleHtml(bundleActive ? previewResolved.url : null);
+  const sourceActive = previewResolved.mode === 'source';
+  const source = useSourceContainer(sourceActive ? previewResolved.url : null);
   useEffect(() => {
+    if (bundleActive || sourceActive) return; // الحزم عبر خطافاتها — لا جلب نصي
     if (content) { setText(content); setFailed(false); return; }
     if (!fileUrl) { setText(null); setFailed(false); return; }
-    if (isBundleUrl(fileUrl) || isSourceBundleUrl(fileUrl)) return; // الحزم عبر خطافاتها — لا جلب نصي
     let live = true;
     const ctrl = new AbortController();
     const timer = window.setTimeout(() => ctrl.abort(), 25000);
@@ -5948,6 +5953,9 @@ function CurriculumManagerPage({ onlyTab, hero }: {
     setSavingLesson(true);
     try {
       const baseContent = lessonModal?.mode === 'edit' ? (lessonModal.lesson.content || {}) : {};
+      // شفاء تلقائي: رابط الحزمة يغني عن اللصق — أي بقايا ثنائية في اللصق تُمسح عند الحفظ
+      const formUrl = (lessonForm.htmlFileUrl || '').trim();
+      const richUrl = formUrl && (isBundleUrl(formUrl) || isSourceBundleUrl(formUrl));
       const payload = {
         title: lessonForm.title,
         lessonType: lessonForm.lessonType,
@@ -5955,7 +5963,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
         position: Number(lessonForm.position) || 1,
         coverUrl: lessonForm.coverUrl,
         images: lessonImages,
-        htmlContent: lessonForm.htmlContent,
+        htmlContent: richUrl ? '' : lessonForm.htmlContent,
         htmlFileUrl: lessonForm.htmlFileUrl,
         content: { ...baseContent, introduction: lessonForm.introduction, mainText: lessonForm.mainText, grammarRule: lessonForm.grammarRule, summary: lessonForm.summary },
         status: lessonForm.status,
@@ -6623,7 +6631,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                             })
                             .then(({ res, kb }) => {
                               if (res?.url) {
-                                setLessonForm((lf: any) => ({ ...lf, htmlFileUrl: res.url }));
+                                setLessonForm((lf: any) => ({ ...lf, htmlFileUrl: res.url, htmlContent: '' }));
                                 setBundleInfo(null);
                                 setShowHtmlPreview(true);
                                 flash(`تم رفع ملف HTML (${kb} ك.ب) سحابياً ✓ — المعاينة ظهرت بالأسفل، تأكد أن التصميم يعمل قبل الحفظ${kb > 600 ? ' — ملاحظة: ملف كبير قد يكون بطيئاً على الأجهزة الضعيفة' : ''}`);
@@ -6672,7 +6680,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                                 setStage('رفع الموقع الجاهز مباشرة');
                                 const res = await uploadBundleDirect(f, '/ard-al-lughah/bundles', (p) => setUploadingBundle(p), (file) => uploadFileToCloud(file, '/ard-al-lughah/bundles'));
                                 await dropOld(res.url);
-                                setLessonForm((lf: any) => ({ ...lf, htmlFileUrl: res.url }));
+                                setLessonForm((lf: any) => ({ ...lf, htmlFileUrl: res.url, htmlContent: '' }));
                                 setUploadDiag(null);
                                 setShowHtmlPreview(true);
                                 flash(`تم رفع الموقع الجاهز ✓ (${prep.files.size} ملفات · الدخول: ${entry}) — المعاينة بالأسفل، تأكد أن الموقع يعمل كاملاً قبل الحفظ${prep.warnings.length ? ' — ⚠ ' + prep.warnings.slice(0, 2).join(' — ') : ''}${res.viaFallback ? ' — (رُفع بالمسار البديل لأن المباشر متعطل: أضف IMAGEKIT_*_PUBLIC_KEY في .env للملفات الكبيرة)' : ''}`);
@@ -6711,7 +6719,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                                 setStage(`رفع الحاوية المضغوطة (${gzKB}KB)`);
                                 const up = await uploadSourceContainer(packed.bytes, f.name, (p) => setUploadingBundle(p), (file) => uploadFileToCloud(file, '/ard-al-lughah/bundles'));
                                 await dropOld(up.url);
-                                setLessonForm((lf: any) => ({ ...lf, htmlFileUrl: up.url }));
+                                setLessonForm((lf: any) => ({ ...lf, htmlFileUrl: up.url, htmlContent: '' }));
                                 setUploadDiag(null);
                                 setShowHtmlPreview(true);
                                 flash(`تم بناء المشروع ورفعه ✓ — الأرشيف ${Math.round(f.size / 1024)}KB ← المخزَّن ${gzKB}KB فقط (توفير ${Math.max(0, Math.round((1 - packed.bytes.length / Math.max(f.size, 1)) * 100))}%) — المعاينة بالأسفل قبل الحفظ${built.warnings.length ? ' — ⚠ ' + built.warnings.slice(0, 2).join(' — ') : ''}${up.viaFallback ? ' — (رُفع بالمسار البديل: أضف IMAGEKIT_*_PUBLIC_KEY في .env)' : ''}`);
@@ -6738,8 +6746,10 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                       {bundleInfo.mode === 'source' ? '⚛️ كود مصدري (يُبنى داخل المتصفح)' : '📦 موقع جاهز'} <span dir="ltr" className="font-mono">{bundleInfo.name}</span> · {bundleInfo.sizeKB} ك.ب · {bundleInfo.files} ملفات · الدخول: <span dir="ltr" className="font-mono">{bundleInfo.entry}</span>
                       {bundleInfo.gzKB != null ? <span className="mt-1 block text-green-800">✓ المخزَّن بعد البناء والضغط: {bundleInfo.gzKB}KB فقط (JS: {bundleInfo.jsKB}KB + CSS: {bundleInfo.cssKB}KB) · البصمة: <span dir="ltr" className="font-mono">{bundleInfo.hash}</span></span> : null}
                       {bundleInfo.skipped ? <span className="mt-1 block text-green-800">✓ مطابق للمحفوظ — لم يُرفع شيء</span> : null}
-                      {(bundleInfo.buildWarnings?.length || 0) > 0 ? <span className="mt-1 block font-bold text-amber-800">⚠ {bundleInfo.buildWarnings.slice(0, 2).join(' — ')}</span> : null}
-                      {(bundleInfo.warnings?.length || 0) > 0 ? <span className="mt-1 block font-bold text-amber-800">⚠ {bundleInfo.warnings.slice(0, 2).join(' — ')}</span> : null}
+                      {(() => {
+                        const all = [...new Set([...(bundleInfo.buildWarnings || []), ...(bundleInfo.warnings || [])])].slice(0, 3);
+                        return all.length ? <span className="mt-1 block font-bold text-amber-800">⚠ {all.join(' — ')}</span> : null;
+                      })()}
                       {(bundleInfo.ignored?.length || 0) > 0 ? <span className="mt-1 block font-normal text-muted-foreground">تُجاهل أثناء الفحص ({bundleInfo.ignored.length}): <span dir="ltr" className="font-mono">{bundleInfo.ignored.slice(0, 3).join('، ')}</span>{bundleInfo.ignored.length > 3 ? '…' : ''}</span> : null}
                     </div>
                   ) : null}
@@ -6779,13 +6789,28 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                       <button type="button" onClick={() => { setLessonForm({ ...lessonForm, htmlFileUrl: '' }); setBundleInfo(null); }} className="shrink-0 rounded-lg px-3 py-2 text-xs font-bold text-destructive hover:bg-destructive/10" title="إزالة الموقع المضغوط">إزالة</button>
                     </div>
                   ) : null}
-                  <textarea value={lessonForm.htmlContent || ''} onChange={(e) => setLessonForm({ ...lessonForm, htmlContent: e.target.value })} rows={3} dir="ltr" placeholder="<h1>... كود HTML مضمّن (اختياري — يُحفظ كنص) ..." className={`${inputCls} font-mono text-xs`} />
-                  {(lessonForm.htmlContent || '').length > 0 ? (
-                    <p className={`mt-2 text-[11px] font-bold leading-5 ${(lessonForm.htmlContent || '').length * 2 / 1024 > 250 ? 'text-amber-800' : 'text-muted-foreground'}`}>
-                      حجم الكود الملصق: {htmlKb(lessonForm.htmlContent)} ك.ب
-                      {(lessonForm.htmlContent || '').length * 2 / 1024 > 250 ? ' — كبير نسبياً: الأفضل رفعه كملف بزر «ارفع ملف HTML» بدل اللصق.' : ''}
-                    </p>
-                  ) : null}
+                  {(() => {
+                    const m = resolveLessonHtml(lessonForm);
+                    if (m.mode === 'bundle' || m.mode === 'source') {
+                      return (
+                        <p className="mt-2 rounded-xl border border-[#6a1b9a]/30 bg-[#6a1b9a]/5 px-4 py-3 text-[11px] font-bold leading-6 text-primary">
+                          {m.mode === 'source' ? '⚛️ هذا الدرس يستخدم كوداً مبنياً — مربع اللصق معطّل لمنع التعارض.' : '📦 هذا الدرس يستخدم موقعاً مضغوطاً — مربع اللصق معطّل لمنع التعارض.'}
+                          <span className="mt-0.5 block font-normal text-muted-foreground">للعودة إلى اللصق اليدوي: اضغط «إزالة» بجانب رابط الحزمة أعلاه.</span>
+                        </p>
+                      );
+                    }
+                    return (
+                      <>
+                        <textarea value={lessonForm.htmlContent || ''} onChange={(e) => setLessonForm({ ...lessonForm, htmlContent: e.target.value })} rows={3} dir="ltr" placeholder="<h1>... كود HTML مضمّن (اختياري — يُحفظ كنص) ..." className={`${inputCls} font-mono text-xs`} />
+                        {(lessonForm.htmlContent || '').length > 0 ? (
+                          <p className={`mt-2 text-[11px] font-bold leading-5 ${(lessonForm.htmlContent || '').length * 2 / 1024 > 250 ? 'text-amber-800' : 'text-muted-foreground'}`}>
+                            حجم الكود الملصق: {htmlKb(lessonForm.htmlContent)} ك.ب
+                            {(lessonForm.htmlContent || '').length * 2 / 1024 > 250 ? ' — كبير نسبياً: الأفضل رفعه كملف بزر «ارفع ملف HTML» بدل اللصق.' : ''}
+                          </p>
+                        ) : null}
+                      </>
+                    );
+                  })()}
                   <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
                     ملف HTML مفرد يُرمَّز ويُرفع كنص مشفّر — يعمل دائماً بلا 403 وبلا أي استهلاك من Supabase.
                     <span className="mt-1 block rounded-lg bg-[#6a1b9a]/5 px-2.5 py-1.5 font-bold text-primary">

@@ -16,8 +16,12 @@ import {
   gunzipBuffer,
   detectKind,
   uploadBundleDirect,
+  isSourceBundleUrl as isSourceBundleUrlBase,
   type BundleKind,
 } from './site-bundle';
+
+/** هل هذا الرابط حاوية كود مصدري مبني؟ (إعادة تصدير للتوافق) */
+export const isSourceBundleUrl = isSourceBundleUrlBase;
 
 type Esbuild = typeof esbuildTypes;
 let esbuildMod: Esbuild | null = null;
@@ -813,12 +817,6 @@ export function findSiteEntry(files: Map<string, Uint8Array>): string {
   });
   scored.sort((a, b) => a.score - b.score);
   return scored[0]?.p || '';
-}
-
-/** هل هذا الرابط حاوية كود مصدري مبني؟ */
-export function isSourceBundleUrl(url?: string | null): boolean {
-  if (!url) return false;
-  return /\.srcbundle\.gz(\?|#|$)/i.test(url);
 }
 
 /* ---------------- عمليات التخزين (رفع/حذف/حصة) ---------------- */
