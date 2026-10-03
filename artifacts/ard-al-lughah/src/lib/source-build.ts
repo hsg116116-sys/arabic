@@ -1208,7 +1208,19 @@ function escapeForScript(s: string, tag: 'script' | 'style'): string {
     : s.replace(/<\/style/gi, '<\\/style');
 }
 
-const ERROR_BRIDGE = `(function(){function send(m,s){try{parent.postMessage({__srcbundle:1,type:'error',message:String(m).slice(0,500),source:String(s||'').slice(0,200)},'*')}catch(e){}}window.addEventListener('error',function(e){var t=e&&e.target;if(t&&t!==window&&(t.src||t.href)){send('تعذر تحميل مورد: '+((t.src||t.href)||''),'resource');return}send((e&&(e.message||(e.error&&e.error.message)))||'خطأ غير معروف','runtime')},true);window.addEventListener('unhandledrejection',function(e){var r=e&&e.reason;send((r&&(r.message||r))||'وعد مرفوض','promise')});window.__srcReady=false;})();`;
+const ERROR_BRIDGE = `(function(){
+var H=window.innerHeight;
+function send(t,d){try{var m={__srcbundle:1,type:t};for(var k in d){m[k]=d[k]}parent.postMessage(m,"*")}catch(e){}}
+function measure(){try{var de=document.documentElement,b=document.body;var h=Math.max(de?de.scrollHeight:0,b?b.scrollHeight:0,de?de.offsetHeight:0);if(h>120&&Math.abs(h-H)>4){H=h;send("size",{height:h})}}catch(e){}}
+function progress(){try{var de=document.documentElement;var h=Math.max(de.scrollHeight,de.offsetHeight);var st=window.scrollY||de.scrollTop||0;var vh=window.innerHeight||1;var pct=h>vh?Math.min(1,st/(h-vh))*100:100;send("progress",{pct:Math.round(pct)})}catch(e){}}
+window.addEventListener("error",function(e){var t=e&&e.target;if(t&&t!==window&&(t.src||t.href)){send("error",{message:"تعذر تحميل مورد: "+((t.src||t.href)||""),source:"resource"});return}send("error",{message:(e&&(e.message||(e.error&&e.error.message)))||"خطأ غير معروف",source:"runtime"})},true);
+window.addEventListener("unhandledrejection",function(e){var r=e&&e.reason;send("error",{message:(r&&(r.message||r))||"وعد مرفوض",source:"promise"})});
+window.addEventListener("scroll",function(){progress()},{passive:true});
+window.addEventListener("resize",function(){measure();progress()});
+function boot(){measure();progress();try{if(window.ResizeObserver){var ro=new ResizeObserver(measure);ro.observe(document.documentElement);if(document.body)ro.observe(document.body)}}catch(e){}setInterval(measure,700);send("ready",{})}
+if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",boot)}else{boot()}
+setTimeout(boot,400);
+})();`;
 
 /**
  * يبني صفحة srcdoc كاملة: جسر الأخطاء + خطوط Google + Tailwind + importmap + CSS + JS.

@@ -4436,21 +4436,38 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
   const sourceUrl = resolved.mode === 'source' ? resolved.url : null;
   const source = useSourceContainer(sourceUrl, lesson?.title);
   const [sourceErrors, setSourceErrors] = useState<string[]>([]);
+  // ارتفاع وتقدم يبلّغهما الإطار المعزول (لا يمكن قراءته من الخارج بدون same-origin)
+  const [srcHeight, setSrcHeight] = useState<number | null>(null);
+  const [srcProgress, setSrcProgress] = useState<number | null>(null);
 
-  // جسر أخطاء وقت التشغيل من الـiframe المعزول (postMessage) — بدل الشاشة البيضاء
+  // جسر رسائل الإطار المعزول: أخطاء + ارتفاع + تقدم القراءة
   useEffect(() => {
     const onMsg = (ev: MessageEvent) => {
       if (!ev?.data || ev.data.__srcbundle !== 1) return;
       try {
         if (!sourceUrl || ev.source !== iframeRef.current?.contentWindow) return;
-      } catch { return; }
-      const kind = ev.data.type === 'resource' ? 'مورد' : 'تشغيل';
-      const text = `خطأ ${kind}: ${String(ev.data.message || 'غير معروف').slice(0, 200)}`;
-      setSourceErrors((arr) => (arr.includes(text) ? arr : [...arr, text].slice(-3)));
+      } catch {
+        return;
+      }
+      const d = ev.data;
+      if (d.type === 'size' && typeof d.height === 'number' && d.height > 120) {
+        setSrcHeight((old) => (old == null ? Math.min(d.height, 8000) : Math.abs(d.height - old) > 4 ? Math.min(Math.max(d.height, old), 8000) : old));
+      } else if (d.type === 'progress' && typeof d.pct === 'number') {
+        const pct = Math.max(0, Math.min(100, Math.round(d.pct)));
+        setSrcProgress((old) => (old === pct ? old : pct));
+        if (pct >= 92 && !endedRef.current) {
+          endedRef.current = true;
+          onReachEnd?.();
+        }
+      } else if (d.type === 'error') {
+        const kind = d.source === 'resource' ? 'مورد' : 'تشغيل';
+        const text = `خطأ ${kind}: ${String(d.message || 'غير معروف').slice(0, 200)}`;
+        setSourceErrors((arr) => (arr.includes(text) ? arr : [...arr, text].slice(-3)));
+      }
     };
     window.addEventListener('message', onMsg);
     return () => window.removeEventListener('message', onMsg);
-  }, [sourceUrl]);
+  }, [sourceUrl, onReachEnd]);
 
   useEffect(() => {
     setExtHtml(null);
@@ -4465,7 +4482,14 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
       return;
     }
     if (bundleUrl) return; // الحزمة لها خطافها الخاص — لا جلب نصي هنا
-    if (sourceUrl) { setSourceErrors([]); return; } // الحاوية لها خطافها الخاص
+    if (sourceUrl) {
+      // الحاوية لها خطافها الخاص — نمسح أخطاء التشغيل ونبدأ من الصفر
+      setSourceErrors([]);
+      setSrcHeight(null);
+      setSrcProgress(null);
+      endedRef.current = false;
+      return;
+    }
     if (!lesson?.htmlFileUrl) return;
     let live = true;
     const ctrl = new AbortController();
@@ -4489,6 +4513,8 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
   const sourceMeta = sourceUrl ? source.meta : null;
 
   const trackProgress = () => {
+    // الوضع المعزول (بلا same-origin): الارتفاع والتقدمة يبلّغهما الجسر من الداخل
+    if (sourceUrl) return;
     try {
       const win = iframeRef.current?.contentWindow;
       const doc = iframeRef.current?.contentDocument;
@@ -4514,6 +4540,7 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
   };
 
   const bindFrameScroll = () => {
+    if (sourceUrl) return; // المعزول يتابع التمرير عبر الجسر
     try {
       const win = iframeRef.current?.contentWindow;
       if (!win || scrollBoundRef.current) return;
@@ -4545,7 +4572,13 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
     }
   };
 
-  const frameH = fluidH ? `${fluidH}px` : '62vh';
+  // الارتفاع المرئي: المعزول يبلّغ ارتفاعه، وإلا نقيس مباشرة.
+// نستخدم style بالوحدات لأن سمة height لا تقبل وحدات CSS.
+  const reportedH = sourceUrl ? srcHeight : null;
+  const measuredH = fluidH;
+  const visibleH = reportedH || measuredH || null;
+  const frameH = visibleH ? `${visibleH}px` : '62vh';
+  const shownProgress = sourceUrl ? (srcProgress ?? 0) : progress;
 
   return (
     <div className="overflow-hidden rounded-3xl border border-primary/20 bg-card shadow-md">
@@ -4581,7 +4614,7 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
       </div>
       {/* شريط تقدم القراءة */}
       <div className="h-1.5 bg-muted/60">
-        <div className="h-full rounded-l-full bg-gradient-to-l from-primary via-accent to-accent transition-[width] duration-300" style={{ width: `${progress}%` }} />
+        <div className="h-full rounded-l-full bg-gradient-to-l from-primary via-accent to-accent transition-[width] duration-300" style={{ width: `${shownProgress}%` }} />
       </div>
       {/* أخطاء وقت التشغيل من التطبيق المعزول — بدل الشاشة البيضاء */}
       {sourceUrl && sourceErrors.length > 0 ? (
@@ -4620,9 +4653,8 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
             onLoad={() => { trackProgress(); bindFrameScroll(); }}
             loading="lazy"
             referrerPolicy="no-referrer"
-            style={{ zoom }}
+            style={{ zoom, height: frameH }}
             className="w-full bg-white"
-            height={frameH}
             data-testid="iframe-lesson-html"
           />
         )}
