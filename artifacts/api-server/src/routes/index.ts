@@ -5,6 +5,7 @@ import curriculumRouter from "./curriculum";
 import storageRouter from "./storage";
 import studyRouter from "./study";
 import authRouter from "./auth";
+import foundationRouter from "./foundation";
 
 const router: IRouter = Router();
 
@@ -14,5 +15,6 @@ router.use(curriculumRouter);
 router.use(storageRouter);
 router.use(studyRouter);
 router.use(authRouter);
+router.use(foundationRouter);
 
 export default router;

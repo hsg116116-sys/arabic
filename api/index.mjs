@@ -5240,9 +5240,9 @@ var require_lib = __commonJS({
       var trail = decoder.end();
       return trail ? res + trail : res;
     };
-    module.exports.encodingExists = function encodingExists(enc3) {
+    module.exports.encodingExists = function encodingExists(enc4) {
       try {
-        module.exports.getCodec(enc3);
+        module.exports.getCodec(enc4);
         return true;
       } catch (e) {
         return false;
@@ -5257,36 +5257,36 @@ var require_lib = __commonJS({
         module.exports.encodings = { __proto__: null };
         mergeModules(module.exports.encodings, raw);
       }
-      var enc3 = module.exports._canonicalizeEncoding(encoding);
+      var enc4 = module.exports._canonicalizeEncoding(encoding);
       var codecOptions = {};
       while (true) {
-        var codec = module.exports._codecDataCache[enc3];
+        var codec = module.exports._codecDataCache[enc4];
         if (codec) {
           return codec;
         }
-        var codecDef = module.exports.encodings[enc3];
+        var codecDef = module.exports.encodings[enc4];
         switch (typeof codecDef) {
           case "string":
-            enc3 = codecDef;
+            enc4 = codecDef;
             break;
           case "object":
             for (var key in codecDef) {
               codecOptions[key] = codecDef[key];
             }
             if (!codecOptions.encodingName) {
-              codecOptions.encodingName = enc3;
+              codecOptions.encodingName = enc4;
             }
-            enc3 = codecDef.type;
+            enc4 = codecDef.type;
             break;
           case "function":
             if (!codecOptions.encodingName) {
-              codecOptions.encodingName = enc3;
+              codecOptions.encodingName = enc4;
             }
             codec = new codecDef(codecOptions, module.exports);
             module.exports._codecDataCache[codecOptions.encodingName] = codec;
             return codec;
           default:
-            throw new Error("Encoding not recognized: '" + encoding + "' (searched as: '" + enc3 + "')");
+            throw new Error("Encoding not recognized: '" + encoding + "' (searched as: '" + enc4 + "')");
         }
       }
     };
@@ -20804,27 +20804,27 @@ var require_router = __commonJS({
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router8;
+    module.exports = Router9;
     module.exports.Route = Route;
-    function Router8(options) {
-      if (!(this instanceof Router8)) {
-        return new Router8(options);
+    function Router9(options) {
+      if (!(this instanceof Router9)) {
+        return new Router9(options);
       }
       const opts = options || {};
-      function router8(req, res, next) {
-        router8.handle(req, res, next);
+      function router9(req, res, next) {
+        router9.handle(req, res, next);
       }
-      Object.setPrototypeOf(router8, this);
-      router8.caseSensitive = opts.caseSensitive;
-      router8.mergeParams = opts.mergeParams;
-      router8.params = {};
-      router8.strict = opts.strict;
-      router8.stack = [];
-      return router8;
+      Object.setPrototypeOf(router9, this);
+      router9.caseSensitive = opts.caseSensitive;
+      router9.mergeParams = opts.mergeParams;
+      router9.params = {};
+      router9.strict = opts.strict;
+      router9.stack = [];
+      return router9;
     }
-    Router8.prototype = function() {
+    Router9.prototype = function() {
     };
-    Router8.prototype.param = function param(name, fn) {
+    Router9.prototype.param = function param(name, fn) {
       if (!name) {
         throw new TypeError("argument name is required");
       }
@@ -20844,7 +20844,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router8.prototype.handle = function handle(req, res, callback) {
+    Router9.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20971,7 +20971,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router8.prototype.use = function use(handler) {
+    Router9.prototype.use = function use(handler) {
       let offset = 0;
       let path = "/";
       if (typeof handler !== "function") {
@@ -21004,7 +21004,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router8.prototype.route = function route(path) {
+    Router9.prototype.route = function route(path) {
       const route2 = new Route(path);
       const layer = new Layer(path, {
         sensitive: this.caseSensitive,
@@ -21019,7 +21019,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router8.prototype[method] = function(path) {
+      Router9.prototype[method] = function(path) {
         const route = this.route(path);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
@@ -21202,13 +21202,13 @@ var require_application = __commonJS({
     var compileTrust = require_utils3().compileTrust;
     var resolve2 = __require("node:path").resolve;
     var once = require_once();
-    var Router8 = require_router();
+    var Router9 = require_router();
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
     var trustProxyDefaultSymbol = "@@symbol:trust_proxy_default";
     app2.init = function init() {
-      var router8 = null;
+      var router9 = null;
       this.cache = /* @__PURE__ */ Object.create(null);
       this.engines = /* @__PURE__ */ Object.create(null);
       this.settings = /* @__PURE__ */ Object.create(null);
@@ -21217,13 +21217,13 @@ var require_application = __commonJS({
         configurable: true,
         enumerable: true,
         get: function getrouter() {
-          if (router8 === null) {
-            router8 = new Router8({
+          if (router9 === null) {
+            router9 = new Router9({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
           }
-          return router8;
+          return router9;
         }
       });
     };
@@ -21294,15 +21294,15 @@ var require_application = __commonJS({
       if (fns.length === 0) {
         throw new TypeError("app.use() requires a middleware function");
       }
-      var router8 = this.router;
+      var router9 = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router8.use(path, fn2);
+          return router9.use(path, fn2);
         }
         debug(".use app under %s", path);
         fn2.mountpath = path;
         fn2.parent = this;
-        router8.use(path, function mounted_app(req, res, next) {
+        router9.use(path, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -22572,14 +22572,14 @@ var require_cookie = __commonJS({
       return min;
     }
     function serialize(name, val, opt) {
-      var enc3 = opt && opt.encode || encodeURIComponent;
-      if (typeof enc3 !== "function") {
+      var enc4 = opt && opt.encode || encodeURIComponent;
+      if (typeof enc4 !== "function") {
         throw new TypeError("option encode is invalid");
       }
       if (!cookieNameRegExp.test(name)) {
         throw new TypeError("argument name is invalid");
       }
-      var value = enc3(val);
+      var value = enc4(val);
       if (!cookieValueRegExp.test(value)) {
         throw new TypeError("argument val is invalid");
       }
@@ -23811,7 +23811,7 @@ var require_express = __commonJS({
     var EventEmitter = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router8 = require_router();
+    var Router9 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23833,8 +23833,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router8.Route;
-    exports.Router = Router8;
+    exports.Route = Router9.Route;
+    exports.Router = Router9;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -30479,13 +30479,13 @@ init_env();
 
 // src/app.ts
 init_env();
-var import_express8 = __toESM(require_express2(), 1);
+var import_express9 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_cookie_parser = __toESM(require_cookie_parser(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
 
 // src/routes/index.ts
-var import_express7 = __toESM(require_express2(), 1);
+var import_express8 = __toESM(require_express2(), 1);
 
 // src/routes/health.ts
 var import_express = __toESM(require_express2(), 1);
@@ -37026,19 +37026,640 @@ router6.post("/auth/logout", (_req, res) => {
 });
 var auth_default = router6;
 
-// src/routes/index.ts
+// src/routes/foundation.ts
+var import_express7 = __toESM(require_express2(), 1);
+init_supabase();
+init_auth();
+init_logger();
 var router7 = (0, import_express7.Router)();
-router7.use(health_default);
-router7.use(platform_default);
-router7.use(curriculum_default);
-router7.use(storage_default);
-router7.use(study_default);
-router7.use(auth_default);
-var routes_default = router7;
+var enc3 = (v) => encodeURIComponent(Array.isArray(v) ? v[0] ?? "" : v ?? "");
+var V7_HINT = "\u0646\u0641\u0651\u0630 \u0627\u0644\u0645\u0644\u0641 sql_foundation_v7.sql \u0641\u064A Supabase \u2190 SQL Editor \u0623\u0648\u0644\u0627\u064B.";
+var KINDS = /* @__PURE__ */ new Set(["text", "image", "video", "html", "mixed"]);
+var kindOf = (v) => {
+  const k = String(v || "text").toLowerCase();
+  return KINDS.has(k) ? k : "text";
+};
+function jsonList(raw) {
+  if (Array.isArray(raw)) return raw;
+  try {
+    const parsed = JSON.parse(raw || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+var accessCache = /* @__PURE__ */ new Map();
+var ACCESS_TTL = 15 * 1e3;
+var ACCESS_MAX = 5e3;
+function cacheKey(sectionId, userId) {
+  return `${sectionId}::${userId}`;
+}
+function invalidateFoundationAccess(sectionId, userId) {
+  if (!sectionId) {
+    accessCache.clear();
+    return;
+  }
+  for (const key of accessCache.keys()) {
+    if (key.startsWith(`${sectionId}::`) || userId && key.endsWith(`::${userId}`)) {
+      accessCache.delete(key);
+    }
+  }
+}
+async function hasAccess(sectionId, userId) {
+  if (!sectionId || !userId) return false;
+  const key = cacheKey(sectionId, userId);
+  const now = Date.now();
+  const hit = accessCache.get(key);
+  if (hit && now - hit.at < ACCESS_TTL) return hit.ok;
+  let ok = false;
+  try {
+    const { data, error } = await supabaseQuery(
+      `foundation_members?section_id=eq.${enc3(sectionId)}&user_id=eq.${enc3(userId)}&select=id&limit=1`
+    );
+    if (error) {
+      logger.warn({ error, sectionId }, "foundation access check failed");
+      return false;
+    }
+    ok = Array.isArray(data) && data.length > 0;
+  } catch (err) {
+    logger.warn({ err, sectionId }, "foundation access check threw");
+    return false;
+  }
+  if (accessCache.size >= ACCESS_MAX) accessCache.clear();
+  accessCache.set(key, { ok, at: now });
+  return ok;
+}
+async function requireFoundationAccess(req, res, next) {
+  try {
+    const auth = req.auth;
+    if (!auth?.userId) {
+      res.status(401).json({ error: "\u0633\u062C\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0623\u0648\u0644\u0627\u064B \u0644\u0644\u0645\u062A\u0627\u0628\u0639\u0629." });
+      return;
+    }
+    if (auth.role === "admin") {
+      next();
+      return;
+    }
+    const sectionId = String(req.params?.id || req.params?.sectionId || "");
+    const ok = await hasAccess(sectionId, auth.userId);
+    if (!ok) {
+      res.status(404).json({ error: "\u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u063A\u064A\u0631 \u0645\u062A\u0627\u062D \u0644\u062D\u0633\u0627\u0628\u0643." });
+      return;
+    }
+    next();
+  } catch (err) {
+    logger.error({ err }, "requireFoundationAccess failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0627\u0644\u062A\u062D\u0642\u0642 \u0645\u0646 \u0635\u0644\u0627\u062D\u064A\u0629 \u0627\u0644\u0642\u0633\u0645 \u2014 " + V7_HINT });
+  }
+}
+function sectionToJson(s) {
+  return {
+    id: s.id,
+    title: s.title || "\u0642\u0633\u0645 \u0628\u0644\u0627 \u0627\u0633\u0645",
+    subtitle: s.subtitle || "",
+    description: s.description || "",
+    coverUrl: s.cover_url || "",
+    color: s.color || "#17413f",
+    icon: s.icon || "sparkles",
+    sortOrder: s.sort_order ?? 1,
+    isLocked: !!s.is_locked,
+    isVisible: s.is_visible !== false,
+    isPublished: s.is_published !== false,
+    createdAt: s.created_at || null,
+    updatedAt: s.updated_at || null
+  };
+}
+function lessonToJson2(l, opts = {}) {
+  const images = jsonList(l.images);
+  const base = {
+    id: l.id,
+    sectionId: l.section_id,
+    title: l.title || "\u062F\u0631\u0633 \u0628\u0644\u0627 \u0627\u0633\u0645",
+    description: l.description || "",
+    kind: kindOf(l.kind),
+    position: l.position ?? 1,
+    isLocked: !!l.is_locked,
+    isVisible: l.is_visible !== false,
+    done: !!opts.done
+  };
+  if (!opts.full) {
+    return {
+      ...base,
+      coverUrl: l.cover_url || "",
+      imageCount: images.length,
+      hasVideo: !!l.video_url,
+      hasHtml: !!l.html_content || !!l.html_file_url,
+      textPreview: String(l.body_text || "").slice(0, 140)
+    };
+  }
+  return {
+    ...base,
+    coverUrl: l.cover_url || "",
+    bodyText: l.body_text || "",
+    images,
+    videoUrl: l.video_url || "",
+    videoCaption: l.video_caption || "",
+    htmlContent: l.html_content || "",
+    htmlFileUrl: l.html_file_url || ""
+  };
+}
+router7.get("/foundation/sections", requireAuth, async (req, res) => {
+  try {
+    const auth = req.auth;
+    if (auth.role === "admin") {
+      const { data } = await supabaseQuery(
+        "foundation_sections?is_visible=eq.true&order=sort_order.asc&limit=200"
+      );
+      res.json((data || []).map((s) => ({ ...sectionToJson(s), memberCount: 0, lessonsCount: 0, doneCount: 0, totalCount: 0 })));
+      return;
+    }
+    const { data: memberships, error: memErr } = await supabaseQuery(
+      `foundation_members?user_id=eq.${enc3(auth.userId)}&select=section_id&limit=200`
+    );
+    if (memErr) throw new Error(String(memErr));
+    const ids = [...new Set((memberships || []).map((m) => m.section_id).filter(Boolean))];
+    if (!ids.length) {
+      res.json([]);
+      return;
+    }
+    const [{ data: sections }, { data: counts }, { data: lessons }, { data: progress }] = await Promise.all([
+      supabaseQuery(
+        `foundation_sections?id=in.(${ids.map(enc3).join(",")})&is_visible=eq.true&order=sort_order.asc&limit=200`
+      ),
+      supabaseQuery(`foundation_members?section_id=in.(${ids.map(enc3).join(",")})&select=section_id&limit=3000`),
+      supabaseQuery(
+        `foundation_lessons?section_id=in.(${ids.map(enc3).join(",")})&is_visible=eq.true&select=id,section_id&limit=3000`
+      ),
+      supabaseQuery(
+        `foundation_progress?user_id=eq.${enc3(auth.userId)}&select=lesson_id&limit=1000`
+      )
+    ]);
+    const memberCount = {};
+    for (const m of counts || []) memberCount[m.section_id] = (memberCount[m.section_id] || 0) + 1;
+    const lessonsBySection = {};
+    for (const l of lessons || []) (lessonsBySection[l.section_id] ||= []).push(l.id);
+    const doneSet = new Set((progress || []).map((p) => p.lesson_id));
+    const doneBySection = {};
+    for (const [sid, lids] of Object.entries(lessonsBySection)) {
+      doneBySection[sid] = lids.filter((id) => doneSet.has(id)).length;
+    }
+    res.json(
+      (sections || []).map((s) => {
+        const total = (lessonsBySection[s.id] || []).length;
+        return {
+          ...sectionToJson(s),
+          memberCount: memberCount[s.id] || 0,
+          lessonsCount: total,
+          doneCount: doneBySection[s.id] || 0,
+          totalCount: total
+        };
+      })
+    );
+  } catch (err) {
+    logger.error({ err }, "GET /foundation/sections failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u0645\u064A\u0644 \u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u062A\u0623\u0633\u064A\u0633 \u2014 " + V7_HINT });
+  }
+});
+router7.get("/foundation/sections/:id/access", requireAuth, async (req, res) => {
+  try {
+    const auth = req.auth;
+    const ok = await hasAccess(String(req.params.id), auth.userId);
+    res.json({ allowed: ok, role: auth.role });
+  } catch (err) {
+    logger.error({ err }, "GET foundation access failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0627\u0644\u062A\u062D\u0642\u0642" });
+  }
+});
+router7.get("/foundation/sections/:id", requireAuth, requireFoundationAccess, async (req, res) => {
+  try {
+    const auth = req.auth;
+    const sectionId = String(req.params.id);
+    const { data: sRows } = await supabaseQuery(
+      `foundation_sections?id=eq.${enc3(sectionId)}&is_visible=eq.true&limit=1`
+    );
+    const section = sRows?.[0];
+    if (!section) {
+      res.status(404).json({ error: "\u0627\u0644\u0642\u0633\u0645 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F \u0623\u0648 \u0645\u062E\u0641\u064A." });
+      return;
+    }
+    const { data: lessons } = await supabaseQuery(
+      `foundation_lessons?section_id=eq.${enc3(sectionId)}&is_visible=eq.true&order=position.asc&limit=300`
+    );
+    const { data: progress } = await supabaseQuery(
+      `foundation_progress?user_id=eq.${enc3(auth.userId)}&select=lesson_id&limit=1000`
+    );
+    const done = new Set((progress || []).map((p) => p.lesson_id));
+    const { count: memberCount } = await supabaseQuery(
+      `foundation_members?section_id=eq.${enc3(sectionId)}&select=id`,
+      { headers: { Prefer: "count=exact" } }
+    );
+    res.json({
+      ...sectionToJson(section),
+      memberCount: memberCount ?? 0,
+      lessonsCount: (lessons || []).length,
+      doneCount: (lessons || []).filter((l) => done.has(l.id)).length,
+      totalCount: (lessons || []).length,
+      lessons: (lessons || []).map((l) => lessonToJson2(l, { done: done.has(l.id) }))
+    });
+  } catch (err) {
+    logger.error({ err }, "GET /foundation/sections/:id failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u0645\u064A\u0644 \u0627\u0644\u0642\u0633\u0645 \u2014 " + V7_HINT });
+  }
+});
+router7.get("/foundation/lessons/:id", requireAuth, async (req, res) => {
+  try {
+    const auth = req.auth;
+    const lessonId = String(req.params.id);
+    const { data: rows } = await supabaseQuery(
+      `foundation_lessons?id=eq.${enc3(lessonId)}&is_visible=eq.true&limit=1`
+    );
+    const lesson = rows?.[0];
+    if (!lesson) {
+      res.status(404).json({ error: "\u0627\u0644\u062F\u0631\u0633 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F." });
+      return;
+    }
+    if (auth.role !== "admin" && !await hasAccess(lesson.section_id, auth.userId)) {
+      res.status(404).json({ error: "\u0647\u0630\u0627 \u0627\u0644\u062F\u0631\u0633 \u063A\u064A\u0631 \u0645\u062A\u0627\u062D \u0644\u062D\u0633\u0627\u0628\u0643." });
+      return;
+    }
+    const { data: progress } = await supabaseQuery(
+      `foundation_progress?user_id=eq.${enc3(auth.userId)}&lesson_id=eq.${enc3(lessonId)}&select=id&limit=1`
+    );
+    res.json(lessonToJson2(lesson, { full: true, done: (progress || []).length > 0 }));
+  } catch (err) {
+    logger.error({ err }, "GET /foundation/lessons/:id failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u0645\u064A\u0644 \u0627\u0644\u062F\u0631\u0633 \u2014 " + V7_HINT });
+  }
+});
+router7.post("/foundation/lessons/:id/complete", requireAuth, async (req, res) => {
+  try {
+    const auth = req.auth;
+    const lessonId = String(req.params.id);
+    const { data: rows } = await supabaseQuery(`foundation_lessons?id=eq.${enc3(lessonId)}&select=id,section_id&limit=1`);
+    const lesson = rows?.[0];
+    if (!lesson) {
+      res.status(404).json({ error: "\u0627\u0644\u062F\u0631\u0633 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F." });
+      return;
+    }
+    if (auth.role !== "admin" && !await hasAccess(lesson.section_id, auth.userId)) {
+      res.status(404).json({ error: "\u0647\u0630\u0627 \u0627\u0644\u062F\u0631\u0633 \u063A\u064A\u0631 \u0645\u062A\u0627\u062D \u0644\u062D\u0633\u0627\u0628\u0643." });
+      return;
+    }
+    const { data: existing } = await supabaseQuery(
+      `foundation_progress?user_id=eq.${enc3(auth.userId)}&lesson_id=eq.${enc3(lessonId)}&select=id&limit=1`
+    );
+    if (existing?.length) {
+      res.json({ success: true, alreadyDone: true });
+      return;
+    }
+    const { error } = await supabaseQuery("foundation_progress", {
+      method: "POST",
+      body: [{ user_id: auth.userId, lesson_id: lessonId }]
+    });
+    if (error) throw new Error(String(error));
+    res.json({ success: true });
+  } catch (err) {
+    logger.error({ err }, "POST foundation complete failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0625\u0646\u062C\u0627\u0632" });
+  }
+});
+router7.get("/foundation/lessons/:id/open", requireAuth, async (req, res) => {
+  try {
+    const auth = req.auth;
+    const { data: rows } = await supabaseQuery(`foundation_lessons?id=eq.${enc3(req.params.id)}&select=id,section_id&limit=1`);
+    const lesson = rows?.[0];
+    if (!lesson) {
+      res.status(404).json({ error: "\u0627\u0644\u062F\u0631\u0633 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F." });
+      return;
+    }
+    if (auth.role !== "admin" && !await hasAccess(lesson.section_id, auth.userId)) {
+      res.status(404).json({ error: "\u0647\u0630\u0627 \u0627\u0644\u062F\u0631\u0633 \u063A\u064A\u0631 \u0645\u062A\u0627\u062D \u0644\u062D\u0633\u0627\u0628\u0643." });
+      return;
+    }
+    res.json({ success: true, lessonId: lesson.id });
+  } catch (err) {
+    logger.error({ err }, "GET foundation open failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0641\u062A\u062D \u0627\u0644\u062F\u0631\u0633" });
+  }
+});
+router7.get("/teacher/foundation/sections", requireAdmin, async (_req, res) => {
+  try {
+    const { data: sections, error } = await supabaseQuery(
+      "foundation_sections?order=sort_order.asc&limit=200"
+    );
+    if (error) throw new Error(String(error));
+    const ids = (sections || []).map((s) => s.id);
+    if (!ids.length) {
+      res.json([]);
+      return;
+    }
+    const [{ data: members }, { data: lessons }] = await Promise.all([
+      supabaseQuery(`foundation_members?section_id=in.(${ids.map(enc3).join(",")})&select=section_id&limit=5000`),
+      supabaseQuery(`foundation_lessons?section_id=in.(${ids.map(enc3).join(",")})&select=id,section_id&limit=5000`)
+    ]);
+    const memberCount = {};
+    for (const m of members || []) memberCount[m.section_id] = (memberCount[m.section_id] || 0) + 1;
+    const lessonCount = {};
+    for (const l of lessons || []) lessonCount[l.section_id] = (lessonCount[l.section_id] || 0) + 1;
+    res.json(
+      (sections || []).map((s) => ({
+        ...sectionToJson(s),
+        memberCount: memberCount[s.id] || 0,
+        lessonsCount: lessonCount[s.id] || 0
+      }))
+    );
+  } catch (err) {
+    logger.error({ err }, "GET teacher foundation sections failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u0645\u064A\u0644 \u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u062A\u0623\u0633\u064A\u0633 \u2014 " + V7_HINT });
+  }
+});
+router7.post("/teacher/foundation/sections", requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!String(b.title || "").trim()) {
+      res.status(400).json({ error: "\u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u0642\u0633\u0645 \u0645\u0637\u0644\u0648\u0628" });
+      return;
+    }
+    const { data: existing } = await supabaseQuery("foundation_sections?select=sort_order&limit=1");
+    const nextOrder = (existing || []).reduce((max, s) => Math.max(max, s.sort_order ?? 0), 0) + 1;
+    const { data, error } = await supabaseQuery("foundation_sections", {
+      method: "POST",
+      body: [
+        {
+          title: String(b.title).slice(0, 200),
+          subtitle: String(b.subtitle || "").slice(0, 200),
+          description: String(b.description || "").slice(0, 2e3),
+          cover_url: String(b.coverUrl || ""),
+          color: String(b.color || "#17413f"),
+          icon: String(b.icon || "sparkles"),
+          sort_order: Number(b.sortOrder) || nextOrder,
+          is_locked: !!b.isLocked,
+          is_visible: b.isVisible !== false,
+          is_published: b.isPublished !== false
+        }
+      ]
+    });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, section: sectionToJson(data?.[0] || {}), message: "\u062A\u0645 \u0625\u0646\u0634\u0627\u0621 \u0642\u0633\u0645 \u0627\u0644\u062A\u0623\u0633\u064A\u0633!" });
+  } catch (err) {
+    logger.error({ err }, "POST teacher foundation section failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u0642\u0633\u0645 \u2014 " + V7_HINT });
+  }
+});
+router7.patch("/teacher/foundation/sections/:id", requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const full = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+    if (b.title !== void 0) full.title = String(b.title).slice(0, 200);
+    if (b.subtitle !== void 0) full.subtitle = String(b.subtitle || "").slice(0, 200);
+    if (b.description !== void 0) full.description = String(b.description || "").slice(0, 2e3);
+    if (b.coverUrl !== void 0) full.cover_url = String(b.coverUrl || "");
+    if (b.color !== void 0) full.color = String(b.color || "#17413f");
+    if (b.icon !== void 0) full.icon = String(b.icon || "sparkles");
+    if (b.sortOrder !== void 0) full.sort_order = Number(b.sortOrder) || 1;
+    if (b.isLocked !== void 0) full.is_locked = !!b.isLocked;
+    if (b.isVisible !== void 0) full.is_visible = b.isVisible !== false;
+    if (b.isPublished !== void 0) full.is_published = b.isPublished !== false;
+    const { error } = await supabaseQuery(`foundation_sections?id=eq.${enc3(req.params.id)}`, {
+      method: "PATCH",
+      body: full
+    });
+    if (error) throw new Error(String(error));
+    invalidateFoundationAccess(String(req.params.id));
+    res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u0642\u0633\u0645!" });
+  } catch (err) {
+    logger.error({ err }, "PATCH teacher foundation section failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0642\u0633\u0645 \u2014 " + V7_HINT });
+  }
+});
+router7.delete("/teacher/foundation/sections/:id", requireAdmin, async (req, res) => {
+  try {
+    const { error } = await supabaseQuery(`foundation_sections?id=eq.${enc3(req.params.id)}`, {
+      method: "DELETE"
+    });
+    if (error) throw new Error(String(error));
+    invalidateFoundationAccess(String(req.params.id));
+    res.json({ success: true, message: "\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u0642\u0633\u0645 \u0648\u0643\u0644 \u062F\u0631\u0648\u0633\u0647." });
+  } catch (err) {
+    logger.error({ err }, "DELETE teacher foundation section failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0642\u0633\u0645 \u2014 " + V7_HINT });
+  }
+});
+router7.get("/teacher/foundation/sections/:id/members", requireAdmin, async (req, res) => {
+  try {
+    const sectionId = String(req.params.id);
+    const [{ data: students }, { data: members }] = await Promise.all([
+      supabaseQuery("profiles?role=eq.student&order=full_name.asc&limit=2000"),
+      supabaseQuery(`foundation_members?section_id=eq.${enc3(sectionId)}&select=user_id&limit=5000`)
+    ]);
+    const memberIds = new Set((members || []).map((m) => m.user_id));
+    res.json({
+      sectionId,
+      memberIds: [...memberIds],
+      students: (students || []).map((s) => ({
+        id: s.id,
+        name: s.full_name || "\u0628\u0644\u0627 \u0627\u0633\u0645",
+        grade: s.grade || "",
+        section: s.section || "",
+        gender: s.gender || "",
+        status: s.status || "",
+        avatarUrl: s.avatar_url || "",
+        isMember: memberIds.has(s.id)
+      }))
+    });
+  } catch (err) {
+    logger.error({ err }, "GET foundation members failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u0645\u064A\u0644 \u0627\u0644\u0637\u0644\u0627\u0628 \u2014 " + V7_HINT });
+  }
+});
+router7.put("/teacher/foundation/sections/:id/members", requireAdmin, async (req, res) => {
+  try {
+    const sectionId = String(req.params.id);
+    const raw = Array.isArray(req.body?.memberIds) ? req.body.memberIds : [];
+    const memberIds = [...new Set(raw.map((x) => String(x || "")).filter(Boolean))].slice(0, 2e3);
+    const { data: current } = await supabaseQuery(
+      `foundation_members?section_id=eq.${enc3(sectionId)}&select=id,user_id&limit=5000`
+    );
+    const currentIds = new Set((current || []).map((m) => m.user_id));
+    const toAdd = memberIds.filter((id) => !currentIds.has(id));
+    const toRemove = (current || []).filter((m) => !memberIds.includes(m.user_id)).map((m) => m.id);
+    if (toRemove.length) {
+      const { error: delErr } = await supabaseQuery(
+        `foundation_members?id=in.(${toRemove.map(enc3).join(",")})`,
+        { method: "DELETE" }
+      );
+      if (delErr) throw new Error(String(delErr));
+    }
+    if (toAdd.length) {
+      const { error: addErr } = await supabaseQuery("foundation_members", {
+        method: "POST",
+        body: toAdd.map((user_id) => ({ section_id: sectionId, user_id }))
+      });
+      if (addErr) throw new Error(String(addErr));
+    }
+    invalidateFoundationAccess(sectionId);
+    res.json({
+      success: true,
+      count: memberIds.length,
+      message: `\u062A\u0645 \u062D\u0641\u0638 ${memberIds.length} \u0637\u0627\u0644\u0628 \u0641\u064A \u0627\u0644\u0642\u0633\u0645.`
+    });
+  } catch (err) {
+    logger.error({ err }, "PUT foundation members failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0623\u0639\u0636\u0627\u0621 \u2014 " + V7_HINT });
+  }
+});
+router7.get("/teacher/foundation/sections/:id/lessons", requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabaseQuery(
+      `foundation_lessons?section_id=eq.${enc3(req.params.id)}&order=position.asc&limit=300`
+    );
+    if (error) throw new Error(String(error));
+    res.json((data || []).map((l) => lessonToJson2(l)));
+  } catch (err) {
+    logger.error({ err }, "GET teacher foundation lessons failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u0645\u064A\u0644 \u0627\u0644\u062F\u0631\u0648\u0633 \u2014 " + V7_HINT });
+  }
+});
+router7.post("/teacher/foundation/lessons", requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const sectionId = String(b.sectionId || b.section_id || "");
+    if (!sectionId) {
+      res.status(400).json({ error: "\u0627\u0644\u0642\u0633\u0645 \u0645\u0637\u0644\u0648\u0628" });
+      return;
+    }
+    if (!String(b.title || "").trim()) {
+      res.status(400).json({ error: "\u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u062F\u0631\u0633 \u0645\u0637\u0644\u0648\u0628" });
+      return;
+    }
+    const { data: existing } = await supabaseQuery(
+      `foundation_lessons?section_id=eq.${enc3(sectionId)}&select=position&limit=500`
+    );
+    const nextPos = (existing || []).reduce((max, l) => Math.max(max, l.position ?? 0), 0) + 1;
+    const { data, error } = await supabaseQuery("foundation_lessons", {
+      method: "POST",
+      body: [
+        {
+          section_id: sectionId,
+          title: String(b.title).slice(0, 200),
+          description: String(b.description || "").slice(0, 1e3),
+          kind: kindOf(b.kind),
+          body_text: String(b.bodyText ?? b.body_text ?? ""),
+          cover_url: String(b.coverUrl || ""),
+          images: Array.isArray(b.images) ? b.images.filter(Boolean).slice(0, 40) : [],
+          video_url: String(b.videoUrl || ""),
+          video_caption: String(b.videoCaption || "").slice(0, 300),
+          html_content: String(b.htmlContent || ""),
+          html_file_url: String(b.htmlFileUrl || ""),
+          position: Number(b.position) || nextPos,
+          is_locked: !!b.isLocked,
+          is_visible: b.isVisible !== false
+        }
+      ]
+    });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, lesson: lessonToJson2(data?.[0] || {}), message: "\u062A\u0645\u062A \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u062F\u0631\u0633!" });
+  } catch (err) {
+    logger.error({ err }, "POST foundation lesson failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u062F\u0631\u0633 \u2014 " + V7_HINT });
+  }
+});
+router7.patch("/teacher/foundation/lessons/:id", requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const full = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+    if (b.title !== void 0) full.title = String(b.title).slice(0, 200);
+    if (b.description !== void 0) full.description = String(b.description || "").slice(0, 1e3);
+    if (b.kind !== void 0) full.kind = kindOf(b.kind);
+    if (b.bodyText !== void 0 || b.body_text !== void 0) full.body_text = String(b.bodyText ?? b.body_text ?? "");
+    if (b.coverUrl !== void 0) full.cover_url = String(b.coverUrl || "");
+    if (b.images !== void 0) full.images = Array.isArray(b.images) ? b.images.filter(Boolean).slice(0, 40) : [];
+    if (b.videoUrl !== void 0) full.video_url = String(b.videoUrl || "");
+    if (b.videoCaption !== void 0) full.video_caption = String(b.videoCaption || "").slice(0, 300);
+    if (b.htmlContent !== void 0) full.html_content = String(b.htmlContent || "");
+    if (b.htmlFileUrl !== void 0) full.html_file_url = String(b.htmlFileUrl || "");
+    if (b.position !== void 0) full.position = Number(b.position) || 1;
+    if (b.isLocked !== void 0) full.is_locked = !!b.isLocked;
+    if (b.isVisible !== void 0) full.is_visible = b.isVisible !== false;
+    const { error } = await supabaseQuery(`foundation_lessons?id=eq.${enc3(req.params.id)}`, {
+      method: "PATCH",
+      body: full
+    });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u062F\u0631\u0633!" });
+  } catch (err) {
+    logger.error({ err }, "PATCH foundation lesson failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u062F\u0631\u0633 \u2014 " + V7_HINT });
+  }
+});
+router7.delete("/teacher/foundation/lessons/:id", requireAdmin, async (req, res) => {
+  try {
+    const { error } = await supabaseQuery(`foundation_lessons?id=eq.${enc3(req.params.id)}`, {
+      method: "DELETE"
+    });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u062F\u0631\u0633." });
+  } catch (err) {
+    logger.error({ err }, "DELETE foundation lesson failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u062F\u0631\u0633 \u2014 " + V7_HINT });
+  }
+});
+router7.post("/teacher/foundation/lessons/reorder", requireAdmin, async (req, res) => {
+  try {
+    const id = String(req.body?.id || "");
+    const dir = req.body?.dir === "up" ? -1 : 1;
+    if (!id) {
+      res.status(400).json({ error: "\u0627\u0644\u062F\u0631\u0633 \u0645\u0637\u0644\u0648\u0628" });
+      return;
+    }
+    const { data: rows } = await supabaseQuery(`foundation_lessons?id=eq.${enc3(id)}&select=id,section_id,position&limit=1`);
+    const lesson = rows?.[0];
+    if (!lesson) {
+      res.status(404).json({ error: "\u0627\u0644\u062F\u0631\u0633 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F" });
+      return;
+    }
+    const { data: siblings } = await supabaseQuery(
+      `foundation_lessons?section_id=eq.${enc3(lesson.section_id)}&order=position.asc&limit=500`
+    );
+    const list = siblings || [];
+    const index = list.findIndex((l) => l.id === lesson.id);
+    const target = index + dir;
+    if (index < 0 || target < 0 || target >= list.length) {
+      res.json({ success: true, swapped: false });
+      return;
+    }
+    const a = list[index];
+    const b = list[target];
+    const pa = a.position ?? index + 1;
+    const pb = b.position ?? target + 1;
+    const nextA = pa === pb ? target + 1 : pa;
+    const nextB = pa === pb ? index + 1 : pb;
+    await Promise.all([
+      supabaseQuery(`foundation_lessons?id=eq.${enc3(a.id)}`, { method: "PATCH", body: { position: nextB, updated_at: (/* @__PURE__ */ new Date()).toISOString() } }),
+      supabaseQuery(`foundation_lessons?id=eq.${enc3(b.id)}`, { method: "PATCH", body: { position: nextA, updated_at: (/* @__PURE__ */ new Date()).toISOString() } })
+    ]);
+    res.json({ success: true, swapped: true });
+  } catch (err) {
+    logger.error({ err }, "POST foundation reorder failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0639\u0627\u062F\u0629 \u0627\u0644\u062A\u0631\u062A\u064A\u0628 \u2014 " + V7_HINT });
+  }
+});
+var foundation_default = router7;
+
+// src/routes/index.ts
+var router8 = (0, import_express8.Router)();
+router8.use(health_default);
+router8.use(platform_default);
+router8.use(curriculum_default);
+router8.use(storage_default);
+router8.use(study_default);
+router8.use(auth_default);
+router8.use(foundation_default);
+var routes_default = router8;
 
 // src/app.ts
 init_logger();
-var app = (0, import_express8.default)();
+var app = (0, import_express9.default)();
 app.use(
   (0, import_pino_http.default)({
     logger,
@@ -37059,8 +37680,8 @@ app.use(
   })
 );
 app.use((0, import_cors.default)());
-app.use(import_express8.default.json({ limit: "25mb" }));
-app.use(import_express8.default.urlencoded({ extended: true, limit: "25mb" }));
+app.use(import_express9.default.json({ limit: "25mb" }));
+app.use(import_express9.default.urlencoded({ extended: true, limit: "25mb" }));
 app.use((0, import_cookie_parser.default)());
 app.use("/api", routes_default);
 var app_default = app;

@@ -23,8 +23,10 @@ import {
   getGetGoogleAuthUrlQueryKey,
 } from '@workspace/api-client-react';
 import {
+  ArrowDown,
   ArrowLeft,
   ArrowRight,
+  ArrowUp,
   ArrowUpLeft,
   Award,
   Bell,
@@ -50,6 +52,7 @@ import {
   HelpCircle,
   ImagePlus,
   Landmark,
+  Layers,
   LayoutDashboard,
   Leaf,
   Library,
@@ -65,12 +68,15 @@ import {
   MoreHorizontal,
   NotebookPen,
   NotebookText,
+  Pause,
   Pencil,
+  Play,
   Package,
   Phone,
   PlayCircle,
   Printer,
   ScrollText,
+  Sprout,
   Swords,
   Plus,
   Quote,
@@ -86,6 +92,7 @@ import {
   Upload,
   UserRound,
   UsersRound,
+  Video,
   X,
 } from 'lucide-react';
 import { Link, Route, Switch, Router as WouterRouter, useLocation, useParams } from 'wouter';
@@ -229,9 +236,10 @@ const resourceTabs = [
   { id: 'grammar', label: 'الوحدات التعليمية', icon: BookMarked, description: 'وحدات المنهاج بترتيبها الرسمي' },
 ] as const;
 
-const navStudent = [
+const navStudentBase = [
   { href: '/student', label: 'نظرة عامة', icon: LayoutDashboard },
   { href: '/student/courses', label: 'الوحدات التعليمية', icon: BookOpen },
+  { href: '/student/foundation', label: 'التأسيس', icon: Sprout, gated: true },
   { href: '/student/notebook', label: 'دفتري', icon: NotebookPen },
   { href: '/student/assessments', label: 'التقييمات', icon: Target },
   { href: '/student/assignments', label: 'الواجبات', icon: ClipboardCheck },
@@ -242,6 +250,7 @@ const navStudent = [
 const navTeacher = [
   { href: '/teacher', label: 'لوحة المتابعة', icon: LayoutDashboard },
   { href: '/teacher/students', label: 'الطلاب', icon: UsersRound },
+  { href: '/teacher/foundation', label: 'إعداد التأسيس', icon: Sprout },
   { href: '/teacher/content', label: 'المنهاج والوحدات', icon: Library },
   { href: '/teacher/books', label: 'الكتب المدرسية', icon: BookOpen },
   { href: '/teacher/exams', label: 'الاختبارات', icon: Target },
@@ -250,6 +259,35 @@ const navTeacher = [
   { href: '/teacher/announcements', label: 'الإعلانات', icon: Bell },
   { href: '/teacher/settings', label: 'هوية المنصة', icon: Settings },
 ];
+
+/* ── بوابة "التأسيس": لا يظهر في قائمة الطالب إلا لمن أُضيف إلى قسم فعلاً ──
+   الطلب يمرّ على خادم مُصادَق (requireAuth) ويعيد أقسام هذا الطالب وحده.
+   النتيجة مُربوطة بمعرّف الحساب في ذاكرة دقيقة واحدة: لا تتسرّب بين حسابين،
+   وتظهر إضافة الطالب فوراً بلا إبطاء. */
+const foundationNavCache = new Map<string, { at: number; count: number }>();
+
+function useFoundationNavCount(enabled: boolean, userKey: string): number {
+  const [count, setCount] = useState<number>(-1);
+  useEffect(() => {
+    if (!enabled || !userKey) return;
+    const hit = foundationNavCache.get(userKey);
+    if (hit && Date.now() - hit.at < 60 * 1000) {
+      setCount(hit.count);
+      return;
+    }
+    let live = true;
+    jsonFetch('/api/foundation/sections')
+      .then((d) => {
+        const n = Array.isArray(d) ? d.length : 0;
+        if (foundationNavCache.size > 200) foundationNavCache.clear();
+        foundationNavCache.set(userKey, { at: Date.now(), count: n });
+        if (live) setCount(n);
+      })
+      .catch(() => { if (live) setCount(0); });
+    return () => { live = false; };
+  }, [enabled, userKey]);
+  return count;
+}
 
 /* =========================================================================
    منظومة المنهاج — ثوابت مشتركة (صفوف × فصول × أنواع الدروس)
@@ -1790,7 +1828,12 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
   };
   const studentSubtitle = [studentDash.data?.student?.grade, studentDash.data?.student?.school].filter(Boolean).join(' · ');
 
-  const links = mode === 'student' ? navStudent : navTeacher;
+  // قسم "التأسيس" لا يظهر إلا لمن يملك قسماً فعلاً (يفحصه الخادم بعد الدخول)
+  const foundationCount = useFoundationNavCount(mode === 'student' && authReady, studentId);
+  const links = useMemo(() => {
+    if (mode === 'teacher') return navTeacher;
+    return foundationCount > 0 ? navStudentBase : navStudentBase.filter((l: any) => !l.gated);
+  }, [mode, foundationCount]);
   const active = links.find((link) => location === link.href)?.label ?? links[0].label;
 
   const signOut = () => {
@@ -7983,7 +8026,8 @@ function TeacherDashboardNew() {
             <QuickTile icon={ClipboardCheck} title="الواجبات" body="تكليفات الصفوف ومواعيدها" href="/teacher/assignments" badge={`${d.stats.assignments} واجبات`} color="#2f7772" />
             <QuickTile icon={Bell} title="الإعلانات" body="رسائلك وتوجيهاتك للطلاب" href="/teacher/announcements" badge="نشر" color="#b7791f" />
             <QuickTile icon={NotebookPen} title="مهام الدفتر" body="اطلب تصوير الدفاتر وقيّمها" href="/teacher/notebooks" badge="جديد" color="#a85d3d" />
-            <QuickTile icon={UsersRound} title="الطلاب" body="السجل والنسب والمتابعة" href="/teacher/students" badge={`${d.stats.students} طلاب`} color="#5d4037" />
+<QuickTile icon={Sprout}          title="إعداد التأسيس"   body="أقسام خاصة لمجموعة تختارها — دروس وصور وفيديو وتفاعلي" href="/teacher/foundation" badge="خاص" color="#2a7a72" />
+            <QuickTile icon={UsersRound}     title="الطلاب"         body="السجل والنسب والمتابعة" href="/teacher/students" badge={`${d.stats.students} طلاب`} color="#5d4037" />
             <QuickTile icon={Settings} title="هوية المنصة" body="الإعدادات وتقسيم الأقسام" href="/teacher/settings" badge="تحكم" color="#37474f" />
           </div>
 
@@ -9262,8 +9306,1504 @@ function StudentLessonPage() {
 }
 
 /* =========================================================================
-   ROUTING & ROOT APP
+   ═══════════════════════════════════════════════════════════════════════
+   قسم "التأسيس" — قسم خاص لمجموعة يختارها الأستاذ بالاسم
+   دروس فقط: نص / صورة / فيديو / HTML / مختلط — بلا وحدات ولا واجبات.
+
+   التصميم مُعدّ من الأساس لآيباد باللمس (لا ماوس):
+   • كل هدف كبير = 52px على الأقل (معيار Apple HIG)
+   • النصوص المدخلة 16px+ حتى لا يكبّر الآيباد الصفحة تلقائياً
+   • لا شيء يعتمد على تمرير الفأرة — كل حالة لها :active واضح
+   • النوافذ تمرّر بالإصبع (overscroll-contain) والأزرار على هوامش مريحة
+   ═══════════════════════════════════════════════════════════════════════
 ========================================================================= */
+
+const FOUNDATION_COLORS = [
+  '#17413f', '#0d47a1', '#6a1b9a', '#a85d3d', '#b7791f',
+  '#2f7772', '#5d4037', '#00695c', '#8a508f', '#37474f',
+];
+
+const FOUNDATION_KINDS: Record<string, { label: string; hint: string; Icon: any; tone: string }> = {
+  text:  { label: 'درس نصي',     hint: 'عنوان ونصّ',            Icon: BookOpen,  tone: '#17413f' },
+  image: { label: 'صور الدرس',   hint: 'غلاف ومعرض صور',         Icon: ImagePlus, tone: '#a85d3d' },
+  video: { label: 'فيديو',       hint: 'يوتيوب أو ملف فيديو',    Icon: Video,     tone: '#0d47a1' },
+  html:  { label: 'صفحة HTML',   hint: 'محتوى تفاعلي',           Icon: FileCode2, tone: '#6a1b9a' },
+  mixed: { label: 'مختلط',       hint: 'نص + صور + فيديو + HTML', Icon: Layers,    tone: '#2f7772' },
+};
+
+const FOUNDATION_KIND_ORDER = ['text', 'image', 'video', 'html', 'mixed'] as const;
+
+/** حقول الإدخال للّمس: 16px+ (حتى لا يكبّر الآيباد الصفحة) وحدود سميكة */
+const touchCls =
+  'w-full rounded-2xl border-2 border-input bg-background px-4 py-3.5 text-base outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-primary focus:ring-4 focus:ring-accent/20';
+
+/** الأزرار كبيرة ومسطّحة — الضغط يعطي ارتداداً مرئياً ولا يعتمد على الفأرة */
+const touchBtn =
+  'inline-flex min-h-[52px] select-none items-center justify-center gap-2 rounded-2xl px-6 text-base font-extrabold transition-all active:scale-[.97] disabled:cursor-not-allowed disabled:opacity-50';
+const touchBtnPrimary = `${touchBtn} bg-primary text-primary-foreground shadow-md shadow-primary/20`;
+const touchBtnSoft = `${touchBtn} border-2 border-border bg-secondary/70 text-primary active:bg-secondary`;
+const touchBtnGhost = `${touchBtn} border-2 border-border bg-card text-muted-foreground active:bg-secondary/60`;
+const touchBtnAccent = `${touchBtn} bg-accent text-[#3a2c07] shadow-md shadow-accent/30`;
+
+/** يوحّد الهمزات والتاء المربوطة — للبحث في أسماء الطلاب */
+function foundationFold(s: string): string {
+  return String(s || '')
+    .replace(/[\u0622\u0623\u0625\u0671]/g, '\u0627')
+    .replace(/\u0649/g, '\u064A')
+    .replace(/\u0629/g, '\u0647')
+    .replace(/[\u064B-\u0652]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/** يحوّل أي رابط فيديو إلى رابط تشغيل: يوتيوب/ Vimeo مضمّن، أو ملف مباشر */
+function foundationVideo(url?: string): { src: string; embed: boolean; label: string } | null {
+  const raw = String(url || '').trim();
+  if (!raw) return null;
+  const yt = raw.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/i);
+  if (yt) return { src: `https://www.youtube-nocookie.com/embed/${yt[1]}?rel=0&modestbranding=1`, embed: true, label: 'يوتيوب' };
+  const vimeo = raw.match(/vimeo\.com\/(?:video\/)?(\d+)/i);
+  if (vimeo) return { src: `https://player.vimeo.com/video/${vimeo[1]}`, embed: true, label: 'Vimeo' };
+  if (/\.(mp4|webm|ogg|ogv|mov|m4v)([?#]|$)/i.test(raw)) return { src: raw, embed: false, label: 'ملف فيديو' };
+  return { src: raw, embed: false, label: 'رابط فيديو' };
+}
+
+/* ─────────────────────────── عارض الصور (لمس) ─────────────────────────── */
+function FoundationLightbox({ images, start = 0, onClose }: { images: string[]; start?: number; onClose: () => void }) {
+  const [i, setI] = useState(start);
+  const [zoom, setZoom] = useState(false);
+  const touchX = useRef<number | null>(null);
+  useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = ''; }; }, []);
+  const go = (d: number) => setI((v) => Math.min(images.length - 1, Math.max(0, v + d)));
+  return (
+    <div className="fixed inset-0 z-[95] flex flex-col bg-[#05100f]/[0.97] backdrop-blur-sm" dir="rtl" data-testid="foundation-lightbox">
+      <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
+        <button type="button" onClick={onClose} className="grid h-12 w-12 place-items-center rounded-2xl bg-white/10 text-white ring-1 ring-white/20 active:bg-white/20" aria-label="إغلاق"><X size={22} /></button>
+        <span className="rounded-2xl bg-white/10 px-4 py-2.5 text-sm font-extrabold tabular-nums text-white ring-1 ring-white/15">{i + 1} / {images.length}</span>
+        <button type="button" onClick={() => setZoom((z) => !z)} className="grid h-12 w-12 place-items-center rounded-2xl bg-white/10 text-white ring-1 ring-white/20 active:bg-white/20" aria-label="تكبير">
+          {zoom ? <EyeOff size={20} /> : <Maximize2 size={20} />}
+        </button>
+      </div>
+      <div
+        className="relative flex min-h-0 flex-1 items-center justify-center px-3 pb-4"
+        onTouchStart={(e) => { touchX.current = e.touches[0].clientX; }}
+        onTouchEnd={(e) => {
+          if (touchX.current == null) return;
+          const dx = e.changedTouches[0].clientX - touchX.current;
+          touchX.current = null;
+          if (Math.abs(dx) > 60) go(dx < 0 ? 1 : -1);
+        }}
+      >
+        <img src={images[i]} alt={`صورة ${i + 1}`} className={`max-h-full w-full select-none rounded-2xl bg-white/5 object-contain ${zoom ? 'max-w-none' : ''}`} style={zoom ? { width: '200%' } : undefined} data-testid="img-lightbox" />
+        {images.length > 1 ? (
+          <>
+            <button type="button" onClick={() => go(-1)} disabled={i === 0} className="absolute right-2 grid h-14 w-14 place-items-center rounded-2xl bg-black/50 text-white ring-1 ring-white/20 disabled:opacity-25" aria-label="السابق"><ChevronRight size={26} /></button>
+            <button type="button" onClick={() => go(1)} disabled={i === images.length - 1} className="absolute left-2 grid h-14 w-14 place-items-center rounded-2xl bg-black/50 text-white ring-1 ring-white/20 disabled:opacity-25" aria-label="التالي"><ChevronLeft size={26} /></button>
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────── مشغّل الفيديو (أزرار كبيرة) ───────────────────── */
+function FoundationVideoPlayer({ url, caption }: { url: string; caption?: string }) {
+  const info = foundationVideo(url);
+  const ref = useRef<HTMLVideoElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [current, setCurrent] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [full, setFull] = useState(false);
+  const [waiting, setWaiting] = useState(false);
+
+  useEffect(() => { setPlaying(false); setCurrent(0); setTotal(0); }, [url]);
+
+  const fmt = (s: number) => {
+    if (!isFinite(s) || s < 0) return '0:00';
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${String(sec).padStart(2, '0')}`;
+  };
+
+  const toggle = () => {
+    const v = ref.current;
+    if (!v) return;
+    if (v.paused) { v.play().catch(() => setPlaying(false)); setPlaying(true); }
+    else { v.pause(); setPlaying(false); }
+  };
+  const seek = (val: number) => {
+    const v = ref.current;
+    if (!v || !isFinite(v.duration)) return;
+    v.currentTime = val;
+    setCurrent(val);
+  };
+  const goFull = () => {
+    const el = wrapRef.current;
+    if (!el) return;
+    setFull((f) => {
+      if (!f && el.requestFullscreen) el.requestFullscreen().catch(() => undefined);
+      else if (f && document.exitFullscreen) document.exitFullscreen().catch(() => undefined);
+      return !f;
+    });
+  };
+
+  if (!info) return null;
+
+  if (info.embed) {
+    return (
+      <div className="overflow-hidden rounded-3xl border border-border bg-black shadow-md">
+        <div className="flex items-center gap-2 border-b border-white/10 bg-[#0d2926] px-4 py-2.5 text-white">
+          <span className="inline-flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-1.5 text-xs font-extrabold"><Video size={14} /> {info.label}</span>
+          <span className="mr-auto text-[11px] font-bold text-white/60">مقطع الأستاذ</span>
+        </div>
+        <div className="relative w-full bg-black" style={{ paddingTop: '56.25%' }}>
+          <iframe
+            title={caption || 'فيديو الدرس'}
+            src={info.src}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+            allowFullScreen
+            loading="lazy"
+            referrerPolicy="strict-origin-when-cross-origin"
+            className="absolute inset-0 h-full w-full"
+            data-testid="iframe-foundation-video"
+          />
+        </div>
+        {caption ? <p className="border-t border-border bg-secondary/40 px-4 py-3 text-sm font-semibold leading-6 text-primary">{caption}</p> : null}
+      </div>
+    );
+  }
+
+  return (
+    <div ref={wrapRef} className="overflow-hidden rounded-3xl border border-border bg-black shadow-md">
+      <div className="flex items-center gap-2 border-b border-white/10 bg-[#0d2926] px-4 py-2.5 text-white">
+        <span className="inline-flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-1.5 text-xs font-extrabold"><Video size={14} /> {info.label}</span>
+        <span className="mr-auto text-[11px] font-bold text-white/60">اضغط للتشغيل</span>
+      </div>
+      <video
+        ref={ref}
+        src={info.src}
+        playsInline
+        preload="metadata"
+        onClick={toggle}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onWaiting={() => setWaiting(true)}
+        onCanPlay={() => setWaiting(false)}
+        onLoadedMetadata={(e: any) => setTotal(e.currentTarget.duration || 0)}
+        onTimeUpdate={(e: any) => setCurrent(e.currentTarget.currentTime || 0)}
+        onEnded={() => setPlaying(false)}
+        className="block max-h-[62vh] w-full bg-black"
+        data-testid="video-foundation-lesson"
+      />
+      {/* شريط تحكم كبير الإصبع */}
+      <div className="space-y-2 border-t border-white/10 bg-[#0a1c1b] p-3 pb-4">
+        <input
+          type="range"
+          min={0}
+          max={total || 0}
+          step={0.5}
+          value={current}
+          onChange={(e) => seek(Number(e.target.value))}
+          disabled={!total}
+          aria-label="شريط التقدّم"
+          className="h-11 w-full accent-[#d7b65e]"
+        />
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={toggle} className="inline-flex min-h-[52px] min-w-[52px] items-center justify-center gap-2 rounded-2xl bg-accent px-5 text-sm font-extrabold text-[#3a2c07] shadow-md active:scale-95" data-testid="button-foundation-video-play">
+            {waiting ? <RefreshCw size={20} className="animate-spin" /> : playing ? <Pause size={20} /> : <Play size={20} />}
+            {playing ? 'إيقاف' : 'تشغيل'}
+          </button>
+          <span className="rounded-xl bg-white/10 px-3 py-2 text-xs font-extrabold tabular-nums text-white">{fmt(current)} / {fmt(total)}</span>
+          <span className="mr-auto" />
+          <button type="button" onClick={() => { const v = ref.current; if (v) v.currentTime = Math.max(0, v.currentTime - 10); }} className="grid h-12 w-12 place-items-center rounded-2xl bg-white/10 text-white ring-1 ring-white/15 active:bg-white/20" aria-label="رجوع 10 ثوانٍ"><ArrowRight size={19} /></button>
+          <button type="button" onClick={() => { const v = ref.current; if (v) v.currentTime = Math.min(v.duration || 0, v.currentTime + 10); }} className="grid h-12 w-12 place-items-center rounded-2xl bg-white/10 text-white ring-1 ring-white/15 active:bg-white/20" aria-label="تقدّم 10 ثوانٍ"><ArrowLeft size={19} /></button>
+          <button type="button" onClick={goFull} className="grid h-12 w-12 place-items-center rounded-2xl bg-white/10 text-white ring-1 ring-white/15 active:bg-white/20" aria-label="ملء الشاشة"><Maximize2 size={19} /></button>
+        </div>
+      </div>
+      {caption ? <p className="border-t border-border bg-secondary/40 px-4 py-3 text-sm font-semibold leading-6 text-primary">{caption}</p> : null}
+    </div>
+  );
+}
+
+/* ──────────────────── عارض HTML مع ملء شاشة ───────────────────────────── */
+function FoundationHtmlView({ content, fileUrl, title }: { content?: string; fileUrl?: string; title?: string }) {
+  const [text, setText] = useState<string | null>(content || null);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [full, setFull] = useState(false);
+  const [zoom, setZoom] = useState(1);
+
+  useEffect(() => {
+    if (content) { setText(content); setFailed(false); return; }
+    if (!fileUrl) { setText(null); setFailed(false); return; }
+    let live = true;
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => ctrl.abort(), 25000);
+    setLoading(true);
+    fetch(fileUrl, { signal: ctrl.signal })
+      .then((r) => { if (!r.ok) throw new Error('http'); return r.text(); })
+      .then((t) => { window.clearTimeout(timer); if (live) { setText(t.startsWith('ARDB64') ? decodeArdB64(t) : t); setFailed(false); } })
+      .catch(() => { window.clearTimeout(timer); if (live) setFailed(true); })
+      .finally(() => { window.clearTimeout(timer); if (live) setLoading(false); });
+    return () => { live = false; window.clearTimeout(timer); ctrl.abort(); };
+  }, [content, fileUrl]);
+
+  const body = failed
+    ? <p className="p-8 text-center text-sm font-bold text-destructive">تعذر تحميل المحتوى — أعد رفع الملف أو الصق الكود مباشرة.</p>
+    : loading || !text
+      ? <p className="flex items-center justify-center gap-2.5 p-10 text-sm font-bold text-primary"><RefreshCw size={18} className="animate-spin" /> جارٍ تجهيز المحتوى...</p>
+      : (
+        <iframe
+          title={title || 'محتوى الدرس التفاعلي'}
+          sandbox={HTML_FRAME_SANDBOX}
+          srcDoc={text}
+          referrerPolicy="no-referrer"
+          className="h-[62vh] min-h-[380px] w-full bg-white"
+          style={{ zoom }}
+        />
+      );
+
+  return (
+    <>
+      <div className="overflow-hidden rounded-3xl border border-primary/20 bg-card shadow-md">
+        <div className="flex items-center gap-2 border-b border-border bg-gradient-to-l from-secondary/80 to-card px-3 py-2.5">
+          <span className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-xs font-extrabold text-primary-foreground"><FileCode2 size={14} /> المحتوى التفاعلي</span>
+          <span className="mr-auto" />
+          <span className="flex items-center gap-1 rounded-xl bg-background p-1 ring-1 ring-border">
+            <button type="button" onClick={() => setZoom((z) => Math.max(0.6, +(z - 0.1).toFixed(2)))} className="grid h-10 w-10 place-items-center rounded-lg text-sm font-extrabold text-primary active:bg-secondary">أ-</button>
+            <button type="button" onClick={() => setZoom(1)} className="min-w-12 rounded-lg px-1 text-xs font-extrabold tabular-nums text-muted-foreground">{Math.round(zoom * 100)}%</button>
+            <button type="button" onClick={() => setZoom((z) => Math.min(1.8, +(z + 0.1).toFixed(2)))} className="grid h-10 w-10 place-items-center rounded-lg text-sm font-extrabold text-primary active:bg-secondary">أ+</button>
+          </span>
+          <button type="button" onClick={() => setFull(true)} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl bg-primary px-4 text-xs font-extrabold text-primary-foreground active:scale-95"><Maximize2 size={16} /> ملء الشاشة</button>
+        </div>
+        <div className="bg-white">{body}</div>
+      </div>
+
+      {full && text ? (
+        <div className="fixed inset-0 z-[95] flex flex-col bg-gradient-to-b from-[#0d2926] to-[#081a19]" dir="rtl">
+          <div className="flex items-center gap-2 px-3 py-3 sm:px-6">
+            <button type="button" onClick={() => setFull(false)} className="inline-flex min-h-[48px] items-center gap-2 rounded-2xl bg-white/10 px-5 text-sm font-extrabold text-white ring-1 ring-white/20 active:bg-white/20"><ChevronRight size={20} /> رجوع</button>
+            <p className="mr-auto truncate text-sm font-extrabold text-white sm:text-base">{title || 'محتوى الدرس'}</p>
+            <button type="button" onClick={() => setFull(false)} className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/10 text-white ring-1 ring-white/20 active:bg-white/20" aria-label="إغلاق"><X size={21} /></button>
+          </div>
+          <div className="min-h-0 flex-1 px-2 pb-2 sm:px-5 sm:pb-5">
+            <div className="h-full overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <iframe title={title || 'محتوى الدرس'} sandbox={HTML_FRAME_SANDBOX} srcDoc={text} referrerPolicy="no-referrer" className="h-full w-full" />
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/* ══════════════ محتوى الدرس كما يراه الطالب (نفسه في معاينة الأستاذ) ══════════════ */
+function FoundationLessonBody({ lesson, compact = false }: { lesson: any; compact?: boolean }) {
+  const [box, setBox] = useState<{ images: string[]; index: number } | null>(null);
+  if (!lesson) return null;
+  const images: string[] = Array.isArray(lesson.images) ? lesson.images.filter(Boolean) : [];
+  const text = String(lesson.bodyText || '').trim();
+  const video = String(lesson.videoUrl || '').trim();
+  const html = String(lesson.htmlContent || '').trim();
+  const htmlFile = String(lesson.htmlFileUrl || '').trim();
+
+  return (
+    <div className="space-y-6">
+      {lesson.coverUrl ? (
+        <div className="overflow-hidden rounded-3xl border border-border shadow-md">
+          <img src={lesson.coverUrl} alt={lesson.title} className="max-h-[46vh] w-full object-cover" data-testid="img-foundation-cover" />
+        </div>
+      ) : null}
+
+      {lesson.description ? (
+        <p className="rounded-3xl border-r-4 border-accent bg-secondary/50 p-5 text-[15px] font-semibold leading-8 text-primary">{lesson.description}</p>
+      ) : null}
+
+      {text ? (
+        <div className="rounded-3xl border border-border bg-card p-5 shadow-sm sm:p-7">
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-extrabold text-primary"><BookOpen size={17} className="text-accent-foreground" /> نصّ الدرس</h3>
+          <div className="whitespace-pre-line font-serif text-[17px] font-medium leading-[2.1] text-primary">{text}</div>
+        </div>
+      ) : null}
+
+      {images.length > 0 ? (
+        <div className="rounded-3xl border border-border p-5 shadow-sm">
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-extrabold text-primary">
+            <ImagePlus size={17} className="text-accent-foreground" /> صور الدرس
+            <span className="rounded-lg bg-secondary px-2 py-0.5 text-[11px] font-extrabold tabular-nums text-muted-foreground">{images.length}</span>
+          </h3>
+          <div className={`grid gap-3 ${compact ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3'}`}>
+            {images.map((src, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => setBox({ images, index: idx })}
+                className="group relative aspect-[4/3] overflow-hidden rounded-2xl border border-border bg-secondary active:scale-[.98]"
+                data-testid={`btn-foundation-img-${idx}`}
+              >
+                <img src={src} alt={`صورة ${idx + 1}`} loading="lazy" className="h-full w-full object-cover transition-transform duration-300 group-active:scale-105" />
+                <span className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-xl bg-black/55 px-2.5 py-1 text-[10px] font-extrabold text-white backdrop-blur-sm">
+                  <Maximize2 size={12} /> تكبير
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {video ? <FoundationVideoPlayer url={video} caption={lesson.videoCaption} /> : null}
+
+      {html || htmlFile ? <FoundationHtmlView content={html} fileUrl={htmlFile} title={lesson.title} /> : null}
+
+      {!text && !images.length && !video && !html && !htmlFile ? (
+        <p className="rounded-3xl border border-dashed border-border bg-card px-6 py-10 text-center text-sm text-muted-foreground">
+          هذا الدرس لم يُملأ بعد — أنتظر الأستاذ.
+        </p>
+      ) : null}
+
+      {box ? <FoundationLightbox images={box.images} start={box.index} onClose={() => setBox(null)} /> : null}
+    </div>
+  );
+}
+
+/* ═══════════════════════ لوحة الأستاذ — إنشاء الأقسام ═══════════════════════ */
+function TeacherFoundationPage() {
+  const [sections, setSections] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [msg, setMsg] = useState('');
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [modal, setModal] = useState<null | { mode: 'create' } | { mode: 'edit'; section: any }>(null);
+  const [form, setForm] = useState<any>({});
+  const [saving, setSaving] = useState(false);
+
+  const flash = (t: string) => { setMsg(t); window.setTimeout(() => setMsg(''), 3500); };
+  const reload = () => {
+    setLoading(true);
+    jsonFetch('/api/teacher/foundation/sections')
+      .then((d) => setSections(Array.isArray(d) ? d : []))
+      .catch((e) => { setSections([]); flash(e?.message || 'تعذر تحميل الأقسام'); })
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => { reload(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  const open = sections.find((s) => s.id === openId);
+  if (open) {
+    return (
+      <Shell mode="teacher">
+        <FoundationSectionDetail section={open} onBack={() => setOpenId(null)} onChanged={reload} flash={flash} />
+      </Shell>
+    );
+  }
+
+  const openCreate = () => {
+    setForm({ title: '', subtitle: '', description: '', coverUrl: '', color: FOUNDATION_COLORS[sections.length % FOUNDATION_COLORS.length], icon: 'sparkles', isLocked: false, isVisible: true, isPublished: true });
+    setModal({ mode: 'create' });
+  };
+  const openEdit = (s: any) => {
+    setForm({ title: s.title, subtitle: s.subtitle, description: s.description, coverUrl: s.coverUrl, color: s.color, icon: s.icon, isLocked: s.isLocked, isVisible: s.isVisible, isPublished: s.isPublished });
+    setModal({ mode: 'edit', section: s });
+  };
+
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      if (modal?.mode === 'create') await jsonFetch('/api/teacher/foundation/sections', { method: 'POST', body: form });
+      else if (modal?.mode === 'edit') await jsonFetch(`/api/teacher/foundation/sections/${modal.section.id}`, { method: 'PATCH', body: form });
+      setModal(null);
+      reload();
+      flash('تم حفظ القسم بنجاح!');
+    } catch (err: any) { flash(err?.message || 'تعذر الحفظ'); } finally { setSaving(false); }
+  };
+
+  const quick = async (s: any, patch: any) => {
+    try { await jsonFetch(`/api/teacher/foundation/sections/${s.id}`, { method: 'PATCH', body: patch }); reload(); }
+    catch (err: any) { flash(err?.message || 'تعذر التعديل'); }
+  };
+  const remove = async (s: any) => {
+    if (!window.confirm(`حذف قسم «${s.title}» وكل دروسه وأعضائه؟ لا يمكن التراجع.`)) return;
+    try { await jsonFetch(`/api/teacher/foundation/sections/${s.id}`, { method: 'DELETE' }); reload(); flash('تم حذف القسم'); }
+    catch (err: any) { flash(err?.message || 'تعذر الحذف'); }
+  };
+
+  const totalMembers = sections.reduce((a, s) => a + (s.memberCount || 0), 0);
+  const totalLessons = sections.reduce((a, s) => a + (s.lessonsCount || 0), 0);
+
+  return (
+    <Shell mode="teacher">
+      <SectionHero
+        eyebrow="قسم خاص لمجموعة تختارها أنت"
+        title="إعداد التأسيس"
+        body="أنشئ أقساماً خاصة يراها من تختاره بالاسم فقط — بدروس نصّ أو صورة أو فيديو أو HTML، وبالترتيب الذي تريده تماماً. بلا وحدات ولا واجبات."
+        action={<button type="button" onClick={openCreate} className={touchBtnAccent} data-testid="button-add-foundation-section"><Plus size={20} /> قسم جديد</button>}
+        stats={[
+          { value: sections.length, label: 'أقسام التأسيس' },
+          { value: totalMembers, label: 'عضو مُسجَّل' },
+          { value: totalLessons, label: 'درس منشور' },
+          { value: sections.filter((s) => s.isVisible).length, label: 'قسم ظاهر' },
+        ]}
+      />
+
+      {msg ? <p className="mb-4 flex items-center gap-2 rounded-2xl bg-accent/25 px-4 py-3.5 text-sm font-extrabold text-accent-foreground animate-fade-up"><CheckCircle2 size={17} /> {msg}</p> : null}
+
+      {loading ? <StateNotice type="loading" /> : !sections.length ? (
+        <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-16 text-center">
+          <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-gradient-to-br from-primary to-[#2a7a72] text-primary-foreground shadow-lg"><Sprout size={30} /></span>
+          <p className="font-display text-xl font-bold text-primary">لا يوجد قسم تأسيس بعد</p>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-muted-foreground">ابدأ بأول قسم — سمّه، ثم اختر الطلاب بالاسم، ثم أضف دروسك نصاً أو صورة أو فيديو أو HTML.</p>
+          <button type="button" onClick={openCreate} className={`${touchBtnPrimary} mt-6`}><Plus size={20} /> أنشئ أول قسم</button>
+        </div>
+      ) : (
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {sections.map((s) => {
+            const Icon = (UNIT_ICONS as any)[s.icon] || Sparkles;
+            return (
+              <article key={s.id} className="group relative flex flex-col overflow-hidden rounded-[2rem] border border-border bg-card shadow-md transition-transform active:scale-[.995]">
+                <button type="button" onClick={() => setOpenId(s.id)} className="relative block h-40 w-full overflow-hidden text-right" style={{ background: `linear-gradient(135deg, ${s.color}, ${s.color}bb)` }}>
+                  {s.coverUrl ? <img src={s.coverUrl} alt={s.title} className="h-full w-full object-cover" /> : null}
+                  <span className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent" />
+                  <span className="absolute right-4 top-4 grid h-12 w-12 place-items-center rounded-2xl bg-white/25 text-white shadow-lg backdrop-blur-sm"><Icon size={24} /></span>
+                  <span className="absolute bottom-3 right-4 left-4">
+                    <span className="block truncate font-display text-lg font-extrabold text-white drop-shadow">{s.title}</span>
+                    {s.subtitle ? <span className="mt-0.5 block truncate text-xs font-bold text-white/85">{s.subtitle}</span> : null}
+                  </span>
+                  {!s.isVisible ? <span className="absolute left-3 top-3 rounded-full bg-black/60 px-3 py-1 text-[10px] font-extrabold text-white backdrop-blur-sm">مخفي</span> : null}
+                  {s.isLocked ? <span className="absolute left-3 bottom-3 inline-flex items-center gap-1 rounded-full bg-black/60 px-3 py-1 text-[10px] font-extrabold text-white backdrop-blur-sm"><Lock size={11} /> مقفل</span> : null}
+                </button>
+
+                <div className="flex flex-1 flex-col gap-3 p-5">
+                  <p className="line-clamp-2 min-h-[2.6rem] text-sm leading-6 text-muted-foreground">{s.description || 'بلا وصف — اضغط 编辑 لإضافة تعريف واضح للطلاب.'}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="inline-flex items-center gap-1.5 rounded-xl bg-secondary px-3 py-1.5 text-xs font-extrabold text-primary"><BookOpen size={13} /> {s.lessonsCount} درس</span>
+                    <span className="inline-flex items-center gap-1.5 rounded-xl bg-[#6a1b9a]/10 px-3 py-1.5 text-xs font-extrabold text-[#6a1b9a]"><UsersRound size={13} /> {s.memberCount} طالب</span>
+                  </div>
+                  <div className="mt-auto grid grid-cols-2 gap-2 pt-1">
+                    <button type="button" onClick={() => setOpenId(s.id)} className={`${touchBtnSoft} px-3 text-sm`} data-testid={`button-open-foundation-${s.id}`}><Pencil size={16} /> إدارة</button>
+                    <button type="button" onClick={() => quick(s, { isVisible: !s.isVisible })} className={`${touchBtnGhost} px-3 text-sm`}>{s.isVisible ? <EyeOff size={16} /> : <Eye size={16} />} {s.isVisible ? 'إخفاء' : 'إظهار'}</button>
+                  </div>
+                  <div className="flex items-center justify-center gap-1 pt-0.5">
+                    <button type="button" onClick={() => quick(s, { isLocked: !s.isLocked })} className="min-h-[44px] flex-1 rounded-xl text-xs font-extrabold text-muted-foreground active:bg-secondary">{s.isLocked ? 'فتح القسم' : 'قفل القسم'}</button>
+                    <button type="button" onClick={openEdit.bind(null, s)} className="grid h-11 w-11 place-items-center rounded-xl text-muted-foreground active:bg-secondary" aria-label="تعديل"><Pencil size={16} /></button>
+                    <button type="button" onClick={() => remove(s)} className="grid h-11 w-11 place-items-center rounded-xl text-destructive active:bg-destructive/10" aria-label="حذف"><Trash2 size={16} /></button>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+
+      {modal ? (
+        <Modal title={modal.mode === 'create' ? 'قسم تأسيس جديد' : 'تعديل القسم'} eyebrow="دروس فقط — لا وحدات ولا واجبات" onClose={() => setModal(null)} maxWidth="max-w-3xl">
+          <form onSubmit={save} className="space-y-5 pb-4">
+            {/* معاينة حيّة */}
+            <div className="relative overflow-hidden rounded-3xl p-5 shadow-lg" style={{ background: `linear-gradient(135deg, ${form.color || '#17413f'}, ${form.color || '#17413f'}bb)` }}>
+              <div className="pointer-events-none absolute -left-8 -top-10 select-none font-display text-[6rem] leading-none text-white/15">ت</div>
+              <div className="relative flex items-center gap-4">
+                <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-white/25 text-white shadow-xl backdrop-blur-sm"><Sparkles size={26} /></span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-display text-lg font-extrabold text-white">{form.title || 'عنوان القسم...'}</p>
+                  <p className="mt-1 truncate text-xs font-bold text-white/85">{form.subtitle || 'العنوان الفرعي...'}</p>
+                </div>
+              </div>
+              <span className="absolute left-4 top-4 rounded-full bg-black/40 px-3 py-1 text-[10px] font-bold text-white backdrop-blur-md">معاينة حية</span>
+            </div>
+
+            <Field2 label="عنوان القسم *"><input value={form.title || ''} onChange={(e) => setForm({ ...form, title: e.target.value })} required placeholder="مثال: تأسيس المستوى الأول — الحروف والمقاطع" className={touchCls} data-testid="input-foundation-title" /></Field2>
+            <Field2 label="العنوان الفرعي" hint="سطر قصير يظهر تحت العنوان — مثل: مجموعة المستوى الأول"><input value={form.subtitle || ''} onChange={(e) => setForm({ ...form, subtitle: e.target.value })} placeholder="مجموعة المستوى الأول" className={touchCls} /></Field2>
+            <Field2 label="تعريف القسم" hint="يشرح للطلاب لماذا هذا القسم خاص وماذا سيجدون داخله"><textarea value={form.description || ''} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} placeholder="دروس تأسيسية للمبتدئين..." className={`${touchCls} resize-none leading-7`} /></Field2>
+
+            <ImageUrlField label="صورة الغلاف" value={form.coverUrl || ''} onChange={(v) => setForm({ ...form, coverUrl: v })} testId="input-foundation-cover" folder="/ard-al-lughah/covers" />
+
+            <div>
+              <p className="mb-2 block text-sm font-semibold">لون القسم</p>
+              <div className="flex flex-wrap gap-2.5">
+                {FOUNDATION_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setForm({ ...form, color: c })}
+                    className={`h-12 w-12 rounded-2xl ring-offset-2 transition-transform active:scale-90 ${form.color === c ? 'ring-4 ring-primary' : 'ring-1 ring-border'}`}
+                    style={{ background: c }}
+                    aria-label={`لون ${c}`}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button type="button" onClick={() => setForm({ ...form, isVisible: !form.isVisible })} className={`flex min-h-[60px] items-center gap-3 rounded-2xl border-2 p-4 text-right transition-colors ${form.isVisible ? 'border-primary bg-primary/10' : 'border-border bg-card'}`}>
+                <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg ${form.isVisible ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>{form.isVisible ? <Check size={16} /> : null}</span>
+                <span><span className="block text-sm font-extrabold text-primary">ظاهر للطلاب</span><span className="block text-[11px] text-muted-foreground">عند إطفائه يختفي القسم كلياً</span></span>
+              </button>
+              <button type="button" onClick={() => setForm({ ...form, isLocked: !form.isLocked })} className={`flex min-h-[60px] items-center gap-3 rounded-2xl border-2 p-4 text-right transition-colors ${form.isLocked ? 'border-[#b7791f] bg-[#b7791f]/10' : 'border-border bg-card'}`}>
+                <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg ${form.isLocked ? 'bg-[#b7791f] text-white' : 'bg-muted text-muted-foreground'}`}>{form.isLocked ? <Lock size={15} /> : null}</span>
+                <span><span className="block text-sm font-extrabold text-primary">مقفل مؤقتاً</span><span className="block text-[11px] text-muted-foreground">يرون العنوان ولا يفتحون</span></span>
+              </button>
+            </div>
+
+            <div className="sticky bottom-0 -mx-4 flex gap-3 border-t border-border bg-card/95 px-4 pb-2 pt-4 backdrop-blur sm:-mx-7 sm:px-7">
+              <button type="submit" disabled={saving} className={`${touchBtnPrimary} flex-1`}><Save size={18} /> {saving ? 'جارٍ الحفظ...' : 'حفظ القسم'}</button>
+              <button type="button" onClick={() => setModal(null)} className={touchBtnSoft}>إلغاء</button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+    </Shell>
+  );
+}
+
+/* ═══════════════════ تفاصيل القسم: الأعضاء + الدروس ═══════════════════ */
+function FoundationSectionDetail({ section, onBack, onChanged, flash }: { section: any; onBack: () => void; onChanged: () => void; flash: (t: string) => void }) {
+  const [lessons, setLessons] = useState<any[]>([]);
+  const [loadingLessons, setLoadingLessons] = useState(true);
+  const [lessonModal, setLessonModal] = useState<null | { mode: 'create' } | { mode: 'edit'; lesson: any }>(null);
+  const [lessonForm, setLessonForm] = useState<any>({});
+  const [savingLesson, setSavingLesson] = useState(false);
+  const [preview, setPreview] = useState<any | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  const reload = () => {
+    setLoadingLessons(true);
+    jsonFetch(`/api/teacher/foundation/sections/${section.id}/lessons`)
+      .then((d) => setLessons(Array.isArray(d) ? d : []))
+      .catch(() => setLessons([]))
+      .finally(() => setLoadingLessons(false));
+  };
+  useEffect(() => { reload(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [section.id]);
+
+  const Icon = (UNIT_ICONS as any)[section.icon] || Sparkles;
+
+  const openCreate = () => {
+    setLessonForm({ title: '', description: '', kind: 'text', bodyText: '', coverUrl: '', images: [], videoUrl: '', videoCaption: '', htmlContent: '', htmlFileUrl: '', isLocked: false, isVisible: true });
+    setLessonModal({ mode: 'create' });
+  };
+  const openEdit = (l: any) => {
+    setLessonForm({ title: l.title, description: l.description, kind: l.kind, bodyText: l.bodyText || '', coverUrl: l.coverUrl || '', images: l.images || [], videoUrl: l.videoUrl || '', videoCaption: l.videoCaption || '', htmlContent: l.htmlContent || '', htmlFileUrl: l.htmlFileUrl || '', isLocked: l.isLocked, isVisible: l.isVisible });
+    setLessonModal({ mode: 'edit', lesson: l });
+  };
+
+  const saveLesson = async (e: FormEvent) => {
+    e.preventDefault();
+    setSavingLesson(true);
+    try {
+      const payload = { ...lessonForm, sectionId: section.id };
+      if (lessonModal?.mode === 'create') await jsonFetch('/api/teacher/foundation/lessons', { method: 'POST', body: payload });
+      else if (lessonModal?.mode === 'edit') await jsonFetch(`/api/teacher/foundation/lessons/${lessonModal.lesson.id}`, { method: 'PATCH', body: payload });
+      setLessonModal(null);
+      reload();
+      flash('تم حفظ الدرس!');
+    } catch (err: any) { flash(err?.message || 'تعذر حفظ الدرس'); } finally { setSavingLesson(false); }
+  };
+
+  const quickLesson = async (l: any, patch: any) => {
+    try { await jsonFetch(`/api/teacher/foundation/lessons/${l.id}`, { method: 'PATCH', body: patch }); reload(); }
+    catch (err: any) { flash(err?.message || 'تعذر التعديل'); }
+  };
+  const move = async (l: any, dir: 'up' | 'down') => {
+    try { await jsonFetch('/api/teacher/foundation/lessons/reorder', { method: 'POST', body: { id: l.id, dir } }); reload(); }
+    catch (err: any) { flash(err?.message || 'تعذرت إعادة الترتيب'); }
+  };
+  const removeLesson = async (l: any) => {
+    if (!window.confirm(`حذف درس «${l.title}»؟`)) return;
+    try { await jsonFetch(`/api/teacher/foundation/lessons/${l.id}`, { method: 'DELETE' }); reload(); flash('تم حذف الدرس'); }
+    catch (err: any) { flash(err?.message || 'تعذر الحذف'); }
+  };
+  const openPreview = async (l: any) => {
+    setPreviewLoading(true);
+    setPreview({ ...l, __loading: true });
+    try {
+      const full = await jsonFetch(`/api/foundation/lessons/${l.id}`);
+      setPreview(full);
+    } catch (err: any) { flash(err?.message || 'تعذر فتح المعاينة'); setPreview(null); }
+    finally { setPreviewLoading(false); }
+  };
+
+  return (
+    <>
+      <button type="button" onClick={onBack} className="mb-5 inline-flex min-h-[52px] items-center gap-2 rounded-2xl border-2 border-border bg-card px-5 text-sm font-extrabold text-primary active:bg-secondary" data-testid="button-back-foundation">
+        <ChevronRight size={18} /> عودة لكل الأقسام
+      </button>
+
+      <header className="relative mb-6 overflow-hidden rounded-[2rem] shadow-xl">
+        {section.coverUrl ? (
+          <img src={section.coverUrl} alt={section.title} className="h-44 w-full object-cover sm:h-56" />
+        ) : (
+          <div className="h-44 sm:h-56" style={{ background: `linear-gradient(135deg, ${section.color}, ${section.color}99)` }} />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />
+        <div className="absolute bottom-0 right-0 left-0 flex items-end gap-4 p-5 sm:p-7">
+          <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-white/25 text-white shadow-xl backdrop-blur-sm"><Icon size={28} /></span>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-extrabold text-accent">{section.memberCount} طالب · {lessons.length} درس</p>
+            <h1 className="mt-1 truncate font-display text-2xl font-extrabold text-white sm:text-3xl">{section.title}</h1>
+            {section.subtitle ? <p className="mt-0.5 truncate text-sm font-bold text-white/80">{section.subtitle}</p> : null}
+          </div>
+        </div>
+      </header>
+
+      <div className="grid gap-6 xl:grid-cols-[1.25fr_.75fr]">
+        {/* ── الدروس ── */}
+        <section>
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <h2 className="flex items-center gap-2 font-display text-lg font-extrabold text-primary"><BookOpen size={20} /> دروس القسم</h2>
+            <span className="rounded-xl bg-secondary px-3 py-1.5 text-xs font-extrabold text-primary tabular-nums">{lessons.length}</span>
+            <button type="button" onClick={openCreate} className={`${touchBtnAccent} mr-auto px-5 text-sm`} data-testid="button-add-foundation-lesson"><Plus size={18} /> درس جديد</button>
+          </div>
+
+          {loadingLessons ? <StateNotice type="loading" /> : !lessons.length ? (
+            <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-14 text-center">
+              <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-3xl bg-secondary text-primary"><BookOpen size={26} /></span>
+              <p className="font-display text-lg font-bold text-primary">القسم بلا دروس بعد</p>
+              <p className="mx-auto mt-1.5 max-w-sm text-sm leading-6 text-muted-foreground">أضف درساً — نصاً أو صوراً أو فيديو أو HTML — وتحكم في ترتيبه من هنا.</p>
+              <button type="button" onClick={openCreate} className={`${touchBtnPrimary} mt-5`}><Plus size={20} /> أضف أول درس</button>
+            </div>
+          ) : (
+            <ol className="space-y-3">
+              {lessons.map((l, idx) => {
+                const meta = FOUNDATION_KINDS[l.kind] || FOUNDATION_KINDS.text;
+                const KIcon = meta.Icon;
+                return (
+                  <li key={l.id} className={`overflow-hidden rounded-3xl border bg-card shadow-sm transition-opacity ${l.isVisible ? 'border-border' : 'border-dashed border-border opacity-70'}`}>
+                    <div className="flex gap-3 p-3 sm:gap-4 sm:p-4">
+                      {/* الرقم + رفع/خفض */}
+                      <div className="flex shrink-0 flex-col items-center gap-1.5">
+                        <span className="grid h-10 w-10 place-items-center rounded-2xl text-sm font-extrabold text-white shadow" style={{ background: meta.tone }}>{idx + 1}</span>
+                        <button type="button" onClick={() => move(l, 'up')} disabled={idx === 0} className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground active:bg-secondary disabled:opacity-25" aria-label="تقديم"><ArrowUp size={15} /></button>
+                        <button type="button" onClick={() => move(l, 'down')} disabled={idx === lessons.length - 1} className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground active:bg-secondary disabled:opacity-25" aria-label="تأخير"><ArrowDown size={15} /></button>
+                      </div>
+
+                      {/* الصورة المصغّرة */}
+                      <button
+                        type="button"
+                        onClick={() => openPreview(l)}
+                        className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-2xl border border-border active:scale-95"
+                        style={{ background: l.coverUrl ? undefined : `${meta.tone}18` }}
+                        aria-label="معاينة الدرس"
+                      >
+                        {l.coverUrl
+                          ? <img src={l.coverUrl} alt="" className="h-full w-full object-cover" />
+                          : previewLoading && preview?.id === l.id
+                            ? <RefreshCw size={20} className="animate-spin text-primary" />
+                            : <KIcon size={24} style={{ color: meta.tone }} />}
+                      </button>
+
+                      {/* التفاصيل */}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="rounded-lg px-2 py-0.5 text-[10px] font-extrabold text-white" style={{ background: meta.tone }}>{meta.label}</span>
+                          {l.isLocked ? <span className="inline-flex items-center gap-1 rounded-lg bg-[#b7791f]/15 px-2 py-0.5 text-[10px] font-extrabold text-[#b7791f]"><Lock size={11} /> مقفل</span> : null}
+                          {!l.isVisible ? <span className="rounded-lg bg-muted px-2 py-0.5 text-[10px] font-extrabold text-muted-foreground">مخفي</span> : null}
+                        </div>
+                        <p className="mt-1.5 truncate text-base font-extrabold text-primary">{l.title}</p>
+                        {l.textPreview ? <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground">{l.textPreview}</p> : null}
+                        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] font-bold text-muted-foreground">
+                          {l.imageCount > 0 ? <span className="rounded-md bg-secondary px-2 py-0.5">{l.imageCount} صورة</span> : null}
+                          {l.hasVideo ? <span className="rounded-md bg-secondary px-2 py-0.5">فيديو</span> : null}
+                          {l.hasHtml ? <span className="rounded-md bg-secondary px-2 py-0.5">HTML</span> : null}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* أزرار التحكم — باردة وكبيرة */}
+                    <div className="grid grid-cols-4 gap-px border-t border-border bg-border">
+                      <button type="button" onClick={() => openPreview(l)} className="flex min-h-[48px] items-center justify-center gap-1.5 bg-card text-xs font-extrabold text-primary active:bg-secondary"><Eye size={15} /> معاينة</button>
+                      <button type="button" onClick={() => openEdit(l)} className="flex min-h-[48px] items-center justify-center gap-1.5 bg-card text-xs font-extrabold text-primary active:bg-secondary"><Pencil size={15} /> تعديل</button>
+                      <button type="button" onClick={() => quickLesson(l, { isLocked: !l.isLocked })} className="flex min-h-[48px] items-center justify-center gap-1.5 bg-card text-xs font-extrabold text-muted-foreground active:bg-secondary">
+                        {l.isLocked ? <LockOpen size={15} /> : <Lock size={15} />} {l.isLocked ? 'فتح' : 'قفل'}
+                      </button>
+                      <button type="button" onClick={() => removeLesson(l)} className="flex min-h-[48px] items-center justify-center gap-1.5 bg-card text-xs font-extrabold text-destructive active:bg-destructive/10"><Trash2 size={15} /> حذف</button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </section>
+
+        {/* ── الأعضاء ── */}
+        <FoundationMembersPanel sectionId={section.id} flash={flash} onChanged={onChanged} />
+      </div>
+
+      {lessonModal ? (
+        <Modal
+          title={lessonModal.mode === 'create' ? 'درس جديد في التأسيس' : 'تعديل الدرس'}
+          eyebrow={`${section.title} · دروس فقط`}
+          onClose={() => setLessonModal(null)}
+          maxWidth="max-w-4xl"
+        >
+          <FoundationLessonForm
+            form={lessonForm}
+            setForm={setLessonForm}
+            saving={savingLesson}
+            submitLabel={lessonModal.mode === 'create' ? 'إضافة الدرس' : 'حفظ التعديلات'}
+            onSubmit={saveLesson}
+            onCancel={() => setLessonModal(null)}
+          />
+        </Modal>
+      ) : null}
+
+      {preview ? (
+        <Modal title={preview.title || 'معاينة الدرس'} eyebrow="هكذا يراه الطالب تماماً" onClose={() => setPreview(null)} maxWidth="max-w-4xl">
+          {preview.__loading ? (
+            <p className="flex items-center justify-center gap-3 py-14 text-sm font-bold text-primary"><RefreshCw size={20} className="animate-spin" /> جارٍ تحميل المعاينة...</p>
+          ) : (
+            <div className="pb-4"><FoundationLessonBody lesson={preview} /></div>
+          )}
+        </Modal>
+      ) : null}
+    </>
+  );
+}
+
+/* ═══════════════ لوحة الأعضاء — الاختيار بالاسم (لمس) ═══════════════ */
+function FoundationMembersPanel({ sectionId, flash, onChanged }: { sectionId: string; flash: (t: string) => void; onChanged?: () => void }) {
+  const [students, setStudents] = useState<any[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [q, setQ] = useState('');
+  const [gradeFilter, setGradeFilter] = useState('الكل');
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const d = await jsonFetch(`/api/teacher/foundation/sections/${sectionId}/members`);
+      setStudents(Array.isArray(d?.students) ? d.students : []);
+      setSelected(new Set(Array.isArray(d?.memberIds) ? d.memberIds : []));
+    } catch (err: any) { setStudents([]); flash(err?.message || 'تعذر تحميل الطلاب'); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [sectionId]);
+
+  const grades = useMemo(() => ['الكل', ...Array.from(new Set(students.map((s) => s.grade).filter(Boolean)))], [students]);
+  const shown = useMemo(() => {
+    const needle = foundationFold(q);
+    return students.filter((s) => {
+      if (gradeFilter !== 'الكل' && s.grade !== gradeFilter) return false;
+      if (!needle) return true;
+      return foundationFold(s.name).includes(needle) || foundationFold(s.grade).includes(needle);
+    });
+  }, [students, q, gradeFilter]);
+
+  const toggle = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const save = async () => {
+    setSaving(true);
+    try {
+      await jsonFetch(`/api/teacher/foundation/sections/${sectionId}/members`, { method: 'PUT', body: { memberIds: [...selected] } });
+      flash(`تم حفظ ${selected.size} طالب — سيظهر القسم لهم فوراً.`);
+      onChanged?.();
+    } catch (err: any) { flash(err?.message || 'تعذر حفظ الأعضاء'); }
+    finally { setSaving(false); }
+  };
+  const selectAllShown = () => setSelected((prev) => { const next = new Set(prev); shown.forEach((s) => next.add(s.id)); return next; });
+  const clearShown = () => setSelected((prev) => { const next = new Set(prev); shown.forEach((s) => next.delete(s.id)); return next; });
+
+  return (
+    <section>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <h2 className="flex items-center gap-2 font-display text-lg font-extrabold text-primary"><UsersRound size={20} /> من يرى هذا القسم؟</h2>
+        <span className="rounded-xl bg-[#6a1b9a]/10 px-3 py-1.5 text-xs font-extrabold tabular-nums text-[#6a1b9a]">{selected.size} محدد</span>
+      </div>
+
+      <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
+        <div className="space-y-3 border-b border-border bg-gradient-to-l from-secondary/70 to-card p-4">
+          <div className="relative">
+            <Search size={19} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="ابحث باسم الطالب أو الصف..."
+              className={`${touchCls} pr-12`}
+              data-testid="input-foundation-member-search"
+            />
+            {q ? <button type="button" onClick={() => setQ('')} className="absolute left-3 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-xl text-muted-foreground active:bg-secondary" aria-label="مسح"><X size={18} /></button> : null}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {grades.map((g) => (
+              <button
+                key={g}
+                type="button"
+                onClick={() => setGradeFilter(g)}
+                className={`min-h-[44px] rounded-xl px-4 text-xs font-extrabold transition-colors ${gradeFilter === g ? 'bg-primary text-primary-foreground shadow-sm' : 'border-2 border-border bg-card text-muted-foreground active:bg-secondary'}`}
+              >
+                {g}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={selectAllShown} className={`${touchBtnSoft} min-h-[44px] px-4 text-xs`}><Check size={15} /> تحديد المعروض ({shown.length})</button>
+            <button type="button" onClick={clearShown} className={`${touchBtnGhost} min-h-[44px] px-4 text-xs`}><X size={15} /> إلغاء المعروض</button>
+          </div>
+        </div>
+
+        <div className="max-h-[560px] overflow-y-auto overscroll-contain p-2">
+          {loading ? (
+            <p className="flex items-center justify-center gap-2.5 py-10 text-sm font-bold text-primary"><RefreshCw size={18} className="animate-spin" /> جارٍ تحميل الطلاب...</p>
+          ) : !shown.length ? (
+            <p className="px-4 py-10 text-center text-sm text-muted-foreground">لا يوجد طالب مطابق — جرّب اسماً آخر أو صفاً آخر.</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {shown.map((s) => {
+                const on = selected.has(s.id);
+                return (
+                  <li key={s.id}>
+                    <button
+                      type="button"
+                      onClick={() => toggle(s.id)}
+                      className={`flex min-h-[60px] w-full items-center gap-3 rounded-2xl border-2 p-3 text-right transition-colors ${on ? 'border-primary bg-primary/8' : 'border-transparent bg-background active:bg-secondary/50'}`}
+                      data-testid={`member-${s.id}`}
+                    >
+                      <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl ${on ? 'bg-primary text-primary-foreground' : 'border-2 border-border bg-card text-transparent'}`}>
+                        <Check size={17} />
+                      </span>
+                      {s.avatarUrl
+                        ? <img src={s.avatarUrl} alt="" className="h-11 w-11 shrink-0 rounded-xl object-cover" />
+                        : <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl text-sm font-extrabold ${on ? 'bg-primary text-primary-foreground' : 'bg-secondary text-primary'}`}>{(s.name || '؟').slice(0, 1)}</span>}
+                      <span className="min-w-0 flex-1">
+                        <span className={`block truncate text-[15px] font-extrabold ${on ? 'text-primary' : 'text-muted-foreground'}`}>{s.name}</span>
+                        <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] font-bold text-muted-foreground">
+                          <span className="rounded-md bg-secondary px-1.5 py-0.5">{s.grade}</span>
+                          {s.section ? <span className="rounded-md bg-secondary px-1.5 py-0.5">قسم {s.section}</span> : null}
+                          {s.gender ? <span className="rounded-md bg-secondary px-1.5 py-0.5">{s.gender}</span> : null}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        <div className="sticky bottom-0 border-t border-border bg-card/95 p-3 backdrop-blur">
+          <button type="button" onClick={save} disabled={saving || loading} className={`${touchBtnPrimary} w-full`} data-testid="button-save-foundation-members">
+            <Save size={18} /> {saving ? 'جارٍ الحفظ...' : `حفظ — ${selected.size} طالباً الآن`}
+          </button>
+          <p className="mt-2 text-center text-[11px] leading-5 text-muted-foreground">
+            لا يرى الطالب القسم إلا إذا ظهر اسمه هنا — والحفظ يُفعّل الدخول فوراً.
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ══════════════════ نموذج الدرس (لمس) ══════════════════ */
+function FoundationLessonForm({ form, setForm, saving, submitLabel, onSubmit, onCancel }: {
+  form: any;
+  setForm: (updater: any) => void;
+  saving: boolean;
+  submitLabel: string;
+  onSubmit: (e: FormEvent) => void;
+  onCancel: () => void;
+}) {
+  const kind = String(form.kind || 'text');
+  const meta = FOUNDATION_KINDS[kind] || FOUNDATION_KINDS.text;
+  const [images, setImages] = useState<string[]>(Array.isArray(form.images) ? form.images : []);
+  const [uploading, setUploading] = useState(false);
+  const [htmlTab, setHtmlTab] = useState<'paste' | 'file'>(form.htmlContent ? 'paste' : 'file');
+  const [htmlUploading, setHtmlUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const multiRef = useRef<HTMLInputElement>(null);
+
+  // نزامن الصور مع النموذج دون إعادة كتابة الحقول الأخرى
+  const pushImages = (next: string[]) => { setImages(next); setForm({ ...form, images: next }); };
+
+  const addImages = async (files: FileList | null) => {
+    const list = Array.from(files || []).filter((f) => f.type.startsWith('image/')).slice(0, 10);
+    if (!list.length) return;
+    setUploading(true);
+    const added: string[] = [];
+    for (const f of list) {
+      try { const r = await uploadFileToCloud(f, '/ard-al-lughah/lessons'); if (r?.url) added.push(r.url); }
+      catch { /* نُكمل الباقي ونُبلّغ بالنتيجة */ }
+    }
+    if (added.length) pushImages([...images, ...added]);
+    setUploading(false);
+  };
+
+  const uploadHtml = async (file?: File | null) => {
+    if (!file) return;
+    setHtmlUploading(true);
+    try {
+      const text = await readTextFile(file);
+      // نقرأ الملف نصاً ونلصقه مباشرة — يخفيه عن أي خدمة خارجية ويفتح فوراً
+      setForm({ ...form, htmlContent: text, htmlFileUrl: '' });
+      setHtmlTab('paste');
+    } catch { /* تجاهل — سيبقى الحقل كما هو */ }
+    setHtmlUploading(false);
+  };
+
+  const wants = (k: string) => kind === 'mixed' || kind === k;
+
+  return (
+    <form onSubmit={onSubmit} className="space-y-5 pb-4">
+      {/* معاينة حيّة */}
+      <div className="relative overflow-hidden rounded-3xl p-5 shadow-lg" style={{ background: `linear-gradient(135deg, ${meta.tone}, ${meta.tone}bb)` }}>
+        <div className="pointer-events-none absolute -left-6 -top-8 select-none font-display text-[5.5rem] leading-none text-white/15">{meta.label.slice(0, 1)}</div>
+        <div className="relative flex items-center gap-4">
+          <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-white/25 text-white shadow-xl backdrop-blur-sm"><meta.Icon size={26} /></span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-display text-lg font-extrabold text-white">{form.title || 'عنوان الدرس...'}</p>
+            <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] font-bold text-white/90">
+              <span className="rounded-lg bg-black/25 px-2 py-0.5">{meta.label}</span>
+              {images.length ? <span className="rounded-lg bg-black/25 px-2 py-0.5">{images.length} صورة</span> : null}
+              {form.videoUrl ? <span className="rounded-lg bg-black/25 px-2 py-0.5">فيديو</span> : null}
+              {(form.htmlContent || form.htmlFileUrl) ? <span className="rounded-lg bg-black/25 px-2 py-0.5">HTML</span> : null}
+            </p>
+          </div>
+        </div>
+        <span className="absolute left-4 top-4 rounded-full bg-black/40 px-3 py-1 text-[10px] font-bold text-white backdrop-blur-md">معاينة حية</span>
+      </div>
+
+      {/* نوع الدرس — شبكة أزرار كبيرة */}
+      <div>
+        <p className="mb-2 block text-sm font-semibold">نوع الدرس <span className="font-normal text-muted-foreground">(يحدد ما يظهر للطالب)</span></p>
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+          {FOUNDATION_KIND_ORDER.map((k) => {
+            const m = FOUNDATION_KINDS[k];
+            const on = kind === k;
+            const KI = m.Icon;
+            return (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setForm({ ...form, kind: k })}
+                className={`flex min-h-[74px] items-center gap-3 rounded-2xl border-2 p-3 text-right transition-all active:scale-[.97] ${on ? 'border-transparent text-white shadow-md' : 'border-border bg-card'}`}
+                style={on ? { background: m.tone } : undefined}
+                data-testid={`kind-${k}`}
+              >
+                <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${on ? 'bg-white/25' : 'bg-secondary'}`}><KI size={19} style={on ? undefined : { color: m.tone }} /></span>
+                <span className="min-w-0">
+                  <span className={`block text-sm font-extrabold ${on ? 'text-white' : 'text-primary'}`}>{m.label}</span>
+                  <span className={`block text-[10px] ${on ? 'text-white/80' : 'text-muted-foreground'}`}>{m.hint}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <Field2 label="عنوان الدرس *"><input value={form.title || ''} onChange={(e) => setForm({ ...form, title: e.target.value })} required placeholder="مثال: حروف المد — من الفتح إلى الياء" className={touchCls} data-testid="input-foundation-lesson-title" /></Field2>
+      <Field2 label="وصف قصير" hint="سطر أو سطران يظهر أعلى الدرس عند الطالب"><textarea value={form.description || ''} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2} placeholder="نتعلم اليوم..." className={`${touchCls} resize-none leading-7`} /></Field2>
+
+      {/* النص */}
+      {wants('text') ? (
+        <Field2 label="نصّ الدرس" hint="اكتب الشرح كاملاً — يظهر بخط واضح وسطر مريح للقراءة">
+          <textarea value={form.bodyText || ''} onChange={(e) => setForm({ ...form, bodyText: e.target.value })} rows={9} placeholder="اكتب شرح الدرس هنا..." className={`${touchCls} resize-y font-serif leading-9`} data-testid="input-foundation-lesson-text" />
+        </Field2>
+      ) : null}
+
+      {/* الصور */}
+      {wants('image') ? (
+        <div className="rounded-3xl border-2 border-dashed border-accent/50 bg-accent/8 p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="flex items-center gap-2 text-sm font-extrabold text-primary"><ImagePlus size={17} /> صور الدرس ({images.length})</p>
+            <button type="button" onClick={() => multiRef.current?.click()} disabled={uploading} className={`${touchBtnSoft} min-h-[44px] px-4 text-xs`} data-testid="button-foundation-add-images">
+              {uploading ? <RefreshCw size={15} className="animate-spin" /> : <Upload size={15} />} {uploading ? 'جارٍ الرفع...' : 'أضف صوراً'}
+            </button>
+            <input ref={multiRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => { addImages(e.target.files); e.target.value = ''; }} />
+          </div>
+          {images.length ? (
+            <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4">
+              {images.map((src, i) => (
+                <div key={src + i} className="group relative aspect-square overflow-hidden rounded-2xl border border-border bg-secondary">
+                  <img src={src} alt="" className="h-full w-full object-cover" />
+                  <button type="button" onClick={() => pushImages(images.filter((_, j) => j !== i))} className="absolute left-1.5 top-1.5 grid h-9 w-9 place-items-center rounded-xl bg-black/60 text-white active:bg-destructive" aria-label="حذف الصورة"><X size={16} /></button>
+                  {i === 0 ? <span className="absolute bottom-1.5 right-1.5 rounded-lg bg-primary px-2 py-0.5 text-[9px] font-extrabold text-primary-foreground">الغلاف</span> : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-2xl bg-background/70 px-4 py-6 text-center text-sm text-muted-foreground">لا صور بعد — اضغط «أضف صوراً» لرفعها من جهازك.</p>
+          )}
+          {images.length ? (
+            <p className="mt-2 text-[11px] leading-5 text-muted-foreground">أول صورة في الصف الأول هي غلاف الدرس. اضغط أي صورة لتراها بحجمها.</p>
+          ) : null}
+          <div className="mt-3">
+            <ImageUrlField label="أو غلاف برابط مباشر" value={form.coverUrl || ''} onChange={(v) => setForm({ ...form, coverUrl: v })} testId="input-foundation-lesson-cover" folder="/ard-al-lughah/covers" />
+          </div>
+        </div>
+      ) : null}
+
+      {/* الفيديو */}
+      {wants('video') ? (
+        <div className="rounded-3xl border-2 border-dashed border-[#0d47a1]/40 bg-[#0d47a1]/6 p-4">
+          <p className="mb-3 flex items-center gap-2 text-sm font-extrabold text-primary"><Video size={17} /> فيديو الدرس</p>
+          <Field2 label="رابط الفيديو" hint="يوتيوب (عادي أو مختصر) أو Vimeo أو رابط ملف mp4 مباشر">
+            <input value={form.videoUrl || ''} onChange={(e) => setForm({ ...form, videoUrl: e.target.value })} dir="ltr" placeholder="https://www.youtube.com/watch?v=..." className={`${touchCls} font-mono text-sm`} data-testid="input-foundation-video" />
+          </Field2>
+          <div className="mt-3">
+            <Field2 label="وصف تحت الفيديو" hint="سطر يشرح للطالب ماذا يتعلم من المقطع">
+              <input value={form.videoCaption || ''} onChange={(e) => setForm({ ...form, videoCaption: e.target.value })} placeholder="شرح قاعدة المد..." className={touchCls} />
+            </Field2>
+          </div>
+          {form.videoUrl ? (
+            <div className="mt-3"><FoundationVideoPlayer url={form.videoUrl} caption={form.videoCaption} /></div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* HTML */}
+      {wants('html') ? (
+        <div className="rounded-3xl border-2 border-dashed border-[#6a1b9a]/40 bg-[#6a1b9a]/6 p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="flex items-center gap-2 text-sm font-extrabold text-primary"><FileCode2 size={17} /> محتوى HTML تفاعلي</p>
+            <span className="flex overflow-hidden rounded-xl border-2 border-border">
+              <button type="button" onClick={() => setHtmlTab('paste')} className={`min-h-[44px] px-4 text-xs font-extrabold ${htmlTab === 'paste' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>لصق الكود</button>
+              <button type="button" onClick={() => setHtmlTab('file')} className={`min-h-[44px] px-4 text-xs font-extrabold ${htmlTab === 'file' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>رفع ملف</button>
+            </span>
+          </div>
+
+          {htmlTab === 'paste' ? (
+            <textarea
+              value={form.htmlContent || ''}
+              onChange={(e) => setForm({ ...form, htmlContent: e.target.value })}
+              rows={9}
+              dir="ltr"
+              spellCheck={false}
+              placeholder="<html>…</html> الصق الكود كاملاً"
+              className={`${touchCls} resize-y font-mono text-xs leading-6`}
+              data-testid="input-foundation-html"
+            />
+          ) : (
+            <div className="space-y-2">
+              <button type="button" onClick={() => fileRef.current?.click()} disabled={htmlUploading} className={`${touchBtnSoft} w-full`}>
+                {htmlUploading ? <RefreshCw size={18} className="animate-spin" /> : <Upload size={18} />} {htmlUploading ? 'جارٍ القراءة...' : 'اختر ملف HTML من جهازك'}
+              </button>
+              <input ref={fileRef} type="file" accept=".html,.htm,text/html" className="hidden" onChange={(e) => { uploadHtml(e.target.files?.[0]); e.target.value = ''; }} />
+              <Field2 label="أو رابط ملف HTML">
+                <input value={form.htmlFileUrl || ''} onChange={(e) => setForm({ ...form, htmlFileUrl: e.target.value })} dir="ltr" placeholder="https://.../lesson.html" className={`${touchCls} font-mono text-sm`} />
+              </Field2>
+            </div>
+          )}
+
+          {(form.htmlContent || form.htmlFileUrl) ? (
+            <div className="mt-4">
+              <p className="mb-2 text-xs font-extrabold text-primary">👁 معاينة قبل النشر</p>
+              <HtmlPreviewFrame content={form.htmlContent} fileUrl={form.htmlFileUrl} />
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* التحكم */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <button type="button" onClick={() => setForm({ ...form, isVisible: !form.isVisible })} className={`flex min-h-[60px] items-center gap-3 rounded-2xl border-2 p-4 text-right transition-colors ${form.isVisible !== false ? 'border-primary bg-primary/8' : 'border-border bg-card'}`}>
+          <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg ${form.isVisible !== false ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>{form.isVisible !== false ? <Check size={16} /> : null}</span>
+          <span><span className="block text-sm font-extrabold text-primary">ظاهر للطالب</span><span className="block text-[11px] text-muted-foreground">أطفئه ليجهّز الدرس دون نشر</span></span>
+        </button>
+        <button type="button" onClick={() => setForm({ ...form, isLocked: !form.isLocked })} className={`flex min-h-[60px] items-center gap-3 rounded-2xl border-2 p-4 text-right transition-colors ${form.isLocked ? 'border-[#b7791f] bg-[#b7791f]/10' : 'border-border bg-card'}`}>
+          <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg ${form.isLocked ? 'bg-[#b7791f] text-white' : 'bg-muted text-muted-foreground'}`}>{form.isLocked ? <Lock size={15} /> : null}</span>
+          <span><span className="block text-sm font-extrabold text-primary">مقفل</span><span className="block text-[11px] text-muted-foreground">يظهر عنوانه ولا يفتح حتى تفتحه</span></span>
+        </button>
+      </div>
+
+      <div className="sticky bottom-0 -mx-4 flex gap-3 border-t border-border bg-card/95 px-4 pb-2 pt-4 backdrop-blur sm:-mx-7 sm:px-7">
+        <button type="submit" disabled={saving} className={`${touchBtnPrimary} flex-1`}><Save size={18} /> {saving ? 'جارٍ الحفظ...' : submitLabel}</button>
+        <button type="button" onClick={onCancel} className={touchBtnSoft}>إلغاء</button>
+      </div>
+    </form>
+  );
+}
+
+/* ═══════════════════════════ واجهة الطالب ═══════════════════════════ */
+function StudentFoundationPage() {
+  const [sections, setSections] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    let live = true;
+    jsonFetch('/api/foundation/sections')
+      .then((d) => { if (live) setSections(Array.isArray(d) ? d : []); })
+      .catch((e) => { if (live) { setErr(e?.message || 'تعذر التحميل'); setSections([]); } })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, []);
+
+  const totalLessons = sections.reduce((a, s) => a + (s.totalCount || 0), 0);
+  const totalDone = sections.reduce((a, s) => a + (s.doneCount || 0), 0);
+  const pct = totalLessons > 0 ? Math.round((totalDone / totalLessons) * 100) : 0;
+
+  return (
+    <Shell mode="student">
+      <section className="relative mb-7 overflow-hidden rounded-[2rem] bg-gradient-to-l from-[#0c2725] via-[#17413f] to-[#2a7a72] p-6 text-white shadow-xl sm:p-9">
+        <div className="pointer-events-none absolute -left-16 -top-16 h-56 w-56 rounded-full bg-accent/25 blur-3xl" />
+        <div className="pointer-events-none absolute -right-10 -bottom-20 h-48 w-48 rounded-full bg-accent/15 blur-3xl" />
+        <div className="pointer-events-none absolute -left-2 -top-10 select-none font-display text-[9rem] leading-none text-white/[0.07]">ت</div>
+        <div className="relative">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-accent px-3.5 py-1.5 text-xs font-extrabold text-[#3a2c07] shadow-sm"><Sprout size={13} /> قسم خاص بك أنت</span>
+          <h1 className="mt-3 font-display text-3xl font-bold leading-snug sm:text-4xl">التأسيس</h1>
+          <p className="mt-2 max-w-xl text-sm leading-7 text-white/75">دروس أعدّها الأستاذ لك وحدك — نصّ وصور وفيديو ومحتوى تفاعلي، بالترتيب الذي رتّبه لك.</p>
+          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              { value: sections.length, label: 'أقسام متاحة' },
+              { value: totalLessons, label: 'درس متاح' },
+              { value: totalDone, label: 'أنجزته' },
+              { value: `${pct}%`, label: 'نسبة الإنجاز' },
+            ].map((s, i) => (
+              <div key={i} className="rounded-2xl bg-white/10 px-4 py-3.5 backdrop-blur-md ring-1 ring-white/15">
+                <p className="font-display text-2xl font-bold text-accent">{s.value}</p>
+                <p className="mt-0.5 text-xs font-semibold text-white/65">{s.label}</p>
+              </div>
+            ))}
+          </div>
+          {pct > 0 ? (
+            <div className="mt-5">
+              <div className="mb-1.5 flex items-center justify-between text-xs font-extrabold text-white/80"><span>تقدّمك في التأسيس</span><span className="tabular-nums">{pct}%</span></div>
+              <div className="h-2.5 overflow-hidden rounded-full bg-white/15"><div className="h-full rounded-full bg-gradient-to-l from-accent to-[#f3d68a] transition-[width] duration-700" style={{ width: `${pct}%` }} /></div>
+            </div>
+          ) : null}
+        </div>
+      </section>
+
+      {loading ? <StateNotice type="loading" /> : err && !sections.length ? (
+        <StateNotice type="error" onRetry={() => window.location.reload()} />
+      ) : !sections.length ? (
+        <div className="relative overflow-hidden rounded-[2rem] border border-dashed border-border bg-card px-6 py-16 text-center">
+          <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-secondary text-primary"><ShieldCheck size={30} /></span>
+          <p className="font-display text-xl font-bold text-primary">لم يُفتح لك قسم تأسيس بعد</p>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-muted-foreground">هذا القسم خاص — لا يظهر إلا لمن يختاره الأستاذ بالاسم. تواصل مع الأستاذ لتُضاف إلى القسم.</p>
+        </div>
+      ) : (
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {sections.map((s) => {
+            const Icon = (UNIT_ICONS as any)[s.icon] || Sparkles;
+            const p = s.totalCount > 0 ? Math.round((s.doneCount / s.totalCount) * 100) : 0;
+            return (
+              <Link
+                key={s.id}
+                href={`/student/foundation/s/${s.id}`}
+                className={`group relative flex flex-col overflow-hidden rounded-[2rem] border bg-card shadow-md transition-transform active:scale-[.99] ${s.isLocked ? 'border-[#b7791f]/40' : 'border-border'}`}
+                data-testid={`foundation-card-${s.id}`}
+              >
+                <div className="relative h-44 overflow-hidden" style={{ background: `linear-gradient(135deg, ${s.color}, ${s.color}aa)` }}>
+                  {s.coverUrl ? <img src={s.coverUrl} alt={s.title} className="h-full w-full object-cover transition-transform duration-500 group-active:scale-105" loading="lazy" /> : null}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent" />
+                  <span className="absolute right-4 top-4 grid h-12 w-12 place-items-center rounded-2xl bg-white/25 text-white shadow-lg backdrop-blur-sm"><Icon size={24} /></span>
+                  {s.isLocked ? (
+                    <span className="absolute inset-0 grid place-items-center bg-black/45 backdrop-blur-[2px]">
+                      <span className="inline-flex items-center gap-2 rounded-2xl bg-black/50 px-5 py-3 text-sm font-extrabold text-white ring-1 ring-white/25"><Lock size={17} /> مقفل مؤقتاً</span>
+                    </span>
+                  ) : null}
+                  <span className="absolute bottom-3 right-4 left-4">
+                    <span className="block truncate font-display text-lg font-extrabold text-white drop-shadow">{s.title}</span>
+                    {s.subtitle ? <span className="mt-0.5 block truncate text-xs font-bold text-white/85">{s.subtitle}</span> : null}
+                  </span>
+                </div>
+
+                <div className="flex flex-1 flex-col gap-3 p-5">
+                  {s.description ? <p className="line-clamp-2 text-sm leading-6 text-muted-foreground">{s.description}</p> : null}
+                  <div className="mt-auto space-y-3">
+                    <div className="flex items-center justify-between text-xs font-extrabold text-primary">
+                      <span className="inline-flex items-center gap-1.5"><BookOpen size={14} /> {s.totalCount} درس</span>
+                      <span className="tabular-nums text-muted-foreground">{s.doneCount} / {s.totalCount}</span>
+                    </div>
+                    <div className="h-2.5 overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-gradient-to-l from-primary via-accent to-accent transition-[width] duration-700" style={{ width: `${p}%` }} />
+                    </div>
+                    <span className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-secondary text-sm font-extrabold text-primary">
+                      {s.isLocked ? <Lock size={16} /> : <>ابدأ الآن <ArrowLeft size={16} /></>}
+                    </span>
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </Shell>
+  );
+}
+
+function StudentFoundationSectionPage() {
+  const params = useParams();
+  const sectionId = String((params as any)?.sectionId || '');
+  const [, setLocation] = useLocation();
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [denied, setDenied] = useState('');
+  const [tab, setTab] = useState<'all' | 'todo' | 'done'>('all');
+
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    setDenied('');
+    // فحص فوري: الخادم يتحقق من العضوية قبل أي محتوى — أقل من ثانية
+    jsonFetch(`/api/foundation/sections/${sectionId}`)
+      .then((d) => { if (live) setData(d); })
+      .catch((e) => { if (live) { setDenied(e?.message || 'هذا القسم غير متاح لحسابك.'); setData(null); } })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [sectionId]);
+
+  if (loading) return <Shell mode="student"><StateNotice type="loading" /></Shell>;
+
+  if (denied || !data) {
+    return (
+      <Shell mode="student">
+        <div className="mx-auto max-w-lg rounded-[2rem] border border-border bg-card px-6 py-14 text-center">
+          <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-destructive/10 text-destructive"><ShieldCheck size={30} /></span>
+          <p className="font-display text-xl font-bold text-primary">القسم غير متاح</p>
+          <p className="mt-2 text-sm leading-7 text-muted-foreground">{denied || 'هذا القسم خاص ولا يظهر إلا لمن يختاره الأستاذ.'}</p>
+          <button type="button" onClick={() => setLocation('/student/foundation')} className={`${touchBtnPrimary} mt-6`}><ChevronRight size={18} /> عودة للتأسيس</button>
+        </div>
+      </Shell>
+    );
+  }
+
+  const Icon = (UNIT_ICONS as any)[data.icon] || Sparkles;
+  const lessons: any[] = Array.isArray(data.lessons) ? data.lessons : [];
+  const shown = lessons.filter((l) => (tab === 'all' ? true : tab === 'done' ? l.done : !l.done));
+  const pct = data.totalCount > 0 ? Math.round((data.doneCount / data.totalCount) * 100) : 0;
+
+  return (
+    <Shell mode="student">
+      <button type="button" onClick={() => setLocation('/student/foundation')} className="mb-5 inline-flex min-h-[52px] items-center gap-2 rounded-2xl border-2 border-border bg-card px-5 text-sm font-extrabold text-primary active:bg-secondary" data-testid="button-back-foundation-list">
+        <ChevronRight size={18} /> عودة للتأسيس
+      </button>
+
+      <header className="relative mb-6 overflow-hidden rounded-[2rem] shadow-xl">
+        {data.coverUrl ? (
+          <img src={data.coverUrl} alt={data.title} className="h-48 w-full object-cover sm:h-64" />
+        ) : (
+          <div className="h-48 sm:h-64" style={{ background: `linear-gradient(135deg, ${data.color}, ${data.color}99)` }} />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />
+        <div className="absolute bottom-0 right-0 left-0 flex items-end gap-4 p-5 sm:p-7">
+          <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-white/25 text-white shadow-xl backdrop-blur-sm"><Icon size={28} /></span>
+          <div className="min-w-0 flex-1">
+            {data.subtitle ? <p className="text-xs font-extrabold text-accent">{data.subtitle}</p> : null}
+            <h1 className="mt-0.5 truncate font-display text-2xl font-extrabold text-white sm:text-3xl">{data.title}</h1>
+          </div>
+        </div>
+      </header>
+
+      {data.description ? <p className="mb-5 rounded-3xl border-r-4 border-accent bg-secondary/50 p-5 text-[15px] font-semibold leading-8 text-primary">{data.description}</p> : null}
+
+      <div className="mb-6 rounded-3xl border border-border bg-card p-5 shadow-sm">
+        <div className="mb-2.5 flex items-center justify-between text-sm font-extrabold text-primary">
+          <span className="inline-flex items-center gap-2"><Sparkles size={17} className="text-accent-foreground" /> تقدّمك في هذا القسم</span>
+          <span className="tabular-nums">{data.doneCount} / {data.totalCount} · {pct}%</span>
+        </div>
+        <div className="h-3 overflow-hidden rounded-full bg-muted">
+          <div className="h-full rounded-full bg-gradient-to-l from-primary via-accent to-accent transition-[width] duration-700" style={{ width: `${pct}%` }} />
+        </div>
+        {pct === 100 && data.totalCount > 0 ? (
+          <p className="mt-3 flex items-center gap-2 rounded-2xl bg-green-500/12 px-4 py-3 text-sm font-extrabold text-green-800">
+            <CheckCircle2 size={18} /> أكملت كل دروس القسم — بارك الله فيك!
+          </p>
+        ) : null}
+      </div>
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        {[
+          { id: 'all', label: 'كل الدروس', n: lessons.length },
+          { id: 'todo', label: 'باقي', n: lessons.filter((l) => !l.done).length },
+          { id: 'done', label: 'أنجزتها', n: lessons.filter((l) => l.done).length },
+        ].map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id as any)}
+            className={`min-h-[52px] rounded-2xl px-5 text-sm font-extrabold transition-colors ${tab === t.id ? 'bg-primary text-primary-foreground shadow-md' : 'border-2 border-border bg-card text-muted-foreground active:bg-secondary'}`}
+          >
+            {t.label} <span className="mr-1 tabular-nums opacity-75">({t.n})</span>
+          </button>
+        ))}
+      </div>
+
+      {!shown.length ? (
+        <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-14 text-center">
+          <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-3xl bg-secondary text-primary"><CheckCircle2 size={26} /></span>
+          <p className="font-display text-lg font-bold text-primary">{tab === 'done' ? 'لم تُنجز درساً بعد' : 'لا شيء متبقٍ — أحسنت!'}</p>
+          <p className="mt-1.5 text-sm text-muted-foreground">{tab === 'done' ? 'أنجز درساً وسيظهر هنا مباشرة.' : 'أنهيت كل دروس هذا القسم.'}</p>
+        </div>
+      ) : (
+        <ol className="grid gap-4 sm:grid-cols-2">
+          {shown.map((l, idx) => {
+            const meta = FOUNDATION_KINDS[l.kind] || FOUNDATION_KINDS.text;
+            const KIcon = meta.Icon;
+            const blocked = l.isLocked;
+            const body = (
+              <div className={`relative flex h-full flex-col overflow-hidden rounded-3xl border bg-card shadow-sm transition-transform ${blocked ? '' : 'active:scale-[.99]'} ${blocked ? 'border-[#b7791f]/40' : 'border-border'}`}>
+                <div className="relative h-32 overflow-hidden" style={{ background: `linear-gradient(135deg, ${meta.tone}, ${meta.tone}aa)` }}>
+                  {l.coverUrl ? <img src={l.coverUrl} alt="" className="h-full w-full object-cover" loading="lazy" /> : null}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/55 to-transparent" />
+                  <span className="absolute right-3 top-3 grid h-10 w-10 place-items-center rounded-xl bg-white/25 text-white shadow backdrop-blur-sm"><KIcon size={20} /></span>
+                  <span className="absolute bottom-2.5 right-3 left-3 flex items-center gap-2">
+                    <span className="rounded-lg bg-black/45 px-2 py-0.5 text-[10px] font-extrabold text-white backdrop-blur-sm">{meta.label}</span>
+                    {l.done ? <span className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-2 py-0.5 text-[10px] font-extrabold text-white"><CheckCircle2 size={11} /> تم</span> : null}
+                  </span>
+                  {blocked ? (
+                    <span className="absolute inset-0 grid place-items-center bg-black/50 backdrop-blur-[2px]">
+                      <span className="inline-flex items-center gap-2 rounded-2xl bg-black/55 px-4 py-2.5 text-xs font-extrabold text-white ring-1 ring-white/25"><Lock size={15} /> مقفل</span>
+                    </span>
+                  ) : null}
+                </div>
+                <div className="flex flex-1 flex-col gap-2 p-4">
+                  <p className="text-xs font-extrabold tabular-nums text-muted-foreground">الدرس {idx + 1}</p>
+                  <p className="text-base font-extrabold leading-7 text-primary">{l.title}</p>
+                  {l.textPreview ? <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">{l.textPreview}</p> : null}
+                  <div className="mt-auto flex flex-wrap gap-1.5 pt-1.5">
+                    {l.imageCount > 0 ? <span className="rounded-md bg-secondary px-2 py-0.5 text-[10px] font-bold text-primary">{l.imageCount} صورة</span> : null}
+                    {l.hasVideo ? <span className="rounded-md bg-secondary px-2 py-0.5 text-[10px] font-bold text-primary">فيديو</span> : null}
+                    {l.hasHtml ? <span className="rounded-md bg-secondary px-2 py-0.5 text-[10px] font-bold text-primary">تفاعلي</span> : null}
+                  </div>
+                </div>
+              </div>
+            );
+            return (
+              <li key={l.id}>
+                {blocked ? (
+                  <button type="button" onClick={() => window.alert('هذا الدرس مقفل مؤقتاً — انتظر أن يفتحه الأستاذ.')} className="block w-full text-right">{body}</button>
+                ) : (
+                  <Link href={`/student/foundation/s/${sectionId}/l/${l.id}`} className="block h-full">{body}</Link>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </Shell>
+  );
+}
+
+function StudentFoundationLessonPage() {
+  const params = useParams();
+  const sectionId = String((params as any)?.sectionId || '');
+  const lessonId = String((params as any)?.lessonId || '');
+  const [, setLocation] = useLocation();
+  const [lesson, setLesson] = useState<any>(null);
+  const [siblings, setSiblings] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [denied, setDenied] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [celebrate, setCelebrate] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    setDenied('');
+    setCelebrate(false);
+    (async () => {
+      try {
+        // الطلبان معاً: الدرس + قائمة القسم (لزر «التالي»)
+        const [ls, sec] = await Promise.all([
+          jsonFetch(`/api/foundation/lessons/${lessonId}`),
+          jsonFetch(`/api/foundation/sections/${sectionId}`),
+        ]);
+        if (!live) return;
+        setLesson(ls);
+        setSiblings(Array.isArray(sec?.lessons) ? sec.lessons : []);
+      } catch (e: any) {
+        if (live) { setDenied(e?.message || 'هذا الدرس غير متاح لحسابك.'); setLesson(null); }
+      } finally { if (live) setLoading(false); }
+    })();
+    return () => { live = false; };
+  }, [lessonId, sectionId]);
+
+  const meta = FOUNDATION_KINDS[lesson?.kind] || FOUNDATION_KINDS.text;
+  const KIcon = meta.Icon;
+  const idx = siblings.findIndex((l) => l.id === lessonId);
+  const next = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null;
+
+  const markDone = async () => {
+    if (saving || lesson?.done) return;
+    setSaving(true);
+    try {
+      await jsonFetch(`/api/foundation/lessons/${lessonId}/complete`, { method: 'POST' });
+      setLesson((prev: any) => ({ ...prev, done: true }));
+      setSiblings((prev) => prev.map((l) => (l.id === lessonId ? { ...l, done: true } : l)));
+      setCelebrate(true);
+    } catch { /* نُبقي الزر كما هو */ }
+    finally { setSaving(false); }
+  };
+
+  if (loading) return <Shell mode="student"><StateNotice type="loading" /></Shell>;
+
+  if (denied || !lesson) {
+    return (
+      <Shell mode="student">
+        <div className="mx-auto max-w-lg rounded-[2rem] border border-border bg-card px-6 py-14 text-center">
+          <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-destructive/10 text-destructive"><ShieldCheck size={30} /></span>
+          <p className="font-display text-xl font-bold text-primary">الدرس غير متاح</p>
+          <p className="mt-2 text-sm leading-7 text-muted-foreground">{denied || 'هذا الدرس غير متاح لحسابك.'}</p>
+          <button type="button" onClick={() => setLocation(`/student/foundation/s/${sectionId}`)} className={`${touchBtnPrimary} mt-6`}><ChevronRight size={18} /> عودة للقسم</button>
+        </div>
+      </Shell>
+    );
+  }
+
+  return (
+    <Shell mode="student">
+      <button type="button" onClick={() => setLocation(`/student/foundation/s/${sectionId}`)} className="mb-5 inline-flex min-h-[52px] items-center gap-2 rounded-2xl border-2 border-border bg-card px-5 text-sm font-extrabold text-primary active:bg-secondary" data-testid="button-back-foundation-lesson">
+        <ChevronRight size={18} /> عودة لدروس القسم
+      </button>
+
+      {lesson.isLocked ? (
+        <div className="rounded-[2rem] border border-[#b7791f]/40 bg-[#b7791f]/8 px-6 py-16 text-center">
+          <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-[#b7791f]/15 text-[#b7791f]"><Lock size={30} /></span>
+          <p className="font-display text-xl font-bold text-primary">هذا الدرس مقفل</p>
+          <p className="mt-2 text-sm leading-7 text-muted-foreground">يفتحه الأستاذ عندما يجهز — تابع قريباً.</p>
+        </div>
+      ) : (
+        <>
+          <header className="mb-6 flex items-start gap-4 rounded-[2rem] border border-border bg-card p-5 shadow-sm sm:p-7">
+            <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl text-white shadow-md" style={{ background: meta.tone }}><KIcon size={26} /></span>
+            <div className="min-w-0 flex-1">
+              <p className="flex flex-wrap items-center gap-2 text-xs font-extrabold text-muted-foreground">
+                <span className="rounded-lg bg-secondary px-2 py-0.5 text-primary">{meta.label}</span>
+                {idx >= 0 ? <span className="tabular-nums">الدرس {idx + 1} من {siblings.length}</span> : null}
+                {lesson.done ? <span className="inline-flex items-center gap-1 rounded-lg bg-green-600/12 px-2 py-0.5 text-green-800"><CheckCircle2 size={12} /> أنهيتَه</span> : null}
+              </p>
+              <h1 className="mt-1.5 font-display text-2xl font-extrabold leading-snug text-primary sm:text-3xl">{lesson.title}</h1>
+            </div>
+          </header>
+
+          <FoundationLessonBody lesson={lesson} />
+
+          {celebrate ? (
+            <div className="mt-6 flex items-center gap-3 rounded-3xl border border-green-500/30 bg-green-500/12 p-5 text-sm font-extrabold text-green-800 animate-fade-up" data-testid="foundation-done-banner">
+              <CheckCircle2 size={22} /> ما شاء الله! سُجّل إنجازك لهذا الدرس.
+            </div>
+          ) : null}
+
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+            <button type="button" onClick={markDone} disabled={saving || !!lesson.done} className={`${touchBtnPrimary} flex-1`} data-testid="button-foundation-complete">
+              <Check size={19} /> {lesson.done ? 'تم تسجيل الإنجاز' : saving ? 'جارٍ الحفظ...' : 'أنهيت هذا الدرس'}
+            </button>
+            {next ? (
+              <button type="button" onClick={() => setLocation(`/student/foundation/s/${sectionId}/l/${next.id}`)} className={`${touchBtnSoft} flex-1`}>
+                الدرس التالي <ArrowLeft size={18} />
+              </button>
+            ) : (
+              <button type="button" onClick={() => setLocation(`/student/foundation/s/${sectionId}`)} className={`${touchBtnSoft} flex-1`}>
+                عودة لدروس القسم <ArrowLeft size={18} />
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </Shell>
+  );
+}
+
+/* =========================================================================
+   ROUTING & ROOT APP
+   ========================================================================= */
 
 function Router() {
   const [location] = useLocation();
@@ -9279,6 +10819,9 @@ function Router() {
         <Route path="/student" component={StudentDashboardNew} />
         <Route path="/student/courses" component={StudentCoursesPage} />
         <Route path="/student/courses/:courseId/lessons/:lessonId" component={StudentLessonPage} />
+        <Route path="/student/foundation" component={StudentFoundationPage} />
+        <Route path="/student/foundation/s/:sectionId" component={StudentFoundationSectionPage} />
+        <Route path="/student/foundation/s/:sectionId/l/:lessonId" component={StudentFoundationLessonPage} />
         <Route path="/student/notebook" component={StudentNotebookPage} />
         <Route path="/student/assignments" component={AssignmentsPage} />
         <Route path="/student/announcements" component={StudentAnnouncementsPage} />
@@ -9287,6 +10830,7 @@ function Router() {
         <Route path="/teacher" component={TeacherDashboardNew} />
         <Route path="/teacher/students" component={StudentsPage} />
         <Route path="/teacher/students/grade/:grade" component={GradeStudentsRoute} />
+        <Route path="/teacher/foundation" component={TeacherFoundationPage} />
         <Route path="/teacher/content" component={CurriculumManagerPage} />
         <Route path="/teacher/exams" component={TeacherExamsPage} />
         <Route path="/teacher/assignments" component={TeacherAssignmentsPage} />
