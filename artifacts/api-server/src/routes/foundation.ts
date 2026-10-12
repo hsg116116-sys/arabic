@@ -243,6 +243,70 @@ router.get("/foundation/sections", requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * الـ STREAM — كل دروس التأسيس دفعة واحدة وبترتيبها.
+ * الطالب لا "يدخل" كل قسم ولا كل درس: يفتح التأسيس مرة واحدة ويقرأ متصلاً
+ * (نص تحت نص، صورة تحت صورة) — لهذا نجمع كل شيء في طلب واحد لا عدة.
+ * الإرجاع: { sections: [{...section, lessons:[درس كامل…]}], stats }
+ */
+router.get("/foundation/stream", requireAuth, async (req, res) => {
+  try {
+    const auth = (req as AuthedRequest).auth!;
+
+    // الأستاذ معاين: كل أقسامه
+    let ids: string[] | null = null;
+    if (auth.role !== "admin") {
+      const { data: memberships, error } = await supabaseQuery<any[]>(
+        `foundation_members?user_id=eq.${enc(auth.userId)}&select=section_id&limit=200`,
+      );
+      if (error) throw new Error(String(error));
+      ids = [...new Set((memberships || []).map((m: any) => m.section_id).filter(Boolean))];
+      if (!ids.length) {
+        res.json({ sections: [], stats: { sections: 0, lessons: 0, done: 0, percent: 0 } });
+        return;
+      }
+    }
+
+    const listFilter = ids ? `&id=in.(${ids.map(enc).join(",")})` : "";
+    const [{ data: sections }, { data: lessons }, { data: progress }] = await Promise.all([
+      supabaseQuery<any[]>(`foundation_sections?is_visible=eq.true&order=sort_order.asc${listFilter}&limit=200`),
+      supabaseQuery<any[]>(`foundation_lessons?is_visible=eq.true&order=position.asc${listFilter}&limit=1000`),
+      supabaseQuery<any[]>(`foundation_progress?user_id=eq.${enc(auth.userId)}&select=lesson_id&limit=2000`),
+    ]);
+
+    const done = new Set<string>((progress || []).map((p: any) => p.lesson_id));
+    const grouped: Record<string, any[]> = {};
+    for (const l of lessons || []) (grouped[l.section_id] ||= []).push(l);
+
+    const out = (sections || []).map((s: any) => {
+      const list = grouped[s.id] || [];
+      const doneCount = list.filter((l: any) => done.has(l.id)).length;
+      return {
+        ...sectionToJson(s),
+        lessonsCount: list.length,
+        doneCount,
+        totalCount: list.length,
+        lessons: list.map((l: any) => lessonToJson(l, { full: true, done: done.has(l.id) })),
+      };
+    });
+
+    const totalLessons = out.reduce((a, s) => a + s.totalCount, 0);
+    const totalDone = out.reduce((a, s) => a + s.doneCount, 0);
+    res.json({
+      sections: out,
+      stats: {
+        sections: out.length,
+        lessons: totalLessons,
+        done: totalDone,
+        percent: totalLessons > 0 ? Math.round((totalDone / totalLessons) * 100) : 0,
+      },
+    });
+  } catch (err: any) {
+    logger.error({ err }, "GET /foundation/stream failed");
+    res.status(500).json({ error: "تعذر تحميل محتوى التأسيس — " + V7_HINT });
+  }
+});
+
 /** فحص صلاحية فوري لـقسم واحد — أخف نقطة في النظام (استعلام واحد مفهرس) */
 router.get("/foundation/sections/:id/access", requireAuth, async (req, res) => {
   try {
@@ -418,6 +482,42 @@ router.get("/teacher/foundation/sections", requireAdmin, async (_req, res) => {
   } catch (err: any) {
     logger.error({ err }, "GET teacher foundation sections failed");
     res.status(500).json({ error: "تعذر تحميل أقسام التأسيس — " + V7_HINT });
+  }
+});
+
+/**
+ * الـ STREAM للأستاذ — كل الأقسام وكل الدروس دفعة واحدة وبالترتيب،
+ * ليعرضها في قائمة واحدة متصلة بدل التنقّل بين الأقسام.
+ */
+router.get("/teacher/foundation/stream", requireAdmin, async (_req, res) => {
+  try {
+    const [{ data: sections, error }, { data: lessons }, { data: members }] = await Promise.all([
+      supabaseQuery<any[]>("foundation_sections?order=sort_order.asc&limit=200"),
+      supabaseQuery<any[]>("foundation_lessons?order=position.asc&limit=2000"),
+      supabaseQuery<any[]>("foundation_members?select=section_id&limit=5000"),
+    ]);
+    if (error) throw new Error(String(error));
+
+    const memberCount: Record<string, number> = {};
+    for (const m of members || []) memberCount[m.section_id] = (memberCount[m.section_id] || 0) + 1;
+
+    const grouped: Record<string, any[]> = {};
+    for (const l of lessons || []) (grouped[l.section_id] ||= []).push(l);
+
+    res.json(
+      (sections || []).map((s: any) => {
+        const list = grouped[s.id] || [];
+        return {
+          ...sectionToJson(s),
+          memberCount: memberCount[s.id] || 0,
+          lessonsCount: list.length,
+          lessons: list.map((l: any) => lessonToJson(l)),
+        };
+      }),
+    );
+  } catch (err: any) {
+    logger.error({ err }, "GET teacher foundation stream failed");
+    res.status(500).json({ error: "تعذر تحميل محتوى التأسيس — " + V7_HINT });
   }
 });
 

@@ -37220,6 +37220,57 @@ router7.get("/foundation/sections", requireAuth, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u0645\u064A\u0644 \u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u062A\u0623\u0633\u064A\u0633 \u2014 " + V7_HINT });
   }
 });
+router7.get("/foundation/stream", requireAuth, async (req, res) => {
+  try {
+    const auth = req.auth;
+    let ids = null;
+    if (auth.role !== "admin") {
+      const { data: memberships, error } = await supabaseQuery(
+        `foundation_members?user_id=eq.${enc3(auth.userId)}&select=section_id&limit=200`
+      );
+      if (error) throw new Error(String(error));
+      ids = [...new Set((memberships || []).map((m) => m.section_id).filter(Boolean))];
+      if (!ids.length) {
+        res.json({ sections: [], stats: { sections: 0, lessons: 0, done: 0, percent: 0 } });
+        return;
+      }
+    }
+    const listFilter = ids ? `&id=in.(${ids.map(enc3).join(",")})` : "";
+    const [{ data: sections }, { data: lessons }, { data: progress }] = await Promise.all([
+      supabaseQuery(`foundation_sections?is_visible=eq.true&order=sort_order.asc${listFilter}&limit=200`),
+      supabaseQuery(`foundation_lessons?is_visible=eq.true&order=position.asc${listFilter}&limit=1000`),
+      supabaseQuery(`foundation_progress?user_id=eq.${enc3(auth.userId)}&select=lesson_id&limit=2000`)
+    ]);
+    const done = new Set((progress || []).map((p) => p.lesson_id));
+    const grouped = {};
+    for (const l of lessons || []) (grouped[l.section_id] ||= []).push(l);
+    const out = (sections || []).map((s) => {
+      const list = grouped[s.id] || [];
+      const doneCount = list.filter((l) => done.has(l.id)).length;
+      return {
+        ...sectionToJson(s),
+        lessonsCount: list.length,
+        doneCount,
+        totalCount: list.length,
+        lessons: list.map((l) => lessonToJson2(l, { full: true, done: done.has(l.id) }))
+      };
+    });
+    const totalLessons = out.reduce((a, s) => a + s.totalCount, 0);
+    const totalDone = out.reduce((a, s) => a + s.doneCount, 0);
+    res.json({
+      sections: out,
+      stats: {
+        sections: out.length,
+        lessons: totalLessons,
+        done: totalDone,
+        percent: totalLessons > 0 ? Math.round(totalDone / totalLessons * 100) : 0
+      }
+    });
+  } catch (err) {
+    logger.error({ err }, "GET /foundation/stream failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u0645\u064A\u0644 \u0645\u062D\u062A\u0648\u0649 \u0627\u0644\u062A\u0623\u0633\u064A\u0633 \u2014 " + V7_HINT });
+  }
+});
 router7.get("/foundation/sections/:id/access", requireAuth, async (req, res) => {
   try {
     const auth = req.auth;
@@ -37371,6 +37422,34 @@ router7.get("/teacher/foundation/sections", requireAdmin, async (_req, res) => {
   } catch (err) {
     logger.error({ err }, "GET teacher foundation sections failed");
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u0645\u064A\u0644 \u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u062A\u0623\u0633\u064A\u0633 \u2014 " + V7_HINT });
+  }
+});
+router7.get("/teacher/foundation/stream", requireAdmin, async (_req, res) => {
+  try {
+    const [{ data: sections, error }, { data: lessons }, { data: members }] = await Promise.all([
+      supabaseQuery("foundation_sections?order=sort_order.asc&limit=200"),
+      supabaseQuery("foundation_lessons?order=position.asc&limit=2000"),
+      supabaseQuery("foundation_members?select=section_id&limit=5000")
+    ]);
+    if (error) throw new Error(String(error));
+    const memberCount = {};
+    for (const m of members || []) memberCount[m.section_id] = (memberCount[m.section_id] || 0) + 1;
+    const grouped = {};
+    for (const l of lessons || []) (grouped[l.section_id] ||= []).push(l);
+    res.json(
+      (sections || []).map((s) => {
+        const list = grouped[s.id] || [];
+        return {
+          ...sectionToJson(s),
+          memberCount: memberCount[s.id] || 0,
+          lessonsCount: list.length,
+          lessons: list.map((l) => lessonToJson2(l))
+        };
+      })
+    );
+  } catch (err) {
+    logger.error({ err }, "GET teacher foundation stream failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u0645\u064A\u0644 \u0645\u062D\u062A\u0648\u0649 \u0627\u0644\u062A\u0623\u0633\u064A\u0633 \u2014 " + V7_HINT });
   }
 });
 router7.post("/teacher/foundation/sections", requireAdmin, async (req, res) => {
