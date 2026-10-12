@@ -267,10 +267,13 @@ router.get("/foundation/stream", requireAuth, async (req, res) => {
       }
     }
 
-    const listFilter = ids ? `&id=in.(${ids.map(enc).join(",")})` : "";
+    // الأقسام تُرشَّح بـ id، والدروس تُرشَّح بـ section_id — الخلط بينهما يجعل
+// الطالب يرى أقساماً فارغة دائماً لأن id للدرس لا يساوي id للقسم أبداً.
+    const sectionFilter = ids ? `&id=in.(${ids.map(enc).join(",")})` : "";
+    const lessonFilter = ids ? `&section_id=in.(${ids.map(enc).join(",")})` : "";
     const [{ data: sections }, { data: lessons }, { data: progress }] = await Promise.all([
-      supabaseQuery<any[]>(`foundation_sections?is_visible=eq.true&order=sort_order.asc${listFilter}&limit=200`),
-      supabaseQuery<any[]>(`foundation_lessons?is_visible=eq.true&order=position.asc${listFilter}&limit=1000`),
+      supabaseQuery<any[]>(`foundation_sections?is_visible=eq.true&order=sort_order.asc${sectionFilter}&limit=200`),
+      supabaseQuery<any[]>(`foundation_lessons?is_visible=eq.true&order=position.asc${lessonFilter}&limit=1000`),
       supabaseQuery<any[]>(`foundation_progress?user_id=eq.${enc(auth.userId)}&select=lesson_id&limit=2000`),
     ]);
 
@@ -533,6 +536,9 @@ router.post("/teacher/foundation/sections", requireAdmin, async (req, res) => {
 
     const { data, error } = await supabaseQuery<any[]>("foundation_sections", {
       method: "POST",
+      // بدون هذا-headيرجع PostgREST 201 بجسم فارغ، فلا نعرف id للقسم الجديد
+      // ولا يستطيع الأستاذ إضافة دروس داخله مباشرة.
+      headers: { Prefer: "return=representation" },
       body: [
         {
           title: String(b.title).slice(0, 200),
@@ -549,7 +555,9 @@ router.post("/teacher/foundation/sections", requireAdmin, async (req, res) => {
       ],
     });
     if (error) throw new Error(String(error));
-    res.json({ success: true, section: sectionToJson(data?.[0] || {}), message: "تم إنشاء قسم التأسيس!" });
+    const created = (data || [])[0];
+    if (!created?.id) throw new Error("لم يُرجع الخادم معرّف القسم — تحقّق من صلاحيات الجدول foundation_sections");
+    res.json({ success: true, section: sectionToJson(created), message: "تم إنشاء فاصل التأسيس!" });
   } catch (err: any) {
     logger.error({ err }, "POST teacher foundation section failed");
     res.status(500).json({ error: "تعذر إنشاء القسم — " + V7_HINT });
@@ -705,6 +713,7 @@ router.post("/teacher/foundation/lessons", requireAdmin, async (req, res) => {
 
     const { data, error } = await supabaseQuery<any[]>("foundation_lessons", {
       method: "POST",
+      headers: { Prefer: "return=representation" },
       body: [
         {
           section_id: sectionId,
@@ -725,7 +734,9 @@ router.post("/teacher/foundation/lessons", requireAdmin, async (req, res) => {
       ],
     });
     if (error) throw new Error(String(error));
-    res.json({ success: true, lesson: lessonToJson(data?.[0] || {}), message: "تمت إضافة الدرس!" });
+    const created = (data || [])[0];
+    if (!created?.id) throw new Error("لم يُرجع الخادم معرّف الدرس — تحقّق من صلاحيات الجدول foundation_lessons");
+    res.json({ success: true, lesson: lessonToJson(created), message: "تمت إضافة الدرس!" });
   } catch (err: any) {
     logger.error({ err }, "POST foundation lesson failed");
     res.status(500).json({ error: "تعذر إضافة الدرس — " + V7_HINT });

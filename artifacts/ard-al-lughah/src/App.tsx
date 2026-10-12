@@ -9669,6 +9669,20 @@ function FoundationLessonBody({ lesson, compact = false }: { lesson: any; compac
 }
 
 /* ═══════════════════════ لوحة الأستاذ — إنشاء الأقسام ═══════════════════════ */
+/** رسالة عائمة مثبّتة — لا تختفي مهما كان موضع التمرير على الآيباد */
+function FoundationToast({ msg }: { msg: { text: string; tone: 'ok' | 'err' } | null }) {
+  if (!msg) return null;
+  const ok = msg.tone === 'ok';
+  return (
+    <div className="pointer-events-none fixed inset-x-0 bottom-24 z-[99] flex justify-center px-4 lg:bottom-8 lg:right-72" role="status" aria-live="polite">
+      <div className={`pointer-events-auto flex max-w-lg items-start gap-3 rounded-2xl px-5 py-4 text-sm font-extrabold shadow-2xl animate-rise ${ok ? 'bg-primary text-primary-foreground' : 'bg-destructive text-destructive-foreground'}`} data-testid="foundation-toast">
+        {ok ? <CheckCircle2 size={19} className="mt-0.5 shrink-0" /> : <CircleAlert size={19} className="mt-0.5 shrink-0" />}
+        <span className="leading-6">{msg.text}</span>
+      </div>
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    لوحة الأستاذ — "إعداد التأسيس" كتدفّق واحد متصل
    ليس أقساماً منفصلة ولا كرتات: كل ما تضيفه ينزل في قائمة واحدة بالترتيب
@@ -9676,122 +9690,172 @@ function FoundationLessonBody({ lesson, compact = false }: { lesson: any; compac
    ═══════════════════════════════════════════════════════════════════════ */
 function TeacherFoundationPage() {
   const [sections, setSections] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [msg, setMsg] = useState('');
+  const [bootLoading, setBootLoading] = useState(true);
+  const [toast, setToast] = useState<{ text: string; tone: 'ok' | 'err' } | null>(null);
   const [activeSection, setActiveSection] = useState<string>('');
+  const [showMembers, setShowMembers] = useState(false);
 
   const [sectionModal, setSectionModal] = useState<null | { mode: 'create' } | { mode: 'edit'; section: any }>(null);
   const [sectionForm, setSectionForm] = useState<any>({});
   const [savingSection, setSavingSection] = useState(false);
+  const [formError, setFormError] = useState('');
 
   const [lessonModal, setLessonModal] = useState<null | { mode: 'create'; sectionId: string } | { mode: 'edit'; lesson: any }>(null);
   const [lessonForm, setLessonForm] = useState<any>({});
   const [savingLesson, setSavingLesson] = useState(false);
+  const [lessonError, setLessonError] = useState('');
   const [preview, setPreview] = useState<any | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  const flash = (t: string) => { setMsg(t); window.setTimeout(() => setMsg(''), 3500); };
+  const flash = (text: string, tone: 'ok' | 'err' = 'ok') => {
+    setToast({ text, tone });
+    window.setTimeout(() => setToast((prev) => (prev?.text === text ? null : prev)), tone === 'err' ? 6000 : 3000);
+  };
 
-  const reload = () => {
-    setLoading(true);
-    jsonFetch('/api/teacher/foundation/stream')
+  /** تحديث صامت بعد أول تحميل: لا نُخفي الصفحة ولا نقفز بمكان التمرير */
+  const reload = (silent = true) => {
+    if (!silent) setBootLoading(true);
+    return jsonFetch('/api/teacher/foundation/stream')
       .then((d) => {
         const list = Array.isArray(d) ? d : [];
         setSections(list);
         setActiveSection((prev) => (prev && list.some((s: any) => s.id === prev) ? prev : (list[0]?.id || '')));
+        return list;
       })
-      .catch((e) => { setSections([]); flash(e?.message || 'تعذر تحميل محتوى التأسيس'); })
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        setSections([]);
+        flash(e?.message || 'تعذر تحميل محتوى التأسيس — تحقّق من تسجيل الدخول', 'err');
+        return [] as any[];
+      })
+      .finally(() => setBootLoading(false));
   };
-  useEffect(() => { reload(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  useEffect(() => { reload(false); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   const totalLessons = sections.reduce((a, s) => a + (s.lessonsCount || 0), 0);
   const current = sections.find((s) => s.id === activeSection) || null;
 
-  /* ── الأقسام: فواصل تنظيم فقط، لا صفحات للطالب ── */
+  /* ── الفواصل: عناوين تنظيمية فقط، لا صفحات للطالب ── */
   const openSectionCreate = () => {
     setSectionForm({
       title: '', subtitle: '', description: '',
       color: FOUNDATION_COLORS[sections.length % FOUNDATION_COLORS.length],
       icon: 'sparkles', isLocked: false, isVisible: true, isPublished: true,
     });
+    setFormError('');
     setSectionModal({ mode: 'create' });
   };
   const openSectionEdit = (s: any) => {
     setSectionForm({ title: s.title, subtitle: s.subtitle, description: s.description, color: s.color, icon: s.icon, isLocked: s.isLocked, isVisible: s.isVisible, isPublished: s.isPublished });
+    setFormError('');
     setSectionModal({ mode: 'edit', section: s });
   };
   const saveSection = async (e: FormEvent) => {
     e.preventDefault();
+    const title = String(sectionForm.title || '').trim();
+    if (!title) { setFormError('اكتب عنوان الفاصل أولاً — بلا عنوان لا نعرف أين يوضع.'); return; }
     setSavingSection(true);
+    setFormError('');
     try {
       if (sectionModal?.mode === 'create') {
-        const r = await jsonFetch('/api/teacher/foundation/sections', { method: 'POST', body: sectionForm });
-        if (r?.section?.id) setActiveSection(r.section.id);
+        const r = await jsonFetch('/api/teacher/foundation/sections', { method: 'POST', body: { ...sectionForm, title } });
+        const newId = r?.section?.id;
+        if (newId) {
+          setActiveSection(newId);
+          flash(`تم إنشاء «${title}» — ابدأ أضف الدروس تحته`);
+        } else {
+          const list = await reload();
+          const hit = list.find((s: any) => s.title === title);
+          if (hit) setActiveSection(hit.id);
+          flash('تم إنشاء الفاصل');
+        }
       } else if (sectionModal?.mode === 'edit') {
-        await jsonFetch(`/api/teacher/foundation/sections/${sectionModal.section.id}`, { method: 'PATCH', body: sectionForm });
+        await jsonFetch(`/api/teacher/foundation/sections/${sectionModal.section.id}`, { method: 'PATCH', body: { ...sectionForm, title } });
+        await reload();
+        flash('تم حفظ الفاصل');
       }
       setSectionModal(null);
-      reload();
-      flash('تم حفظ الفاصل!');
-    } catch (err: any) { flash(err?.message || 'تعذر الحفظ'); } finally { setSavingSection(false); }
+      await reload();
+    } catch (err: any) {
+      const m = err?.message || 'تعذر الحفظ';
+      setFormError(m);
+      flash(m, 'err');
+    } finally { setSavingSection(false); }
   };
   const quickSection = async (s: any, patch: any) => {
-    try { await jsonFetch(`/api/teacher/foundation/sections/${s.id}`, { method: 'PATCH', body: patch }); reload(); }
-    catch (err: any) { flash(err?.message || 'تعذر التعديل'); }
+    try { await jsonFetch(`/api/teacher/foundation/sections/${s.id}`, { method: 'PATCH', body: patch }); await reload(); flash('تم التحديث'); }
+    catch (err: any) { flash(err?.message || 'تعذر التعديل', 'err'); }
   };
   const removeSection = async (s: any) => {
     if (!window.confirm(`حذف الفاصل «${s.title}» وكل دروسه (${s.lessonsCount})؟`)) return;
-    try { await jsonFetch(`/api/teacher/foundation/sections/${s.id}`, { method: 'DELETE' }); reload(); flash('تم الحذف'); }
-    catch (err: any) { flash(err?.message || 'تعذر الحذف'); }
+    try { await jsonFetch(`/api/teacher/foundation/sections/${s.id}`, { method: 'DELETE' }); await reload(); flash('تم الحذف'); }
+    catch (err: any) { flash(err?.message || 'تعذر الحذف', 'err'); }
   };
 
   /* ── الدروس ── */
-  const openLessonCreate = (sectionId: string) => {
-    if (!sectionId) { flash('أنشئ فاصلاً أولاً ثم أضف الدروس داخله'); return; }
+  const openLessonCreate = (sectionId?: string) => {
+    // لا نهاية ميتة: إن لم يوجد فاصل ننشئ واحداً فوراً بدل رسالة "أنشئ فاصلاً"
+    const target = sectionId || activeSection || sections[0]?.id || '';
+    if (!target) {
+      setSectionForm({ title: 'التأسيس', color: FOUNDATION_COLORS[0], isLocked: false, isVisible: true });
+      setFormError('');
+      setSectionModal({ mode: 'create' });
+      flash('أنشئ فاصلاً أولاً — بعد حفظه ستنتقل مباشرة لإضافة الدروس', 'err');
+      return;
+    }
     setLessonForm({ title: '', description: '', kind: 'text', bodyText: '', coverUrl: '', images: [], videoUrl: '', videoCaption: '', htmlContent: '', htmlFileUrl: '', isLocked: false, isVisible: true });
-    setLessonModal({ mode: 'create', sectionId });
+    setLessonError('');
+    setLessonModal({ mode: 'create', sectionId: target });
   };
   const openLessonEdit = (l: any) => {
+    setLessonError('');
     jsonFetch(`/api/foundation/lessons/${l.id}`)
       .then((full: any) => {
         setLessonForm({ title: full.title, description: full.description, kind: full.kind, bodyText: full.bodyText || '', coverUrl: full.coverUrl || '', images: full.images || [], videoUrl: full.videoUrl || '', videoCaption: full.videoCaption || '', htmlContent: full.htmlContent || '', htmlFileUrl: full.htmlFileUrl || '', isLocked: full.isLocked, isVisible: full.isVisible });
         setLessonModal({ mode: 'edit', lesson: { ...l, ...full } });
       })
-      .catch((e: any) => flash(e?.message || 'تعذر فتح الدرس'));
+      .catch((e: any) => flash(e?.message || 'تعذر فتح الدرس', 'err'));
   };
   const saveLesson = async (e: FormEvent) => {
     e.preventDefault();
+    const title = String(lessonForm.title || '').trim();
+    if (!title) { setLessonError('اكتب عنوان الدرس أولاً.'); return; }
     setSavingLesson(true);
+    setLessonError('');
     try {
       if (lessonModal?.mode === 'create') {
-        await jsonFetch('/api/teacher/foundation/lessons', { method: 'POST', body: { ...lessonForm, sectionId: lessonModal.sectionId } });
+        await jsonFetch('/api/teacher/foundation/lessons', { method: 'POST', body: { ...lessonForm, title, sectionId: lessonModal.sectionId } });
+        flash(`تمت إضافة «${title}» إلى التدفّق`);
       } else if (lessonModal?.mode === 'edit') {
-        await jsonFetch(`/api/teacher/foundation/lessons/${lessonModal.lesson.id}`, { method: 'PATCH', body: lessonForm });
+        await jsonFetch(`/api/teacher/foundation/lessons/${lessonModal.lesson.id}`, { method: 'PATCH', body: { ...lessonForm, title } });
+        flash('تم حفظ الدرس');
       }
       setLessonModal(null);
-      reload();
-      flash('تم حفظ الدرس!');
-    } catch (err: any) { flash(err?.message || 'تعذر حفظ الدرس'); } finally { setSavingLesson(false); }
+      await reload();
+    } catch (err: any) {
+      const m = err?.message || 'تعذر حفظ الدرس';
+      setLessonError(m);
+      flash(m, 'err');
+    } finally { setSavingLesson(false); }
   };
+
   const quickLesson = async (l: any, patch: any) => {
-    try { await jsonFetch(`/api/teacher/foundation/lessons/${l.id}`, { method: 'PATCH', body: patch }); reload(); }
-    catch (err: any) { flash(err?.message || 'تعذر التعديل'); }
+    try { await jsonFetch(`/api/teacher/foundation/lessons/${l.id}`, { method: 'PATCH', body: patch }); await reload(); flash('تم التحديث'); }
+    catch (err: any) { flash(err?.message || 'تعذر التعديل', 'err'); }
   };
   const move = async (l: any, dir: 'up' | 'down') => {
-    try { await jsonFetch('/api/teacher/foundation/lessons/reorder', { method: 'POST', body: { id: l.id, dir } }); reload(); }
-    catch (err: any) { flash(err?.message || 'تعذرت إعادة الترتيب'); }
+    try { await jsonFetch('/api/teacher/foundation/lessons/reorder', { method: 'POST', body: { id: l.id, dir } }); await reload(); }
+    catch (err: any) { flash(err?.message || 'تعذرت إعادة الترتيب', 'err'); }
   };
   const removeLesson = async (l: any) => {
     if (!window.confirm(`حذف «${l.title}» من التدفّق؟`)) return;
-    try { await jsonFetch(`/api/teacher/foundation/lessons/${l.id}`, { method: 'DELETE' }); reload(); flash('تم الحذف'); }
-    catch (err: any) { flash(err?.message || 'تعذر الحذف'); }
+    try { await jsonFetch(`/api/teacher/foundation/lessons/${l.id}`, { method: 'DELETE' }); await reload(); flash('تم الحذف'); }
+    catch (err: any) { flash(err?.message || 'تعذر الحذف', 'err'); }
   };
   const openPreview = async (l: any) => {
     setPreviewLoading(true);
     setPreview({ ...l, __loading: true });
     try { setPreview(await jsonFetch(`/api/foundation/lessons/${l.id}`)); }
-    catch (err: any) { flash(err?.message || 'تعذر فتح المعاينة'); setPreview(null); }
+    catch (err: any) { flash(err?.message || 'تعذر فتح المعاينة', 'err'); setPreview(null); }
     finally { setPreviewLoading(false); }
   };
 
@@ -9804,7 +9868,7 @@ function TeacherFoundationPage() {
         action={
           <div className="flex flex-wrap gap-2.5">
             <button type="button" onClick={openSectionCreate} className={touchBtnSoft} data-testid="button-add-foundation-divider"><Layers size={18} /> فاصل جديد</button>
-            <button type="button" onClick={() => openLessonCreate(activeSection)} className={touchBtnAccent} data-testid="button-add-foundation-lesson"><Plus size={20} /> أضف درساً</button>
+            <button type="button" onClick={() => openLessonCreate()} className={touchBtnAccent} data-testid="button-add-foundation-lesson"><Plus size={20} /> أضف درساً</button>
           </div>
         }
         stats={[
@@ -9815,36 +9879,56 @@ function TeacherFoundationPage() {
         ]}
       />
 
-      {msg ? <p className="mb-4 flex items-center gap-2 rounded-2xl bg-accent/25 px-4 py-3.5 text-sm font-extrabold text-accent-foreground animate-fade-up"><CheckCircle2 size={17} /> {msg}</p> : null}
+      <FoundationToast msg={toast} />
 
-      {loading ? <StateNotice type="loading" /> : (
+      {bootLoading ? <StateNotice type="loading" /> : (
         <div className="space-y-6">
-          {/* ═══ من يرى — واحد لكل التدفّق، يختاره الأستاذ بالاسم ═══ */}
-          <section className="overflow-hidden rounded-[2rem] border border-border bg-card shadow-sm">
-            <div className="flex flex-wrap items-center gap-3 border-b border-border bg-gradient-to-l from-[#6a1b9a]/12 to-card px-5 py-4">
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#6a1b9a] text-white shadow"><ShieldCheck size={22} /></span>
+          {/* ═══ "من يرى التأسيس" — بطاقة مستقلة بزرّها الخاص، لا قائمة ═══ */}
+          <section className="overflow-hidden rounded-[2rem] border border-[#6a1b9a]/30 bg-card shadow-md">
+            <div className="flex flex-col gap-3 bg-gradient-to-l from-[#6a1b9a] to-[#8a508f] p-5 text-white sm:flex-row sm:items-center sm:p-6">
+              <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-white/20 shadow-lg backdrop-blur-sm"><ShieldCheck size={28} /></span>
               <div className="min-w-0 flex-1">
-                <h2 className="font-display text-lg font-extrabold text-primary">من يرى التأسيس؟</h2>
-                <p className="mt-0.5 text-xs text-muted-foreground">اختيار واحد يسري على كل الدروس — لا اختيار لكل درس.</p>
+                <h2 className="font-display text-xl font-extrabold sm:text-2xl">من يرى التأسيس؟</h2>
+                <p className="mt-1 text-sm leading-6 text-white/85">
+                  تختار الطلاب بالاسم — والاختيار واحد يسري على <strong>كل الدروس</strong>، ليس لكل درس.
+                </p>
               </div>
-              {sections.length > 1 ? (
-                <span className="flex flex-wrap gap-2">
-                  {sections.map((s: any) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => setActiveSection(s.id)}
-                      className={`min-h-[44px] rounded-xl px-4 text-xs font-extrabold transition-colors ${activeSection === s.id ? 'bg-[#6a1b9a] text-white shadow-sm' : 'border-2 border-border bg-card text-muted-foreground active:bg-secondary'}`}
-                    >
-                      {s.title}
-                    </button>
-                  ))}
-                </span>
+              {current ? (
+                <button
+                  type="button"
+                  onClick={() => setShowMembers((v) => !v)}
+                  className="inline-flex min-h-[56px] shrink-0 items-center justify-center gap-2.5 rounded-2xl bg-white px-6 text-base font-extrabold text-[#4a1d63] shadow-lg transition-all active:scale-[.97]"
+                  data-testid="button-toggle-foundation-members"
+                >
+                  <UsersRound size={20} />
+                  {showMembers ? 'إخفاء الاختيار' : `اختيار الطلاب لـ «${current.title}»`}
+                </button>
               ) : null}
             </div>
-            {current
-              ? <FoundationMembersPanel sectionId={current.id} sectionTitle={current.title} flash={flash} onChanged={reload} />
-              : <div className="px-5 py-12 text-center text-sm text-muted-foreground">أنشئ فاصلاً أولاً لتختار من يراه.</div>}
+
+            {/* اختيار الفاصل — أزرار كبيرة فقط إن كان هناك أكثر من فاصل */}
+            {sections.length > 1 ? (
+              <div className="flex flex-wrap gap-2 border-b border-border bg-secondary/40 p-4">
+                <span className="self-center text-xs font-extrabold text-muted-foreground">الفاصل:</span>
+                {sections.map((s: any) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setActiveSection(s.id)}
+                    className={`min-h-[48px] rounded-2xl px-5 text-sm font-extrabold transition-colors ${activeSection === s.id ? 'bg-[#6a1b9a] text-white shadow-md' : 'border-2 border-border bg-card text-muted-foreground active:bg-secondary'}`}
+                  >
+                    {s.title}
+                    <span className="mr-1.5 tabular-nums opacity-75">({s.memberCount})</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {showMembers && current
+              ? <FoundationMembersPanel sectionId={current.id} sectionTitle={current.title} flash={flash} onChanged={() => reload()} />
+              : !current
+                ? <div className="px-5 py-12 text-center text-sm text-muted-foreground">أنشئ فاصلاً أولاً لتختار من يراه.</div>
+                : null}
           </section>
 
           {/* ═══ التدفّق: كل الدروس مع بعض ═══ */}
@@ -9966,7 +10050,13 @@ function TeacherFoundationPage() {
               <span className="absolute left-4 top-4 rounded-full bg-black/40 px-3 py-1 text-[10px] font-bold text-white backdrop-blur-md">معاينة حية</span>
             </div>
 
-            <Field2 label="عنوان الفاصل *"><input value={sectionForm.title || ''} onChange={(e) => setSectionForm({ ...sectionForm, title: e.target.value })} required placeholder="مثال: الحروف والمقاطع" className={touchCls} data-testid="input-foundation-title" /></Field2>
+            {formError ? (
+              <p className="flex items-start gap-2.5 rounded-2xl border-2 border-destructive/40 bg-destructive/10 px-4 py-3.5 text-sm font-extrabold leading-6 text-destructive" data-testid="foundation-form-error">
+                <CircleAlert size={19} className="mt-0.5 shrink-0" /> {formError}
+              </p>
+            ) : null}
+
+            <Field2 label="عنوان الفاصل *"><input value={sectionForm.title || ''} onChange={(e) => setSectionForm({ ...sectionForm, title: e.target.value })} placeholder="مثال: الحروف والمقاطع" className={touchCls} data-testid="input-foundation-title" /></Field2>
             <Field2 label="العنوان الفرعي" hint="سطر قصير يظهر تحت العنوان"><input value={sectionForm.subtitle || ''} onChange={(e) => setSectionForm({ ...sectionForm, subtitle: e.target.value })} placeholder="المرحلة الأولى" className={touchCls} /></Field2>
             <Field2 label="تعريف الفاصل" hint="يشرح للطالب لماذا وصل إلى هنا"><textarea value={sectionForm.description || ''} onChange={(e) => setSectionForm({ ...sectionForm, description: e.target.value })} rows={3} placeholder="نتأسّس هنا لنُحكم قواعد القراءة من أولها." className={`${touchCls} resize-none leading-7`} /></Field2>
 
@@ -10009,6 +10099,7 @@ function TeacherFoundationPage() {
             form={lessonForm}
             setForm={setLessonForm}
             saving={savingLesson}
+            error={lessonError}
             submitLabel={lessonModal.mode === 'create' ? 'أضف إلى التدفّق' : 'حفظ التعديلات'}
             onSubmit={saveLesson}
             onCancel={() => setLessonModal(null)}
@@ -10028,11 +10119,12 @@ function TeacherFoundationPage() {
     </Shell>
   );
 }
-function FoundationMembersPanel({ sectionId, sectionTitle, flash, onChanged }: { sectionId: string; sectionTitle?: string; flash: (t: string) => void; onChanged?: () => void }) {
+function FoundationMembersPanel({ sectionId, sectionTitle, flash, onChanged }: { sectionId: string; sectionTitle?: string; flash: (t: string, tone?: 'ok' | 'err') => void; onChanged?: () => void }) {
   const [students, setStudents] = useState<any[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [q, setQ] = useState('');
   const [gradeFilter, setGradeFilter] = useState('الكل');
 
@@ -10042,8 +10134,11 @@ function FoundationMembersPanel({ sectionId, sectionTitle, flash, onChanged }: {
       const d = await jsonFetch(`/api/teacher/foundation/sections/${sectionId}/members`);
       setStudents(Array.isArray(d?.students) ? d.students : []);
       setSelected(new Set(Array.isArray(d?.memberIds) ? d.memberIds : []));
-    } catch (err: any) { setStudents([]); flash(err?.message || 'تعذر تحميل الطلاب'); }
-    finally { setLoading(false); }
+      setDirty(false);
+    } catch (err: any) {
+      setStudents([]);
+      flash(err?.message || 'تعذر تحميل قائمة الطلاب', 'err');
+    } finally { setLoading(false); }
   };
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [sectionId]);
 
@@ -10058,6 +10153,7 @@ function FoundationMembersPanel({ sectionId, sectionTitle, flash, onChanged }: {
   }, [students, q, gradeFilter]);
 
   const toggle = (id: string) => {
+    setDirty(true);
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
@@ -10068,13 +10164,14 @@ function FoundationMembersPanel({ sectionId, sectionTitle, flash, onChanged }: {
     setSaving(true);
     try {
       await jsonFetch(`/api/teacher/foundation/sections/${sectionId}/members`, { method: 'PUT', body: { memberIds: [...selected] } });
-      flash(`تم حفظ ${selected.size} طالب — سيظهر القسم لهم فوراً.`);
+      setDirty(false);
+      flash(`تم حفظ ${selected.size} طالب — يظهر لهم التأسيس فوراً`);
       onChanged?.();
-    } catch (err: any) { flash(err?.message || 'تعذر حفظ الأعضاء'); }
+    } catch (err: any) { flash(err?.message || 'تعذر حفظ الأعضاء', 'err'); }
     finally { setSaving(false); }
   };
-  const selectAllShown = () => setSelected((prev) => { const next = new Set(prev); shown.forEach((s) => next.add(s.id)); return next; });
-  const clearShown = () => setSelected((prev) => { const next = new Set(prev); shown.forEach((s) => next.delete(s.id)); return next; });
+  const selectAllShown = () => { setDirty(true); setSelected((prev) => { const next = new Set(prev); shown.forEach((s) => next.add(s.id)); return next; }); };
+  const clearShown = () => { setDirty(true); setSelected((prev) => { const next = new Set(prev); shown.forEach((s) => next.delete(s.id)); return next; }); };
 
   return (
     <section>
@@ -10156,8 +10253,8 @@ function FoundationMembersPanel({ sectionId, sectionTitle, flash, onChanged }: {
         </div>
 
         <div className="sticky bottom-0 border-t border-border bg-card/95 p-3 backdrop-blur">
-          <button type="button" onClick={save} disabled={saving || loading} className={`${touchBtnPrimary} w-full`} data-testid="button-save-foundation-members">
-            <Save size={18} /> {saving ? 'جارٍ الحفظ...' : `حفظ — ${selected.size} طالباً الآن`}
+          <button type="button" onClick={save} disabled={saving || loading} className={`${touchBtnPrimary} w-full ${dirty ? 'ring-4 ring-accent/40' : ''}`} data-testid="button-save-foundation-members">
+            <Save size={18} /> {saving ? 'جارٍ الحفظ...' : dirty ? `حفظ التغييرات — ${selected.size} طالباً` : `محفوظ — ${selected.size} طالباً`}
           </button>
           <p className="mt-2 text-center text-[11px] leading-5 text-muted-foreground">
             لا يرى الطالب القسم إلا إذا ظهر اسمه هنا — والحفظ يُفعّل الدخول فوراً.
@@ -10169,10 +10266,11 @@ function FoundationMembersPanel({ sectionId, sectionTitle, flash, onChanged }: {
 }
 
 /* ══════════════════ نموذج الدرس (لمس) ══════════════════ */
-function FoundationLessonForm({ form, setForm, saving, submitLabel, onSubmit, onCancel }: {
+function FoundationLessonForm({ form, setForm, saving, error, submitLabel, onSubmit, onCancel }: {
   form: any;
   setForm: (updater: any) => void;
   saving: boolean;
+  error?: string;
   submitLabel: string;
   onSubmit: (e: FormEvent) => void;
   onCancel: () => void;
@@ -10236,6 +10334,12 @@ function FoundationLessonForm({ form, setForm, saving, submitLabel, onSubmit, on
         <span className="absolute left-4 top-4 rounded-full bg-black/40 px-3 py-1 text-[10px] font-bold text-white backdrop-blur-md">معاينة حية</span>
       </div>
 
+      {error ? (
+        <p className="flex items-start gap-2.5 rounded-2xl border-2 border-destructive/40 bg-destructive/10 px-4 py-3.5 text-sm font-extrabold leading-6 text-destructive" data-testid="foundation-lesson-error">
+          <CircleAlert size={19} className="mt-0.5 shrink-0" /> {error}
+        </p>
+      ) : null}
+
       {/* نوع الدرس — شبكة أزرار كبيرة */}
       <div>
         <p className="mb-2 block text-sm font-semibold">نوع الدرس <span className="font-normal text-muted-foreground">(يحدد ما يظهر للطالب)</span></p>
@@ -10264,7 +10368,7 @@ function FoundationLessonForm({ form, setForm, saving, submitLabel, onSubmit, on
         </div>
       </div>
 
-      <Field2 label="عنوان الدرس *"><input value={form.title || ''} onChange={(e) => setForm({ ...form, title: e.target.value })} required placeholder="مثال: حروف المد — من الفتح إلى الياء" className={touchCls} data-testid="input-foundation-lesson-title" /></Field2>
+      <Field2 label="عنوان الدرس *"><input value={form.title || ''} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="مثال: حروف المد — من الفتح إلى الياء" className={touchCls} data-testid="input-foundation-lesson-title" /></Field2>
       <Field2 label="وصف قصير" hint="سطر أو سطران يظهر أعلى الدرس عند الطالب"><textarea value={form.description || ''} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2} placeholder="نتعلم اليوم..." className={`${touchCls} resize-none leading-7`} /></Field2>
 
       {/* النص */}

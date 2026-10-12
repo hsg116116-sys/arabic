@@ -37235,10 +37235,11 @@ router7.get("/foundation/stream", requireAuth, async (req, res) => {
         return;
       }
     }
-    const listFilter = ids ? `&id=in.(${ids.map(enc3).join(",")})` : "";
+    const sectionFilter = ids ? `&id=in.(${ids.map(enc3).join(",")})` : "";
+    const lessonFilter = ids ? `&section_id=in.(${ids.map(enc3).join(",")})` : "";
     const [{ data: sections }, { data: lessons }, { data: progress }] = await Promise.all([
-      supabaseQuery(`foundation_sections?is_visible=eq.true&order=sort_order.asc${listFilter}&limit=200`),
-      supabaseQuery(`foundation_lessons?is_visible=eq.true&order=position.asc${listFilter}&limit=1000`),
+      supabaseQuery(`foundation_sections?is_visible=eq.true&order=sort_order.asc${sectionFilter}&limit=200`),
+      supabaseQuery(`foundation_lessons?is_visible=eq.true&order=position.asc${lessonFilter}&limit=1000`),
       supabaseQuery(`foundation_progress?user_id=eq.${enc3(auth.userId)}&select=lesson_id&limit=2000`)
     ]);
     const done = new Set((progress || []).map((p) => p.lesson_id));
@@ -37463,6 +37464,9 @@ router7.post("/teacher/foundation/sections", requireAdmin, async (req, res) => {
     const nextOrder = (existing || []).reduce((max, s) => Math.max(max, s.sort_order ?? 0), 0) + 1;
     const { data, error } = await supabaseQuery("foundation_sections", {
       method: "POST",
+      // بدون هذا-headيرجع PostgREST 201 بجسم فارغ، فلا نعرف id للقسم الجديد
+      // ولا يستطيع الأستاذ إضافة دروس داخله مباشرة.
+      headers: { Prefer: "return=representation" },
       body: [
         {
           title: String(b.title).slice(0, 200),
@@ -37479,7 +37483,9 @@ router7.post("/teacher/foundation/sections", requireAdmin, async (req, res) => {
       ]
     });
     if (error) throw new Error(String(error));
-    res.json({ success: true, section: sectionToJson(data?.[0] || {}), message: "\u062A\u0645 \u0625\u0646\u0634\u0627\u0621 \u0642\u0633\u0645 \u0627\u0644\u062A\u0623\u0633\u064A\u0633!" });
+    const created = (data || [])[0];
+    if (!created?.id) throw new Error("\u0644\u0645 \u064A\u064F\u0631\u062C\u0639 \u0627\u0644\u062E\u0627\u062F\u0645 \u0645\u0639\u0631\u0651\u0641 \u0627\u0644\u0642\u0633\u0645 \u2014 \u062A\u062D\u0642\u0651\u0642 \u0645\u0646 \u0635\u0644\u0627\u062D\u064A\u0627\u062A \u0627\u0644\u062C\u062F\u0648\u0644 foundation_sections");
+    res.json({ success: true, section: sectionToJson(created), message: "\u062A\u0645 \u0625\u0646\u0634\u0627\u0621 \u0641\u0627\u0635\u0644 \u0627\u0644\u062A\u0623\u0633\u064A\u0633!" });
   } catch (err) {
     logger.error({ err }, "POST teacher foundation section failed");
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u0642\u0633\u0645 \u2014 " + V7_HINT });
@@ -37617,6 +37623,7 @@ router7.post("/teacher/foundation/lessons", requireAdmin, async (req, res) => {
     const nextPos = (existing || []).reduce((max, l) => Math.max(max, l.position ?? 0), 0) + 1;
     const { data, error } = await supabaseQuery("foundation_lessons", {
       method: "POST",
+      headers: { Prefer: "return=representation" },
       body: [
         {
           section_id: sectionId,
@@ -37637,7 +37644,9 @@ router7.post("/teacher/foundation/lessons", requireAdmin, async (req, res) => {
       ]
     });
     if (error) throw new Error(String(error));
-    res.json({ success: true, lesson: lessonToJson2(data?.[0] || {}), message: "\u062A\u0645\u062A \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u062F\u0631\u0633!" });
+    const created = (data || [])[0];
+    if (!created?.id) throw new Error("\u0644\u0645 \u064A\u064F\u0631\u062C\u0639 \u0627\u0644\u062E\u0627\u062F\u0645 \u0645\u0639\u0631\u0651\u0641 \u0627\u0644\u062F\u0631\u0633 \u2014 \u062A\u062D\u0642\u0651\u0642 \u0645\u0646 \u0635\u0644\u0627\u062D\u064A\u0627\u062A \u0627\u0644\u062C\u062F\u0648\u0644 foundation_lessons");
+    res.json({ success: true, lesson: lessonToJson2(created), message: "\u062A\u0645\u062A \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u062F\u0631\u0633!" });
   } catch (err) {
     logger.error({ err }, "POST foundation lesson failed");
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u062F\u0631\u0633 \u2014 " + V7_HINT });
