@@ -308,9 +308,11 @@ router.post("/auth/verify/send", async (req, res): Promise<void> => {
       return;
     }
     logger.error({ err, mail: describeMailSetup() }, "Failed to send the verification code");
+    const detail = (err as Error)?.message ?? "";
     res.status(502).json({
-      error:
-        err instanceof MailSendError
+      error: /unauthorized ip/i.test(detail)
+        ? "تم رفض الاتصال من Brevo — عنوان الخادم غير مُصرّح به. أضف 0.0.0.0/0 في Brevo ← Senders, domains, IPs."
+        : err instanceof MailSendError
           ? "تعذّر إرسال الكود إلى بريدك الآن. تأكد من العنوان أو حاول بعد قليل."
           : "تعذّر إرسال الكود إلى بريدك الآن. حاول بعد قليل.",
     });
