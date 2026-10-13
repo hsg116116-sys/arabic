@@ -10245,13 +10245,18 @@ function FoundationToast({ msg }: { msg: { text: string; tone: 'ok' | 'err' } | 
   if (!msg) return null;
   const ok = msg.tone === 'ok';
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-24 z-[99] flex justify-center px-4 lg:bottom-8 lg:right-72" role="status" aria-live="polite">
-      <div className={`pointer-events-auto flex max-w-lg items-start gap-3 rounded-2xl px-5 py-4 text-sm font-extrabold shadow-2xl animate-rise ${ok ? 'bg-primary text-primary-foreground' : 'bg-destructive text-destructive-foreground'}`} data-testid="foundation-toast">
+    <div className="pointer-events-none fixed inset-x-0 bottom-24 z-[99] flex justify-center px-4 lg:bottom-8 lg:right-72" role="status" aria-live="assertive">
+      <div className={`pointer-events-auto flex max-w-2xl items-start gap-3 rounded-2xl px-5 py-4 text-sm font-extrabold shadow-2xl animate-rise ${ok ? 'bg-primary text-primary-foreground' : 'border-2 border-white/20 bg-destructive text-destructive-foreground'}`} data-testid="foundation-toast">
         {ok ? <CheckCircle2 size={19} className="mt-0.5 shrink-0" /> : <CircleAlert size={19} className="mt-0.5 shrink-0" />}
         <span className="leading-6">{msg.text}</span>
       </div>
     </div>
   );
+}
+
+/** رسالة عائمة عامة — تُستخدم في كل صفحات الأستاذ بدل الشريط الصامت */
+function Toast({ msg }: { msg: { text: string; tone: 'ok' | 'err' } | null }) {
+  return <FoundationToast msg={msg} />;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════

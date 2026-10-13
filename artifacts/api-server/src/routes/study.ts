@@ -16,6 +16,21 @@ const enc = (v: string | string[] | undefined): string =>
   encodeURIComponent(Array.isArray(v) ? v[0] ?? "" : v ?? "");
 const V3_HINT = "نفّذ ملف sql_curriculum_v3.sql في Supabase SQL Editor أولاً";
 
+/**
+ * رسالة خطأ تشخّص نفسها: تكشف سبب فشل الحفظ الحقيقي (عمود ناقص، تكرار،
+ * ...) بدل جملة عامة عديمة الفائدة. نقصّها إلى 180 حرفاً فلا تتسرب بيانات.
+ */
+export function saveError(err: any, prefix: string): string {
+  const raw = String(err?.message ?? err ?? "").trim();
+  const pg = raw.match(/"message"\s*:\s*"([^"]+)"/);
+  const detail = (pg ? pg[1] : raw).replace(/\\n/g, " ").slice(0, 180);
+  if (/column\s+\S+|schema cache|PGRST204/i.test(detail)) {
+    return `${prefix} — قاعدة البيانات ناقصة العمود المطلوب. نفّذ ملفات SQL (${detail})`;
+  }
+  if (/constraint|duplicate key|23505/i.test(detail)) return `${prefix} — تكرار: ${detail}`;
+  return detail ? `${prefix} — ${detail}` : prefix;
+}
+
 /* ---------------- الملخصات ---------------- */
 
 function summaryToJson(s: any) {
@@ -271,13 +286,14 @@ router.post("/teacher/curriculum/notebooks", requireAdmin, async (req, res) => {
         points: Number(b.points) || 10,
         section: b.section || "الجميع",
         published: b.published !== false,
+        school: String(b.school || "").trim(),
       }],
     });
     if (error) throw new Error(String(error));
     res.json({ success: true, message: "تم إنشاء مهمة الدفتر بنجاح!" });
   } catch (err: any) {
     logger.error({ err }, "POST notebook task failed");
-    res.status(500).json({ error: "تعذر إنشاء المهمة — " + V3_HINT });
+    res.status(500).json({ error: saveError(err, "تعذر إنشاء المهمة") });
   }
 });
 
@@ -311,7 +327,7 @@ router.patch("/teacher/curriculum/notebooks/:id", requireAdmin, async (req, res)
     res.json({ success: true, message: "تم حفظ المهمة!" });
   } catch (err: any) {
     logger.error({ err }, "PATCH notebook task failed");
-    res.status(500).json({ error: "تعذر حفظ المهمة" });
+    res.status(500).json({ error: saveError(err, "تعذر حفظ المهمة") });
   }
 });
 

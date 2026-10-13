@@ -15,6 +15,7 @@ import {
 import { supabaseQuery, getSupabaseUser } from "../lib/supabase";
 import { requireAuth, requireAdmin, type AuthedRequest } from "../middlewares/auth";
 import { logger } from "../lib/logger";
+import { saveError } from "./study";
 
 const router: IRouter = Router();
 
@@ -1478,6 +1479,7 @@ router.post("/teacher/assignments", requireAdmin, async (req, res) => {
       published: true,
       grade: grade || "الجميع",
       section: section || "الجميع",
+      school: String(req.body?.school ?? "").trim(),
     };
     let r = await supabaseQuery("assignments", { method: "POST", body: [full] });
     if (r.error && /column|schema cache|Could not find/i.test(String(r.error))) {
@@ -1494,7 +1496,7 @@ router.post("/teacher/assignments", requireAdmin, async (req, res) => {
     res.json({ success: true, message: "تمت إضافة الواجب بنجاح!" });
   } catch (err: any) {
     logger.error({ err }, "Error in POST /teacher/assignments");
-    res.status(500).json({ error: "تعذر إنشاء الواجب" });
+    res.status(500).json({ error: saveError(err, "تعذر إنشاء الواجب") });
   }
 });
 

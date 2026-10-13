@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { supabaseQuery } from "../lib/supabase";
 import { requireAuth, requireAdmin } from "../middlewares/auth";
 import { logger } from "../lib/logger";
+import { saveError } from "./study";
 
 const router: IRouter = Router();
 
@@ -432,7 +433,7 @@ router.patch("/teacher/curriculum/courses/:id", requireAdmin, async (req, res) =
     res.json({ success: true, message: "تم حفظ الوحدة بنجاح!" });
   } catch (err: any) {
     logger.error({ err }, "PATCH /teacher/curriculum/courses failed");
-    res.status(500).json({ error: "تعذر حفظ الوحدة" });
+    res.status(500).json({ error: saveError(err, "تعذر حفظ الوحدة") });
   }
 });
 
@@ -563,7 +564,7 @@ router.patch("/teacher/curriculum/lessons/:id", requireAdmin, async (req, res) =
     res.json({ success: true, message: "تم حفظ الدرس بنجاح!" });
   } catch (err: any) {
     logger.error({ err }, "PATCH lesson failed");
-    res.status(500).json({ error: "تعذر حفظ الدرس" });
+    res.status(500).json({ error: saveError(err, "تعذر حفظ الدرس") });
   }
 });
 
@@ -754,7 +755,7 @@ router.patch("/teacher/curriculum/assessments/:id", requireAdmin, async (req, re
     res.json({ success: true, message: "تم حفظ الاختبار!" });
   } catch (err: any) {
     logger.error({ err }, "PATCH curriculum assessment failed");
-    res.status(500).json({ error: "تعذر حفظ الاختبار" });
+    res.status(500).json({ error: saveError(err, "تعذر حفظ الاختبار") });
   }
 });
 
@@ -910,7 +911,7 @@ router.post("/teacher/curriculum/announcements", requireAdmin, async (req, res) 
     res.json({ success: true, message: "تم نشر الإعلان بنجاح!" });
   } catch (err: any) {
     logger.error({ err }, "POST curriculum announcement failed");
-    res.status(500).json({ error: "تعذر نشر الإعلان" });
+    res.status(500).json({ error: saveError(err, "تعذر نشر الإعلان") });
   }
 });
 
@@ -1016,7 +1017,7 @@ router.patch("/teacher/curriculum/assignments/:id", requireAdmin, async (req, re
     res.json({ success: true, message: "تم حفظ الواجب!" });
   } catch (err: any) {
     logger.error({ err }, "PATCH curriculum assignment failed");
-    res.status(500).json({ error: "تعذر حفظ الواجب" });
+    res.status(500).json({ error: saveError(err, "تعذر حفظ الواجب") });
   }
 });
 

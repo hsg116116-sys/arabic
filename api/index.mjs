@@ -29770,6 +29770,7 @@ var init_curriculum = __esm({
     init_supabase();
     init_auth();
     init_logger();
+    init_study();
     router2 = (0, import_express2.Router)();
     enc = (v) => encodeURIComponent(Array.isArray(v) ? v[0] ?? "" : v ?? "");
     COURSE_BASE = ["title", "description", "lessons_count", "duration", "color", "icon", "sort_order", "published"];
@@ -29929,7 +29930,7 @@ var init_curriculum = __esm({
         res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u0648\u062D\u062F\u0629 \u0628\u0646\u062C\u0627\u062D!" });
       } catch (err) {
         logger.error({ err }, "PATCH /teacher/curriculum/courses failed");
-        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0648\u062D\u062F\u0629" });
+        res.status(500).json({ error: saveError(err, "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0648\u062D\u062F\u0629") });
       }
     });
     router2.delete("/teacher/curriculum/courses/:id", requireAdmin, async (req, res) => {
@@ -30047,7 +30048,7 @@ var init_curriculum = __esm({
         res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u062F\u0631\u0633 \u0628\u0646\u062C\u0627\u062D!" });
       } catch (err) {
         logger.error({ err }, "PATCH lesson failed");
-        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u062F\u0631\u0633" });
+        res.status(500).json({ error: saveError(err, "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u062F\u0631\u0633") });
       }
     });
     router2.delete("/teacher/curriculum/lessons/:id", requireAdmin, async (req, res) => {
@@ -30225,7 +30226,7 @@ var init_curriculum = __esm({
         res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u0627\u062E\u062A\u0628\u0627\u0631!" });
       } catch (err) {
         logger.error({ err }, "PATCH curriculum assessment failed");
-        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0627\u062E\u062A\u0628\u0627\u0631" });
+        res.status(500).json({ error: saveError(err, "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0627\u062E\u062A\u0628\u0627\u0631") });
       }
     });
     router2.delete("/teacher/curriculum/assessments/:id", requireAdmin, async (req, res) => {
@@ -30357,7 +30358,7 @@ var init_curriculum = __esm({
         res.json({ success: true, message: "\u062A\u0645 \u0646\u0634\u0631 \u0627\u0644\u0625\u0639\u0644\u0627\u0646 \u0628\u0646\u062C\u0627\u062D!" });
       } catch (err) {
         logger.error({ err }, "POST curriculum announcement failed");
-        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0646\u0634\u0631 \u0627\u0644\u0625\u0639\u0644\u0627\u0646" });
+        res.status(500).json({ error: saveError(err, "\u062A\u0639\u0630\u0631 \u0646\u0634\u0631 \u0627\u0644\u0625\u0639\u0644\u0627\u0646") });
       }
     });
     router2.patch("/teacher/curriculum/announcements/:id", requireAdmin, async (req, res) => {
@@ -30436,7 +30437,7 @@ var init_curriculum = __esm({
         res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u0648\u0627\u062C\u0628!" });
       } catch (err) {
         logger.error({ err }, "PATCH curriculum assignment failed");
-        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0648\u0627\u062C\u0628" });
+        res.status(500).json({ error: saveError(err, "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0648\u0627\u062C\u0628") });
       }
     });
     router2.delete("/teacher/curriculum/assignments/:id", requireAdmin, async (req, res) => {
@@ -30509,6 +30510,490 @@ var init_curriculum = __esm({
       }
     });
     curriculum_default = router2;
+  }
+});
+
+// src/routes/study.ts
+function saveError(err, prefix) {
+  const raw = String(err?.message ?? err ?? "").trim();
+  const pg = raw.match(/"message"\s*:\s*"([^"]+)"/);
+  const detail = (pg ? pg[1] : raw).replace(/\\n/g, " ").slice(0, 180);
+  if (/column\s+\S+|schema cache|PGRST204/i.test(detail)) {
+    return `${prefix} \u2014 \u0642\u0627\u0639\u062F\u0629 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A \u0646\u0627\u0642\u0635\u0629 \u0627\u0644\u0639\u0645\u0648\u062F \u0627\u0644\u0645\u0637\u0644\u0648\u0628. \u0646\u0641\u0651\u0630 \u0645\u0644\u0641\u0627\u062A SQL (${detail})`;
+  }
+  if (/constraint|duplicate key|23505/i.test(detail)) return `${prefix} \u2014 \u062A\u0643\u0631\u0627\u0631: ${detail}`;
+  return detail ? `${prefix} \u2014 ${detail}` : prefix;
+}
+function summaryToJson(s) {
+  return {
+    id: s.id,
+    title: s.title,
+    description: s.description || "",
+    content: s.content || "",
+    summaryType: s.summary_type || "\u0645\u0644\u062E\u0635",
+    grade: s.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
+    term: s.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
+    unitTitle: s.unit_title || "",
+    courseId: s.course_id || null,
+    coverUrl: s.cover_url || "",
+    fileUrl: s.file_url || "",
+    published: s.published !== false,
+    sortOrder: s.sort_order ?? 1,
+    section: s.section || "\u0627\u0644\u062C\u0645\u064A\u0639",
+    school: s.school || ""
+  };
+}
+async function lessonTitlesFor(ids) {
+  const uniq = [...new Set(ids.filter(Boolean))];
+  if (!uniq.length) return {};
+  try {
+    const { data } = await supabaseQuery(
+      `lessons?id=in.(${uniq.map(enc2).join(",")})&select=id,title&limit=200`
+    );
+    const map = {};
+    for (const l of data || []) map[l.id] = l.title;
+    return map;
+  } catch {
+    return {};
+  }
+}
+function taskToJson(t, mySubmission, lessonTitles = {}) {
+  let requirements = [];
+  try {
+    requirements = Array.isArray(t.requirements) ? t.requirements : JSON.parse(t.requirements || "[]");
+  } catch {
+    requirements = [];
+  }
+  return {
+    id: t.id,
+    title: t.title,
+    description: t.description || "",
+    grade: t.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
+    term: t.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
+    unitTitle: t.unit_title || "",
+    courseId: t.course_id || null,
+    lessonId: t.lesson_id || null,
+    lessonTitle: t.lesson_id && lessonTitles[t.lesson_id] || "",
+    requirements,
+    dueDate: t.due_date || "",
+    points: t.points ?? 10,
+    published: t.published !== false,
+    section: t.section || "\u0627\u0644\u062C\u0645\u064A\u0639",
+    school: t.school || "",
+    myStatus: mySubmission?.status || null,
+    myScore: mySubmission?.score ?? null,
+    myFeedback: mySubmission?.feedback || "",
+    submissionsCount: t.submissionsCount ?? void 0
+  };
+}
+var import_express3, router3, enc2, V3_HINT, study_default;
+var init_study = __esm({
+  "src/routes/study.ts"() {
+    "use strict";
+    import_express3 = __toESM(require_express2(), 1);
+    init_supabase();
+    init_imagekit();
+    init_curriculum();
+    init_auth();
+    init_logger();
+    router3 = (0, import_express3.Router)();
+    enc2 = (v) => encodeURIComponent(Array.isArray(v) ? v[0] ?? "" : v ?? "");
+    V3_HINT = "\u0646\u0641\u0651\u0630 \u0645\u0644\u0641 sql_curriculum_v3.sql \u0641\u064A Supabase SQL Editor \u0623\u0648\u0644\u0627\u064B";
+    router3.get("/curriculum/summaries", async (req, res) => {
+      try {
+        const { grade, term, student_id } = req.query;
+        let endpoint = "summaries?order=sort_order.asc&limit=200";
+        if (grade) endpoint += `&grade=eq.${enc2(grade)}`;
+        if (term) endpoint += `&term=eq.${enc2(term)}`;
+        const { data, error } = await supabaseQuery(endpoint);
+        if (error) throw new Error(String(error));
+        let list = (data || []).filter((s) => s.published !== false).map(summaryToJson);
+        if (student_id) {
+          const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
+          if (profile) list = list.filter((s) => itemVisible(s.grade, s.section, profile.grade, profile.gender, splitMap, s.school, profile.school));
+        }
+        res.json(list);
+      } catch (err) {
+        logger.error({ err }, "GET /curriculum/summaries failed");
+        res.json([]);
+      }
+    });
+    router3.get("/teacher/curriculum/summaries", requireAdmin, async (req, res) => {
+      try {
+        const { grade, term } = req.query;
+        let endpoint = "summaries?order=sort_order.asc&limit=200";
+        if (grade) endpoint += `&grade=eq.${enc2(grade)}`;
+        if (term) endpoint += `&term=eq.${enc2(term)}`;
+        const { data, error } = await supabaseQuery(endpoint);
+        if (error) throw new Error(String(error));
+        res.json((data || []).map(summaryToJson));
+      } catch (err) {
+        logger.error({ err }, "GET teacher summaries failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u0645\u0644\u062E\u0635\u0627\u062A \u2014 " + V3_HINT });
+      }
+    });
+    router3.post("/teacher/curriculum/summaries", requireAdmin, async (req, res) => {
+      try {
+        const b = req.body || {};
+        if (!b.title) {
+          res.status(400).json({ error: "\u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u0645\u0644\u062E\u0635 \u0645\u0637\u0644\u0648\u0628" });
+          return;
+        }
+        const { error } = await supabaseQuery("summaries", {
+          method: "POST",
+          body: [{
+            title: b.title,
+            description: b.description || "",
+            content: b.content || "",
+            summary_type: b.summaryType || b.summary_type || "\u0645\u0644\u062E\u0635",
+            grade: b.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
+            term: b.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
+            unit_title: b.unitTitle || b.unit_title || "",
+            course_id: b.courseId || b.course_id || null,
+            cover_url: b.coverUrl || b.cover_url || "",
+            file_url: b.fileUrl || b.file_url || "",
+            section: b.section || "\u0627\u0644\u062C\u0645\u064A\u0639",
+            published: b.published !== false,
+            sort_order: Number(b.sortOrder ?? b.sort_order) || 1
+          }]
+        });
+        if (error) throw new Error(String(error));
+        res.json({ success: true, message: "\u062A\u0645\u062A \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0645\u0644\u062E\u0635 \u0628\u0646\u062C\u0627\u062D!" });
+      } catch (err) {
+        logger.error({ err }, "POST summary failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0645\u0644\u062E\u0635 \u2014 " + V3_HINT });
+      }
+    });
+    router3.patch("/teacher/curriculum/summaries/:id", requireAdmin, async (req, res) => {
+      try {
+        const b = req.body || {};
+        const full = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+        if (b.title !== void 0) full.title = b.title;
+        if (b.description !== void 0) full.description = b.description;
+        if (b.content !== void 0) full.content = b.content;
+        if (b.summaryType !== void 0 || b.summary_type !== void 0) full.summary_type = b.summaryType ?? b.summary_type;
+        if (b.grade !== void 0) full.grade = b.grade;
+        if (b.term !== void 0) full.term = b.term;
+        if (b.unitTitle !== void 0 || b.unit_title !== void 0) full.unit_title = b.unitTitle ?? b.unit_title ?? "";
+        if (b.courseId !== void 0 || b.course_id !== void 0) full.course_id = b.courseId ?? b.course_id ?? null;
+        if (b.coverUrl !== void 0 || b.cover_url !== void 0) full.cover_url = b.coverUrl ?? b.cover_url ?? "";
+        if (b.fileUrl !== void 0 || b.file_url !== void 0) full.file_url = b.fileUrl ?? b.file_url ?? "";
+        if (b.section !== void 0) full.section = b.section || "\u0627\u0644\u062C\u0645\u064A\u0639";
+        if (b.school !== void 0) full.school = String(b.school || "").trim();
+        if (b.published !== void 0) full.published = !!b.published;
+        if (b.sortOrder !== void 0 || b.sort_order !== void 0) full.sort_order = Number(b.sortOrder ?? b.sort_order) || 1;
+        const { error } = await supabaseQuery(`summaries?id=eq.${enc2(req.params.id)}`, { method: "PATCH", body: full });
+        if (error) throw new Error(String(error));
+        res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u0645\u0644\u062E\u0635!" });
+      } catch (err) {
+        logger.error({ err }, "PATCH summary failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0645\u0644\u062E\u0635" });
+      }
+    });
+    router3.delete("/teacher/curriculum/summaries/:id", requireAdmin, async (req, res) => {
+      try {
+        const { error } = await supabaseQuery(`summaries?id=eq.${enc2(req.params.id)}`, { method: "DELETE" });
+        if (error) throw new Error(String(error));
+        res.json({ success: true, message: "\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u0645\u0644\u062E\u0635!" });
+      } catch (err) {
+        logger.error({ err }, "DELETE summary failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0645\u0644\u062E\u0635" });
+      }
+    });
+    router3.get("/curriculum/notebooks", async (req, res) => {
+      try {
+        const { grade, term, student_id } = req.query;
+        let endpoint = "notebook_tasks?order=created_at.desc&limit=200";
+        if (grade) endpoint += `&grade=eq.${enc2(grade)}`;
+        if (term) endpoint += `&term=eq.${enc2(term)}`;
+        const { data, error } = await supabaseQuery(endpoint);
+        if (error) throw new Error(String(error));
+        let subs = {};
+        let profile = null;
+        let splitMap = {};
+        if (student_id) {
+          const ids = (data || []).map((t) => t.id);
+          if (ids.length) {
+            const { data: sdata } = await supabaseQuery(
+              `notebook_submissions?user_id=eq.${enc2(student_id)}&select=task_id,status,score,feedback&limit=200`
+            );
+            for (const s of sdata || []) subs[s.task_id] = s;
+          }
+          [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
+        }
+        const lessonTitles = await lessonTitlesFor((data || []).map((t) => t.lesson_id));
+        let list = (data || []).filter((t) => t.published !== false).map((t) => taskToJson(t, subs[t.id], lessonTitles));
+        if (profile) list = list.filter((t) => itemVisible(t.grade, t.section, profile.grade, profile.gender, splitMap, t.school, profile.school));
+        res.json(list);
+      } catch (err) {
+        logger.error({ err }, "GET /curriculum/notebooks failed");
+        res.json([]);
+      }
+    });
+    router3.get("/teacher/curriculum/notebooks", requireAdmin, async (req, res) => {
+      try {
+        const { grade, term } = req.query;
+        let endpoint = "notebook_tasks?order=created_at.desc&limit=200";
+        if (grade) endpoint += `&grade=eq.${enc2(grade)}`;
+        if (term) endpoint += `&term=eq.${enc2(term)}`;
+        const { data, error } = await supabaseQuery(endpoint);
+        if (error) throw new Error(String(error));
+        const { data: allSubs } = await supabaseQuery("notebook_submissions?select=task_id&limit=2000");
+        const counts = {};
+        for (const s of allSubs || []) counts[s.task_id] = (counts[s.task_id] || 0) + 1;
+        const lessonTitles = await lessonTitlesFor((data || []).map((t) => t.lesson_id));
+        res.json((data || []).map((t) => ({ ...taskToJson(t, void 0, lessonTitles), submissionsCount: counts[t.id] || 0 })));
+      } catch (err) {
+        logger.error({ err }, "GET teacher notebooks failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0645\u0647\u0627\u0645 \u0627\u0644\u062F\u0641\u062A\u0631 \u2014 " + V3_HINT });
+      }
+    });
+    router3.post("/teacher/curriculum/notebooks", requireAdmin, async (req, res) => {
+      try {
+        const b = req.body || {};
+        if (!b.title) {
+          res.status(400).json({ error: "\u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u0645\u0647\u0645\u0629 \u0645\u0637\u0644\u0648\u0628" });
+          return;
+        }
+        const requirements = Array.isArray(b.requirements) ? b.requirements.filter((r) => r?.label?.trim()).slice(0, 20).map((r) => ({
+          label: String(r.label).slice(0, 200),
+          kind: r.kind || "\u0643\u062A\u0627\u0628\u0629",
+          place: String(r.place || "").slice(0, 120)
+        })) : [];
+        const { error } = await supabaseQuery("notebook_tasks", {
+          method: "POST",
+          body: [{
+            title: b.title,
+            description: b.description || "",
+            grade: b.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
+            term: b.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
+            unit_title: b.unitTitle || b.unit_title || "",
+            course_id: b.courseId || b.course_id || null,
+            lesson_id: b.lessonId || b.lesson_id || null,
+            requirements,
+            due_date: b.dueDate || b.due_date || null,
+            points: Number(b.points) || 10,
+            section: b.section || "\u0627\u0644\u062C\u0645\u064A\u0639",
+            published: b.published !== false,
+            school: String(b.school || "").trim()
+          }]
+        });
+        if (error) throw new Error(String(error));
+        res.json({ success: true, message: "\u062A\u0645 \u0625\u0646\u0634\u0627\u0621 \u0645\u0647\u0645\u0629 \u0627\u0644\u062F\u0641\u062A\u0631 \u0628\u0646\u062C\u0627\u062D!" });
+      } catch (err) {
+        logger.error({ err }, "POST notebook task failed");
+        res.status(500).json({ error: saveError(err, "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u0645\u0647\u0645\u0629") });
+      }
+    });
+    router3.patch("/teacher/curriculum/notebooks/:id", requireAdmin, async (req, res) => {
+      try {
+        const b = req.body || {};
+        const full = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+        if (b.title !== void 0) full.title = b.title;
+        if (b.description !== void 0) full.description = b.description;
+        if (b.grade !== void 0) full.grade = b.grade;
+        if (b.term !== void 0) full.term = b.term;
+        if (b.unitTitle !== void 0 || b.unit_title !== void 0) full.unit_title = b.unitTitle ?? b.unit_title ?? "";
+        if (b.courseId !== void 0 || b.course_id !== void 0) full.course_id = b.courseId ?? b.course_id ?? null;
+        if (b.lessonId !== void 0 || b.lesson_id !== void 0) full.lesson_id = b.lessonId ?? b.lesson_id ?? null;
+        if (b.requirements !== void 0) {
+          full.requirements = Array.isArray(b.requirements) ? b.requirements.filter((r) => r?.label?.trim()).slice(0, 20).map((r) => ({
+            label: String(r.label).slice(0, 200),
+            kind: r.kind || "\u0643\u062A\u0627\u0628\u0629",
+            place: String(r.place || "").slice(0, 120)
+          })) : [];
+        }
+        if (b.dueDate !== void 0 || b.due_date !== void 0) full.due_date = b.dueDate ?? b.due_date ?? null;
+        if (b.points !== void 0) full.points = Number(b.points) || 10;
+        if (b.section !== void 0) full.section = b.section || "\u0627\u0644\u062C\u0645\u064A\u0639";
+        if (b.school !== void 0) full.school = String(b.school || "").trim();
+        if (b.published !== void 0) full.published = !!b.published;
+        const { error } = await supabaseQuery(`notebook_tasks?id=eq.${enc2(req.params.id)}`, { method: "PATCH", body: full });
+        if (error) throw new Error(String(error));
+        res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u0645\u0647\u0645\u0629!" });
+      } catch (err) {
+        logger.error({ err }, "PATCH notebook task failed");
+        res.status(500).json({ error: saveError(err, "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0645\u0647\u0645\u0629") });
+      }
+    });
+    router3.delete("/teacher/curriculum/notebooks/:id", requireAdmin, async (req, res) => {
+      try {
+        const { error } = await supabaseQuery(`notebook_tasks?id=eq.${enc2(req.params.id)}`, { method: "DELETE" });
+        if (error) throw new Error(String(error));
+        res.json({ success: true, message: "\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u0645\u0647\u0645\u0629 \u0648\u062A\u0633\u0644\u064A\u0645\u0627\u062A\u0647\u0627!" });
+      } catch (err) {
+        logger.error({ err }, "DELETE notebook task failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0645\u0647\u0645\u0629" });
+      }
+    });
+    router3.get("/teacher/curriculum/notebooks/:id/submissions", requireAdmin, async (req, res) => {
+      try {
+        const { data, error } = await supabaseQuery(
+          `notebook_submissions?task_id=eq.${enc2(req.params.id)}&order=submitted_at.desc&limit=500`
+        );
+        if (error) throw new Error(String(error));
+        const userIds = [...new Set((data || []).map((s) => s.user_id))];
+        let names = {};
+        if (userIds.length) {
+          const { data: profiles } = await supabaseQuery(
+            `profiles?id=in.(${userIds.map(enc2).join(",")})&select=id,full_name,grade,section,school,avatar_url&limit=500`
+          );
+          for (const p of profiles || []) names[p.id] = p;
+        }
+        res.json(
+          (data || []).map((s) => {
+            let checks = [];
+            try {
+              checks = Array.isArray(s.checks) ? s.checks : JSON.parse(s.checks || "[]");
+            } catch {
+              checks = [];
+            }
+            return {
+              id: s.id,
+              photos: Array.isArray(s.photos) ? s.photos : [],
+              note: s.note || "",
+              status: s.status || "\u0645\u0633\u0644\u0651\u0645",
+              score: s.score ?? null,
+              feedback: s.feedback || "",
+              checks,
+              submittedAt: s.submitted_at,
+              student: {
+                id: s.user_id,
+                name: names[s.user_id]?.full_name || "\u0637\u0627\u0644\u0628",
+                grade: names[s.user_id]?.grade || "",
+                section: names[s.user_id]?.section || "",
+                school: names[s.user_id]?.school || "",
+                avatarUrl: names[s.user_id]?.avatar_url || ""
+              }
+            };
+          })
+        );
+      } catch (err) {
+        logger.error({ err }, "GET notebook submissions failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u062A\u0633\u0644\u064A\u0645\u0627\u062A" });
+      }
+    });
+    router3.post("/notebooks/:id/submit", requireAuth, async (req, res) => {
+      try {
+        const { userId, photos, note } = req.body || {};
+        if (!userId) {
+          res.status(400).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u062F\u064A\u062F \u0627\u0644\u0637\u0627\u0644\u0628" });
+          return;
+        }
+        if (!Array.isArray(photos) || !photos.length) {
+          res.status(400).json({ error: "\u0635\u0648\u0651\u0631 \u062F\u0641\u062A\u0631\u0643 \u0648\u0623\u0631\u0641\u0642 \u0635\u0648\u0631\u0629 \u0648\u0627\u062D\u062F\u0629 \u0639\u0644\u0649 \u0627\u0644\u0623\u0642\u0644" });
+          return;
+        }
+        let initChecks = [];
+        try {
+          const { data: task } = await supabaseQuery(
+            `notebook_tasks?id=eq.${enc2(req.params.id)}&select=requirements&limit=1`
+          );
+          const reqs = task?.[0]?.requirements;
+          const arr = Array.isArray(reqs) ? reqs : JSON.parse(reqs || "[]");
+          initChecks = arr.map((r) => ({ label: String(r.label || ""), done: false }));
+        } catch {
+        }
+        const payload = {
+          task_id: req.params.id,
+          user_id: userId,
+          photos,
+          note: note || "",
+          status: "\u0645\u0633\u0644\u0651\u0645",
+          checks: initChecks,
+          submitted_at: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        const existing = await supabaseQuery(
+          `notebook_submissions?task_id=eq.${enc2(req.params.id)}&user_id=eq.${enc2(userId)}&limit=1`
+        );
+        if (existing.data?.[0]) {
+          const { error } = await supabaseQuery(`notebook_submissions?id=eq.${existing.data[0].id}`, {
+            method: "PATCH",
+            body: { ...payload, score: null, feedback: "" }
+          });
+          if (error) throw new Error(String(error));
+        } else {
+          const { error } = await supabaseQuery("notebook_submissions", { method: "POST", body: [payload] });
+          if (error) throw new Error(String(error));
+        }
+        res.json({ success: true, message: "\u062A\u0645 \u062A\u0633\u0644\u064A\u0645 \u0635\u0648\u0631 \u062F\u0641\u062A\u0631\u0643 \u0644\u0644\u0623\u0633\u062A\u0627\u0630 \u0628\u0646\u062C\u0627\u062D! \u0623\u062D\u0633\u0646\u062A." });
+      } catch (err) {
+        logger.error({ err }, "POST notebook submit failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u0633\u0644\u064A\u0645 \u0627\u0644\u062F\u0641\u062A\u0631 \u2014 " + V3_HINT });
+      }
+    });
+    router3.get("/notebooks/:id/mine", async (req, res) => {
+      try {
+        const { user_id } = req.query;
+        if (!user_id) {
+          res.status(400).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u062F\u064A\u062F \u0627\u0644\u0637\u0627\u0644\u0628" });
+          return;
+        }
+        const { data } = await supabaseQuery(
+          `notebook_submissions?task_id=eq.${enc2(req.params.id)}&user_id=eq.${enc2(user_id)}&limit=1`
+        );
+        const s = data?.[0];
+        if (!s) {
+          res.json(null);
+          return;
+        }
+        let checks = [];
+        try {
+          checks = Array.isArray(s.checks) ? s.checks : JSON.parse(s.checks || "[]");
+        } catch {
+          checks = [];
+        }
+        res.json({
+          photos: Array.isArray(s.photos) ? s.photos : [],
+          note: s.note || "",
+          status: s.status || "\u0645\u0633\u0644\u0651\u0645",
+          score: s.score ?? null,
+          feedback: s.feedback || "",
+          checks,
+          submittedAt: s.submitted_at
+        });
+      } catch (err) {
+        logger.error({ err }, "GET notebook mine failed");
+        res.json(null);
+      }
+    });
+    router3.patch("/teacher/curriculum/notebook-submissions/:id", requireAdmin, async (req, res) => {
+      try {
+        const { score, feedback, status, checks } = req.body || {};
+        const full = { reviewed_at: (/* @__PURE__ */ new Date()).toISOString() };
+        if (score !== void 0) full.score = score === null || score === "" ? null : Number(score);
+        if (feedback !== void 0) full.feedback = feedback;
+        if (checks !== void 0) {
+          full.checks = Array.isArray(checks) ? checks.map((c) => ({ label: String(c.label || ""), done: !!c.done })) : [];
+        }
+        if (status !== void 0) full.status = status;
+        else if (score !== void 0 || checks !== void 0) full.status = "\u062A\u0645 \u0627\u0644\u062A\u0642\u064A\u064A\u0645";
+        const { error } = await supabaseQuery(`notebook_submissions?id=eq.${enc2(req.params.id)}`, {
+          method: "PATCH",
+          body: full
+        });
+        if (error) throw new Error(String(error));
+        res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u062A\u0642\u064A\u064A\u0645!" });
+      } catch (err) {
+        logger.error({ err }, "PATCH notebook submission failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u062A\u0642\u064A\u064A\u0645" });
+      }
+    });
+    router3.post("/student/upload", requireAuth, async (req, res) => {
+      try {
+        const { file, fileName } = req.body || {};
+        if (!file || typeof file !== "string") {
+          res.status(400).json({ error: "\u0645\u0644\u0641 \u063A\u064A\u0631 \u0635\u0627\u0644\u062D \u0644\u0644\u0631\u0641\u0639" });
+          return;
+        }
+        const result = await uploadFile(file, fileName || `notebook-${Date.now()}`, "/ard-al-lughah/notebooks");
+        res.json({ success: true, ...result });
+      } catch (err) {
+        logger.error({ err }, "POST /api/student/upload failed");
+        res.status(500).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u0631\u0641\u0639 \u0627\u0644\u0635\u0648\u0631\u0629" });
+      }
+    });
+    study_default = router3;
   }
 });
 
@@ -34666,11 +35151,12 @@ router.get("/healthz", (_req, res) => {
 var health_default = router;
 
 // src/routes/platform.ts
-var import_express3 = __toESM(require_express2(), 1);
+var import_express4 = __toESM(require_express2(), 1);
 init_supabase();
 init_auth();
 init_logger();
-var router3 = (0, import_express3.Router)();
+init_study();
+var router4 = (0, import_express4.Router)();
 var SUPABASE_URL2 = process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co";
 function serviceKey() {
   return process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || "";
@@ -34823,7 +35309,7 @@ async function fetchBooksSafe() {
     return [];
   }
 }
-router3.get("/platform/overview", async (_req, res) => {
+router4.get("/platform/overview", async (_req, res) => {
   try {
     const [{ data: settingsList }, books] = await Promise.all([
       supabaseQuery("platform_settings?select=*&limit=1"),
@@ -34875,7 +35361,7 @@ router3.get("/platform/overview", async (_req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0645\u0646\u0635\u0629" });
   }
 });
-router3.get("/platform/identity", async (_req, res) => {
+router4.get("/platform/identity", async (_req, res) => {
   try {
     const { data } = await supabaseQuery("platform_settings?select=*&limit=1");
     const s = data?.[0] || {};
@@ -34899,7 +35385,7 @@ router3.get("/platform/identity", async (_req, res) => {
     });
   }
 });
-router3.get("/student/dashboard", requireAuth, async (req, res) => {
+router4.get("/student/dashboard", requireAuth, async (req, res) => {
   try {
     const activeStudent = await getActiveStudent(req);
     if (!activeStudent) {
@@ -34956,7 +35442,7 @@ router3.get("/student/dashboard", requireAuth, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u0645\u064A\u0644 \u0644\u0648\u062D\u0629 \u0627\u0644\u0637\u0627\u0644\u0628" });
   }
 });
-router3.get("/teacher/dashboard", requireAdmin, async (_req, res) => {
+router4.get("/teacher/dashboard", requireAdmin, async (_req, res) => {
   try {
     const [{ count: studentsCount }, { count: activeStudents }, { count: unitsCount }, { count: assignmentsCount }, { count: assessmentsCount }, { count: certificatesCount }, { data: recentStudentsData }, { data: assignmentsData }, { data: attemptsData }, { data: schoolsData }, weeklyActivity] = await Promise.all([
       supabaseQuery("profiles?role=eq.student", { headers: { Prefer: "count=exact" } }),
@@ -35018,7 +35504,7 @@ router3.get("/teacher/dashboard", requireAdmin, async (_req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u0645\u064A\u0644 \u0644\u0648\u062D\u0629 \u0627\u0644\u0645\u0639\u0644\u0645" });
   }
 });
-router3.get("/courses", async (req, res) => {
+router4.get("/courses", async (req, res) => {
   try {
     const [activeStudent, { data }] = await Promise.all([
       getActiveStudent(req),
@@ -35041,7 +35527,7 @@ router3.get("/courses", async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u0648\u062D\u062F\u0627\u062A \u0627\u0644\u062A\u0639\u0644\u064A\u0645\u064A\u0629" });
   }
 });
-router3.get("/courses/:id/lessons", async (req, res) => {
+router4.get("/courses/:id/lessons", async (req, res) => {
   try {
     const courseId = req.params.id;
     const { data } = await supabaseQuery(`lessons?course_id=eq.${courseId}&order=position.asc`);
@@ -35051,7 +35537,7 @@ router3.get("/courses/:id/lessons", async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u062F\u0631\u0648\u0633 \u0627\u0644\u0648\u062D\u062F\u0629" });
   }
 });
-router3.post("/lessons/:id/complete", requireAuth, async (req, res) => {
+router4.post("/lessons/:id/complete", requireAuth, async (req, res) => {
   try {
     const lessonId = req.params.id;
     const userId = await resolveStudentId(req.body?.userId, req);
@@ -35070,7 +35556,7 @@ router3.post("/lessons/:id/complete", requireAuth, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u0633\u062C\u064A\u0644 \u0625\u0643\u0645\u0627\u0644 \u0627\u0644\u062F\u0631\u0633" });
   }
 });
-router3.get("/assignments", async (req, res) => {
+router4.get("/assignments", async (req, res) => {
   try {
     const [activeStudent, { data }] = await Promise.all([
       getActiveStudent(req),
@@ -35129,7 +35615,7 @@ router3.get("/assignments", async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u0648\u0627\u062C\u0628\u0627\u062A" });
   }
 });
-router3.post("/assignments/:id/submit", requireAuth, async (req, res) => {
+router4.post("/assignments/:id/submit", requireAuth, async (req, res) => {
   try {
     const assignmentId = req.params.id;
     const { answer, userId, photos } = req.body;
@@ -35180,7 +35666,7 @@ router3.post("/assignments/:id/submit", requireAuth, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0648\u0627\u062C\u0628" });
   }
 });
-router3.get("/assignments/:id/mine", requireAuth, async (req, res) => {
+router4.get("/assignments/:id/mine", requireAuth, async (req, res) => {
   try {
     const assignmentId = req.params.id;
     const { userId } = req.query;
@@ -35219,7 +35705,7 @@ router3.get("/assignments/:id/mine", requireAuth, async (req, res) => {
     res.json(null);
   }
 });
-router3.get("/assessments", async (req, res) => {
+router4.get("/assessments", async (req, res) => {
   try {
     const [activeStudent, { data }] = await Promise.all([
       getActiveStudent(req),
@@ -35254,7 +35740,7 @@ router3.get("/assessments", async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u062A\u0642\u064A\u064A\u0645\u0627\u062A" });
   }
 });
-router3.get("/assessments/:id/questions", async (req, res) => {
+router4.get("/assessments/:id/questions", async (req, res) => {
   try {
     const assessmentId = req.params.id;
     const questions = await getAssessmentQuestions(assessmentId);
@@ -35264,7 +35750,7 @@ router3.get("/assessments/:id/questions", async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0623\u0633\u0626\u0644\u0629 \u0627\u0644\u0627\u062E\u062A\u0628\u0627\u0631" });
   }
 });
-router3.post("/assessments/:id/attempt", requireAuth, async (req, res) => {
+router4.post("/assessments/:id/attempt", requireAuth, async (req, res) => {
   try {
     const assessmentId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const { answers, userId } = req.body;
@@ -35319,7 +35805,7 @@ router3.post("/assessments/:id/attempt", requireAuth, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u0635\u062D\u064A\u062D \u0627\u0644\u0627\u062E\u062A\u0628\u0627\u0631" });
   }
 });
-router3.get("/announcements", async (_req, res) => {
+router4.get("/announcements", async (_req, res) => {
   try {
     const { data } = await supabaseQuery("announcements?published=eq.true&order=published_at.desc");
     const parsed = (data || []).map((a) => ({
@@ -35336,7 +35822,7 @@ router3.get("/announcements", async (_req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u0625\u0639\u0644\u0627\u0646\u0627\u062A" });
   }
 });
-router3.get("/teacher/settings", requireAdmin, async (_req, res) => {
+router4.get("/teacher/settings", requireAdmin, async (_req, res) => {
   try {
     const { data } = await supabaseQuery("platform_settings?select=*&limit=1");
     const s = data?.[0] || {};
@@ -35356,7 +35842,7 @@ router3.get("/teacher/settings", requireAdmin, async (_req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u0645\u0646\u0635\u0629" });
   }
 });
-router3.patch("/teacher/settings", requireAdmin, async (req, res) => {
+router4.patch("/teacher/settings", requireAdmin, async (req, res) => {
   const parsed = UpdateTeacherSettingsBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -35404,7 +35890,7 @@ router3.patch("/teacher/settings", requireAdmin, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u0645\u0646\u0635\u0629" });
   }
 });
-router3.get("/teacher/books", requireAdmin, async (_req, res) => {
+router4.get("/teacher/books", requireAdmin, async (_req, res) => {
   try {
     const { data, error } = await supabaseQuery("books?order=sort_order.asc&limit=50");
     if (error) throw new Error(String(error));
@@ -35424,7 +35910,7 @@ router3.get("/teacher/books", requireAdmin, async (_req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u0643\u062A\u0628" });
   }
 });
-router3.post("/teacher/books", requireAdmin, async (req, res) => {
+router4.post("/teacher/books", requireAdmin, async (req, res) => {
   try {
     const b = req.body || {};
     if (!b.title?.trim()) {
@@ -35449,7 +35935,7 @@ router3.post("/teacher/books", requireAdmin, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0643\u062A\u0627\u0628" });
   }
 });
-router3.patch("/teacher/books/:id", requireAdmin, async (req, res) => {
+router4.patch("/teacher/books/:id", requireAdmin, async (req, res) => {
   try {
     const b = req.body || {};
     const full = {};
@@ -35470,7 +35956,7 @@ router3.patch("/teacher/books/:id", requireAdmin, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0643\u062A\u0627\u0628" });
   }
 });
-router3.delete("/teacher/books/:id", requireAdmin, async (req, res) => {
+router4.delete("/teacher/books/:id", requireAdmin, async (req, res) => {
   try {
     const { error } = await supabaseQuery(`books?id=eq.${encodeURIComponent(String(req.params.id))}`, { method: "DELETE" });
     if (error) throw new Error(String(error));
@@ -35480,7 +35966,7 @@ router3.delete("/teacher/books/:id", requireAdmin, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0643\u062A\u0627\u0628" });
   }
 });
-router3.get("/teacher/students", requireAdmin, async (_req, res) => {
+router4.get("/teacher/students", requireAdmin, async (_req, res) => {
   try {
     const [{ data }, progressAvg] = await Promise.all([
       supabaseQuery("profiles?order=created_at.desc"),
@@ -35493,7 +35979,7 @@ router3.get("/teacher/students", requireAdmin, async (_req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0642\u0627\u0626\u0645\u0629 \u0627\u0644\u0637\u0644\u0627\u0628" });
   }
 });
-router3.get("/teacher/students/report", requireAdmin, async (req, res) => {
+router4.get("/teacher/students/report", requireAdmin, async (req, res) => {
   try {
     const q = req.query || {};
     const grade = (q.grade || "").trim();
@@ -35612,7 +36098,7 @@ router3.get("/teacher/students/report", requireAdmin, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062C\u0647\u064A\u0632 \u0643\u0634\u0641 \u0627\u0644\u0637\u0644\u0627\u0628" });
   }
 });
-router3.post("/teacher/schools/merge", requireAdmin, async (req, res) => {
+router4.post("/teacher/schools/merge", requireAdmin, async (req, res) => {
   try {
     const { from, to } = req.body || {};
     if (!from || !to) {
@@ -35634,7 +36120,7 @@ router3.post("/teacher/schools/merge", requireAdmin, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u0648\u062D\u064A\u062F \u0627\u0644\u0645\u062F\u0631\u0633\u0629" });
   }
 });
-router3.post("/teacher/students", requireAdmin, async (req, res) => {
+router4.post("/teacher/students", requireAdmin, async (req, res) => {
   try {
     const { name, email, school, grade, section, gender, phone } = req.body;
     if (!name) {
@@ -35662,7 +36148,7 @@ router3.post("/teacher/students", requireAdmin, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0637\u0627\u0644\u0628" });
   }
 });
-router3.patch("/teacher/students/:id", requireAdmin, async (req, res) => {
+router4.patch("/teacher/students/:id", requireAdmin, async (req, res) => {
   try {
     const b = req.body || {};
     if (b.name !== void 0 && !String(b.name).trim()) {
@@ -35697,7 +36183,7 @@ router3.patch("/teacher/students/:id", requireAdmin, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0637\u0627\u0644\u0628" });
   }
 });
-router3.delete("/teacher/students/:id", requireAdmin, async (req, res) => {
+router4.delete("/teacher/students/:id", requireAdmin, async (req, res) => {
   try {
     const id = String(req.params.id);
     const { data: exists } = await supabaseQuery(`profiles?id=eq.${encodeURIComponent(id)}&select=id&limit=1`);
@@ -35724,7 +36210,7 @@ router3.delete("/teacher/students/:id", requireAdmin, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0637\u0627\u0644\u0628" });
   }
 });
-router3.patch("/teacher/students/:id/password", requireAdmin, async (req, res) => {
+router4.patch("/teacher/students/:id/password", requireAdmin, async (req, res) => {
   try {
     const id = String(req.params.id);
     const password = String(req.body?.password || "");
@@ -35762,7 +36248,7 @@ router3.patch("/teacher/students/:id/password", requireAdmin, async (req, res) =
     res.status(500).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u062A\u063A\u064A\u064A\u0631 \u0643\u0644\u0645\u0629 \u0627\u0644\u0633\u0631" });
   }
 });
-router3.get("/teacher/account", requireAdmin, async (req, res) => {
+router4.get("/teacher/account", requireAdmin, async (req, res) => {
   try {
     const auth = req.auth;
     let adminEmail = "";
@@ -35792,7 +36278,7 @@ router3.get("/teacher/account", requireAdmin, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u062D\u0633\u0627\u0628" });
   }
 });
-router3.patch("/teacher/account/password", requireAdmin, async (req, res) => {
+router4.patch("/teacher/account/password", requireAdmin, async (req, res) => {
   try {
     const auth = req.auth;
     const currentPassword = String(req.body?.currentPassword || "");
@@ -35832,7 +36318,7 @@ router3.patch("/teacher/account/password", requireAdmin, async (req, res) => {
     res.status(500).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u062A\u063A\u064A\u064A\u0631 \u0643\u0644\u0645\u0629 \u0627\u0644\u0633\u0631" });
   }
 });
-router3.patch("/teacher/account/email", requireAdmin, async (req, res) => {
+router4.patch("/teacher/account/email", requireAdmin, async (req, res) => {
   try {
     const adminEmail = String(req.body?.adminEmail || "").trim().toLowerCase();
     if (!adminEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) {
@@ -35902,7 +36388,7 @@ router3.patch("/teacher/account/email", requireAdmin, async (req, res) => {
     res.status(500).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0628\u0631\u064A\u062F \u0627\u0644\u0625\u062F\u0627\u0631\u0629" });
   }
 });
-router3.post("/teacher/courses", requireAdmin, async (req, res) => {
+router4.post("/teacher/courses", requireAdmin, async (req, res) => {
   try {
     const { title, description, lessons, duration, color } = req.body;
     await supabaseQuery("courses", {
@@ -35924,7 +36410,7 @@ router3.post("/teacher/courses", requireAdmin, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u0648\u062D\u062F\u0629" });
   }
 });
-router3.post("/teacher/assignments", requireAdmin, async (req, res) => {
+router4.post("/teacher/assignments", requireAdmin, async (req, res) => {
   try {
     const { title, description, unit, dueDate, points, grade, section } = req.body;
     const courseId = req.body?.courseId ?? req.body?.course_id ?? null;
@@ -35941,7 +36427,8 @@ router3.post("/teacher/assignments", requireAdmin, async (req, res) => {
       points: parseInt(points, 10) || 20,
       published: true,
       grade: grade || "\u0627\u0644\u062C\u0645\u064A\u0639",
-      section: section || "\u0627\u0644\u062C\u0645\u064A\u0639"
+      section: section || "\u0627\u0644\u062C\u0645\u064A\u0639",
+      school: String(req.body?.school ?? "").trim()
     };
     let r = await supabaseQuery("assignments", { method: "POST", body: [full] });
     if (r.error && /column|schema cache|Could not find/i.test(String(r.error))) {
@@ -35956,10 +36443,10 @@ router3.post("/teacher/assignments", requireAdmin, async (req, res) => {
     res.json({ success: true, message: "\u062A\u0645\u062A \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0648\u0627\u062C\u0628 \u0628\u0646\u062C\u0627\u062D!" });
   } catch (err) {
     logger.error({ err }, "Error in POST /teacher/assignments");
-    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u0648\u0627\u062C\u0628" });
+    res.status(500).json({ error: saveError(err, "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u0648\u0627\u062C\u0628") });
   }
 });
-router3.post("/teacher/assessments", requireAdmin, async (req, res) => {
+router4.post("/teacher/assessments", requireAdmin, async (req, res) => {
   try {
     const { title, questions, duration, date } = req.body;
     await supabaseQuery("assessments", {
@@ -35980,7 +36467,7 @@ router3.post("/teacher/assessments", requireAdmin, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u062A\u0642\u064A\u064A\u0645" });
   }
 });
-router3.patch("/student/profile", requireAuth, async (req, res) => {
+router4.patch("/student/profile", requireAuth, async (req, res) => {
   try {
     const { id, name, school, branch, grade, section, phone } = req.body;
     const targetId = await resolveStudentId(id, req);
@@ -36005,7 +36492,7 @@ router3.patch("/student/profile", requireAuth, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u062F\u064A\u062B \u0627\u0644\u0645\u0644\u0641 \u0627\u0644\u0634\u062E\u0635\u064A" });
   }
 });
-router3.get("/teacher/students/grade-page", requireAdmin, async (req, res) => {
+router4.get("/teacher/students/grade-page", requireAdmin, async (req, res) => {
   try {
     const grade = String(req.query?.grade || "").trim();
     if (!grade) {
@@ -36042,17 +36529,17 @@ router3.get("/teacher/students/grade-page", requireAdmin, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0637\u0644\u0627\u0628 \u0627\u0644\u0635\u0641" });
   }
 });
-var platform_default = router3;
+var platform_default = router4;
 
 // src/routes/index.ts
 init_curriculum();
 
 // src/routes/storage.ts
-var import_express4 = __toESM(require_express2(), 1);
+var import_express5 = __toESM(require_express2(), 1);
 init_imagekit();
 init_auth();
 init_logger();
-var router4 = (0, import_express4.Router)();
+var router5 = (0, import_express5.Router)();
 var ALLOWED_FOLDERS = [
   "/ard-al-lughah/covers",
   "/ard-al-lughah/avatars",
@@ -36068,7 +36555,7 @@ function sanitizeFolder(folder) {
   if (f.startsWith("/ard-al-lughah/") && !f.includes("..")) return f;
   return "/ard-al-lughah/lessons";
 }
-router4.get("/teacher/storage", requireAdmin, async (_req, res) => {
+router5.get("/teacher/storage", requireAdmin, async (_req, res) => {
   try {
     res.json({ success: true, ...getStorageStatus() });
   } catch (err) {
@@ -36076,7 +36563,7 @@ router4.get("/teacher/storage", requireAdmin, async (_req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u062D\u0627\u0644\u0629 \u0627\u0644\u062A\u062E\u0632\u064A\u0646" });
   }
 });
-router4.get("/teacher/upload-auth", requireAdmin, async (req, res) => {
+router5.get("/teacher/upload-auth", requireAdmin, async (req, res) => {
   try {
     const folder = sanitizeFolder(req.query.folder || "/ard-al-lughah/bundles");
     const auth = createUploadAuth(folder, req.query.accountId);
@@ -36086,7 +36573,7 @@ router4.get("/teacher/upload-auth", requireAdmin, async (req, res) => {
     res.status(500).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u062A\u062C\u0647\u064A\u0632 \u0627\u0644\u0631\u0641\u0639 \u0627\u0644\u0645\u0628\u0627\u0634\u0631" });
   }
 });
-router4.get("/teacher/storage-usage", requireAdmin, async (_req, res) => {
+router5.get("/teacher/storage-usage", requireAdmin, async (_req, res) => {
   try {
     const usage = await getAccountUsage();
     res.json({ success: true, usage });
@@ -36095,7 +36582,7 @@ router4.get("/teacher/storage-usage", requireAdmin, async (_req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0642\u0631\u0627\u0621\u0629 \u0627\u0644\u0627\u0633\u062A\u0647\u0644\u0627\u0643" });
   }
 });
-router4.post("/teacher/upload", requireAdmin, async (req, res) => {
+router5.post("/teacher/upload", requireAdmin, async (req, res) => {
   try {
     const { file, fileName, folder, accountId } = req.body || {};
     if (!file || typeof file !== "string") {
@@ -36109,7 +36596,7 @@ router4.post("/teacher/upload", requireAdmin, async (req, res) => {
     res.status(500).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u0631\u0641\u0639 \u0627\u0644\u0645\u0644\u0641" });
   }
 });
-router4.delete("/teacher/upload", requireAdmin, async (req, res) => {
+router5.delete("/teacher/upload", requireAdmin, async (req, res) => {
   try {
     const { fileId, accountId, url } = { ...req.query, ...req.body };
     if (url) {
@@ -36126,474 +36613,10 @@ router4.delete("/teacher/upload", requireAdmin, async (req, res) => {
     res.status(500).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0645\u0644\u0641" });
   }
 });
-var storage_default = router4;
+var storage_default = router5;
 
-// src/routes/study.ts
-var import_express5 = __toESM(require_express2(), 1);
-init_supabase();
-init_imagekit();
-init_curriculum();
-init_auth();
-init_logger();
-var router5 = (0, import_express5.Router)();
-var enc2 = (v) => encodeURIComponent(Array.isArray(v) ? v[0] ?? "" : v ?? "");
-var V3_HINT = "\u0646\u0641\u0651\u0630 \u0645\u0644\u0641 sql_curriculum_v3.sql \u0641\u064A Supabase SQL Editor \u0623\u0648\u0644\u0627\u064B";
-function summaryToJson(s) {
-  return {
-    id: s.id,
-    title: s.title,
-    description: s.description || "",
-    content: s.content || "",
-    summaryType: s.summary_type || "\u0645\u0644\u062E\u0635",
-    grade: s.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
-    term: s.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
-    unitTitle: s.unit_title || "",
-    courseId: s.course_id || null,
-    coverUrl: s.cover_url || "",
-    fileUrl: s.file_url || "",
-    published: s.published !== false,
-    sortOrder: s.sort_order ?? 1,
-    section: s.section || "\u0627\u0644\u062C\u0645\u064A\u0639",
-    school: s.school || ""
-  };
-}
-router5.get("/curriculum/summaries", async (req, res) => {
-  try {
-    const { grade, term, student_id } = req.query;
-    let endpoint = "summaries?order=sort_order.asc&limit=200";
-    if (grade) endpoint += `&grade=eq.${enc2(grade)}`;
-    if (term) endpoint += `&term=eq.${enc2(term)}`;
-    const { data, error } = await supabaseQuery(endpoint);
-    if (error) throw new Error(String(error));
-    let list = (data || []).filter((s) => s.published !== false).map(summaryToJson);
-    if (student_id) {
-      const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
-      if (profile) list = list.filter((s) => itemVisible(s.grade, s.section, profile.grade, profile.gender, splitMap, s.school, profile.school));
-    }
-    res.json(list);
-  } catch (err) {
-    logger.error({ err }, "GET /curriculum/summaries failed");
-    res.json([]);
-  }
-});
-router5.get("/teacher/curriculum/summaries", requireAdmin, async (req, res) => {
-  try {
-    const { grade, term } = req.query;
-    let endpoint = "summaries?order=sort_order.asc&limit=200";
-    if (grade) endpoint += `&grade=eq.${enc2(grade)}`;
-    if (term) endpoint += `&term=eq.${enc2(term)}`;
-    const { data, error } = await supabaseQuery(endpoint);
-    if (error) throw new Error(String(error));
-    res.json((data || []).map(summaryToJson));
-  } catch (err) {
-    logger.error({ err }, "GET teacher summaries failed");
-    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u0645\u0644\u062E\u0635\u0627\u062A \u2014 " + V3_HINT });
-  }
-});
-router5.post("/teacher/curriculum/summaries", requireAdmin, async (req, res) => {
-  try {
-    const b = req.body || {};
-    if (!b.title) {
-      res.status(400).json({ error: "\u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u0645\u0644\u062E\u0635 \u0645\u0637\u0644\u0648\u0628" });
-      return;
-    }
-    const { error } = await supabaseQuery("summaries", {
-      method: "POST",
-      body: [{
-        title: b.title,
-        description: b.description || "",
-        content: b.content || "",
-        summary_type: b.summaryType || b.summary_type || "\u0645\u0644\u062E\u0635",
-        grade: b.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
-        term: b.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
-        unit_title: b.unitTitle || b.unit_title || "",
-        course_id: b.courseId || b.course_id || null,
-        cover_url: b.coverUrl || b.cover_url || "",
-        file_url: b.fileUrl || b.file_url || "",
-        section: b.section || "\u0627\u0644\u062C\u0645\u064A\u0639",
-        published: b.published !== false,
-        sort_order: Number(b.sortOrder ?? b.sort_order) || 1
-      }]
-    });
-    if (error) throw new Error(String(error));
-    res.json({ success: true, message: "\u062A\u0645\u062A \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0645\u0644\u062E\u0635 \u0628\u0646\u062C\u0627\u062D!" });
-  } catch (err) {
-    logger.error({ err }, "POST summary failed");
-    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0645\u0644\u062E\u0635 \u2014 " + V3_HINT });
-  }
-});
-router5.patch("/teacher/curriculum/summaries/:id", requireAdmin, async (req, res) => {
-  try {
-    const b = req.body || {};
-    const full = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
-    if (b.title !== void 0) full.title = b.title;
-    if (b.description !== void 0) full.description = b.description;
-    if (b.content !== void 0) full.content = b.content;
-    if (b.summaryType !== void 0 || b.summary_type !== void 0) full.summary_type = b.summaryType ?? b.summary_type;
-    if (b.grade !== void 0) full.grade = b.grade;
-    if (b.term !== void 0) full.term = b.term;
-    if (b.unitTitle !== void 0 || b.unit_title !== void 0) full.unit_title = b.unitTitle ?? b.unit_title ?? "";
-    if (b.courseId !== void 0 || b.course_id !== void 0) full.course_id = b.courseId ?? b.course_id ?? null;
-    if (b.coverUrl !== void 0 || b.cover_url !== void 0) full.cover_url = b.coverUrl ?? b.cover_url ?? "";
-    if (b.fileUrl !== void 0 || b.file_url !== void 0) full.file_url = b.fileUrl ?? b.file_url ?? "";
-    if (b.section !== void 0) full.section = b.section || "\u0627\u0644\u062C\u0645\u064A\u0639";
-    if (b.school !== void 0) full.school = String(b.school || "").trim();
-    if (b.published !== void 0) full.published = !!b.published;
-    if (b.sortOrder !== void 0 || b.sort_order !== void 0) full.sort_order = Number(b.sortOrder ?? b.sort_order) || 1;
-    const { error } = await supabaseQuery(`summaries?id=eq.${enc2(req.params.id)}`, { method: "PATCH", body: full });
-    if (error) throw new Error(String(error));
-    res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u0645\u0644\u062E\u0635!" });
-  } catch (err) {
-    logger.error({ err }, "PATCH summary failed");
-    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0645\u0644\u062E\u0635" });
-  }
-});
-router5.delete("/teacher/curriculum/summaries/:id", requireAdmin, async (req, res) => {
-  try {
-    const { error } = await supabaseQuery(`summaries?id=eq.${enc2(req.params.id)}`, { method: "DELETE" });
-    if (error) throw new Error(String(error));
-    res.json({ success: true, message: "\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u0645\u0644\u062E\u0635!" });
-  } catch (err) {
-    logger.error({ err }, "DELETE summary failed");
-    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0645\u0644\u062E\u0635" });
-  }
-});
-async function lessonTitlesFor(ids) {
-  const uniq = [...new Set(ids.filter(Boolean))];
-  if (!uniq.length) return {};
-  try {
-    const { data } = await supabaseQuery(
-      `lessons?id=in.(${uniq.map(enc2).join(",")})&select=id,title&limit=200`
-    );
-    const map = {};
-    for (const l of data || []) map[l.id] = l.title;
-    return map;
-  } catch {
-    return {};
-  }
-}
-function taskToJson(t, mySubmission, lessonTitles = {}) {
-  let requirements = [];
-  try {
-    requirements = Array.isArray(t.requirements) ? t.requirements : JSON.parse(t.requirements || "[]");
-  } catch {
-    requirements = [];
-  }
-  return {
-    id: t.id,
-    title: t.title,
-    description: t.description || "",
-    grade: t.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
-    term: t.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
-    unitTitle: t.unit_title || "",
-    courseId: t.course_id || null,
-    lessonId: t.lesson_id || null,
-    lessonTitle: t.lesson_id && lessonTitles[t.lesson_id] || "",
-    requirements,
-    dueDate: t.due_date || "",
-    points: t.points ?? 10,
-    published: t.published !== false,
-    section: t.section || "\u0627\u0644\u062C\u0645\u064A\u0639",
-    school: t.school || "",
-    myStatus: mySubmission?.status || null,
-    myScore: mySubmission?.score ?? null,
-    myFeedback: mySubmission?.feedback || "",
-    submissionsCount: t.submissionsCount ?? void 0
-  };
-}
-router5.get("/curriculum/notebooks", async (req, res) => {
-  try {
-    const { grade, term, student_id } = req.query;
-    let endpoint = "notebook_tasks?order=created_at.desc&limit=200";
-    if (grade) endpoint += `&grade=eq.${enc2(grade)}`;
-    if (term) endpoint += `&term=eq.${enc2(term)}`;
-    const { data, error } = await supabaseQuery(endpoint);
-    if (error) throw new Error(String(error));
-    let subs = {};
-    let profile = null;
-    let splitMap = {};
-    if (student_id) {
-      const ids = (data || []).map((t) => t.id);
-      if (ids.length) {
-        const { data: sdata } = await supabaseQuery(
-          `notebook_submissions?user_id=eq.${enc2(student_id)}&select=task_id,status,score,feedback&limit=200`
-        );
-        for (const s of sdata || []) subs[s.task_id] = s;
-      }
-      [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
-    }
-    const lessonTitles = await lessonTitlesFor((data || []).map((t) => t.lesson_id));
-    let list = (data || []).filter((t) => t.published !== false).map((t) => taskToJson(t, subs[t.id], lessonTitles));
-    if (profile) list = list.filter((t) => itemVisible(t.grade, t.section, profile.grade, profile.gender, splitMap, t.school, profile.school));
-    res.json(list);
-  } catch (err) {
-    logger.error({ err }, "GET /curriculum/notebooks failed");
-    res.json([]);
-  }
-});
-router5.get("/teacher/curriculum/notebooks", requireAdmin, async (req, res) => {
-  try {
-    const { grade, term } = req.query;
-    let endpoint = "notebook_tasks?order=created_at.desc&limit=200";
-    if (grade) endpoint += `&grade=eq.${enc2(grade)}`;
-    if (term) endpoint += `&term=eq.${enc2(term)}`;
-    const { data, error } = await supabaseQuery(endpoint);
-    if (error) throw new Error(String(error));
-    const { data: allSubs } = await supabaseQuery("notebook_submissions?select=task_id&limit=2000");
-    const counts = {};
-    for (const s of allSubs || []) counts[s.task_id] = (counts[s.task_id] || 0) + 1;
-    const lessonTitles = await lessonTitlesFor((data || []).map((t) => t.lesson_id));
-    res.json((data || []).map((t) => ({ ...taskToJson(t, void 0, lessonTitles), submissionsCount: counts[t.id] || 0 })));
-  } catch (err) {
-    logger.error({ err }, "GET teacher notebooks failed");
-    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0645\u0647\u0627\u0645 \u0627\u0644\u062F\u0641\u062A\u0631 \u2014 " + V3_HINT });
-  }
-});
-router5.post("/teacher/curriculum/notebooks", requireAdmin, async (req, res) => {
-  try {
-    const b = req.body || {};
-    if (!b.title) {
-      res.status(400).json({ error: "\u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u0645\u0647\u0645\u0629 \u0645\u0637\u0644\u0648\u0628" });
-      return;
-    }
-    const requirements = Array.isArray(b.requirements) ? b.requirements.filter((r) => r?.label?.trim()).slice(0, 20).map((r) => ({
-      label: String(r.label).slice(0, 200),
-      kind: r.kind || "\u0643\u062A\u0627\u0628\u0629",
-      place: String(r.place || "").slice(0, 120)
-    })) : [];
-    const { error } = await supabaseQuery("notebook_tasks", {
-      method: "POST",
-      body: [{
-        title: b.title,
-        description: b.description || "",
-        grade: b.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
-        term: b.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
-        unit_title: b.unitTitle || b.unit_title || "",
-        course_id: b.courseId || b.course_id || null,
-        lesson_id: b.lessonId || b.lesson_id || null,
-        requirements,
-        due_date: b.dueDate || b.due_date || null,
-        points: Number(b.points) || 10,
-        section: b.section || "\u0627\u0644\u062C\u0645\u064A\u0639",
-        published: b.published !== false
-      }]
-    });
-    if (error) throw new Error(String(error));
-    res.json({ success: true, message: "\u062A\u0645 \u0625\u0646\u0634\u0627\u0621 \u0645\u0647\u0645\u0629 \u0627\u0644\u062F\u0641\u062A\u0631 \u0628\u0646\u062C\u0627\u062D!" });
-  } catch (err) {
-    logger.error({ err }, "POST notebook task failed");
-    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u0645\u0647\u0645\u0629 \u2014 " + V3_HINT });
-  }
-});
-router5.patch("/teacher/curriculum/notebooks/:id", requireAdmin, async (req, res) => {
-  try {
-    const b = req.body || {};
-    const full = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
-    if (b.title !== void 0) full.title = b.title;
-    if (b.description !== void 0) full.description = b.description;
-    if (b.grade !== void 0) full.grade = b.grade;
-    if (b.term !== void 0) full.term = b.term;
-    if (b.unitTitle !== void 0 || b.unit_title !== void 0) full.unit_title = b.unitTitle ?? b.unit_title ?? "";
-    if (b.courseId !== void 0 || b.course_id !== void 0) full.course_id = b.courseId ?? b.course_id ?? null;
-    if (b.lessonId !== void 0 || b.lesson_id !== void 0) full.lesson_id = b.lessonId ?? b.lesson_id ?? null;
-    if (b.requirements !== void 0) {
-      full.requirements = Array.isArray(b.requirements) ? b.requirements.filter((r) => r?.label?.trim()).slice(0, 20).map((r) => ({
-        label: String(r.label).slice(0, 200),
-        kind: r.kind || "\u0643\u062A\u0627\u0628\u0629",
-        place: String(r.place || "").slice(0, 120)
-      })) : [];
-    }
-    if (b.dueDate !== void 0 || b.due_date !== void 0) full.due_date = b.dueDate ?? b.due_date ?? null;
-    if (b.points !== void 0) full.points = Number(b.points) || 10;
-    if (b.section !== void 0) full.section = b.section || "\u0627\u0644\u062C\u0645\u064A\u0639";
-    if (b.school !== void 0) full.school = String(b.school || "").trim();
-    if (b.published !== void 0) full.published = !!b.published;
-    const { error } = await supabaseQuery(`notebook_tasks?id=eq.${enc2(req.params.id)}`, { method: "PATCH", body: full });
-    if (error) throw new Error(String(error));
-    res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u0645\u0647\u0645\u0629!" });
-  } catch (err) {
-    logger.error({ err }, "PATCH notebook task failed");
-    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0645\u0647\u0645\u0629" });
-  }
-});
-router5.delete("/teacher/curriculum/notebooks/:id", requireAdmin, async (req, res) => {
-  try {
-    const { error } = await supabaseQuery(`notebook_tasks?id=eq.${enc2(req.params.id)}`, { method: "DELETE" });
-    if (error) throw new Error(String(error));
-    res.json({ success: true, message: "\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u0645\u0647\u0645\u0629 \u0648\u062A\u0633\u0644\u064A\u0645\u0627\u062A\u0647\u0627!" });
-  } catch (err) {
-    logger.error({ err }, "DELETE notebook task failed");
-    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0645\u0647\u0645\u0629" });
-  }
-});
-router5.get("/teacher/curriculum/notebooks/:id/submissions", requireAdmin, async (req, res) => {
-  try {
-    const { data, error } = await supabaseQuery(
-      `notebook_submissions?task_id=eq.${enc2(req.params.id)}&order=submitted_at.desc&limit=500`
-    );
-    if (error) throw new Error(String(error));
-    const userIds = [...new Set((data || []).map((s) => s.user_id))];
-    let names = {};
-    if (userIds.length) {
-      const { data: profiles } = await supabaseQuery(
-        `profiles?id=in.(${userIds.map(enc2).join(",")})&select=id,full_name,grade,section,school,avatar_url&limit=500`
-      );
-      for (const p of profiles || []) names[p.id] = p;
-    }
-    res.json(
-      (data || []).map((s) => {
-        let checks = [];
-        try {
-          checks = Array.isArray(s.checks) ? s.checks : JSON.parse(s.checks || "[]");
-        } catch {
-          checks = [];
-        }
-        return {
-          id: s.id,
-          photos: Array.isArray(s.photos) ? s.photos : [],
-          note: s.note || "",
-          status: s.status || "\u0645\u0633\u0644\u0651\u0645",
-          score: s.score ?? null,
-          feedback: s.feedback || "",
-          checks,
-          submittedAt: s.submitted_at,
-          student: {
-            id: s.user_id,
-            name: names[s.user_id]?.full_name || "\u0637\u0627\u0644\u0628",
-            grade: names[s.user_id]?.grade || "",
-            section: names[s.user_id]?.section || "",
-            school: names[s.user_id]?.school || "",
-            avatarUrl: names[s.user_id]?.avatar_url || ""
-          }
-        };
-      })
-    );
-  } catch (err) {
-    logger.error({ err }, "GET notebook submissions failed");
-    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u062A\u0633\u0644\u064A\u0645\u0627\u062A" });
-  }
-});
-router5.post("/notebooks/:id/submit", requireAuth, async (req, res) => {
-  try {
-    const { userId, photos, note } = req.body || {};
-    if (!userId) {
-      res.status(400).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u062F\u064A\u062F \u0627\u0644\u0637\u0627\u0644\u0628" });
-      return;
-    }
-    if (!Array.isArray(photos) || !photos.length) {
-      res.status(400).json({ error: "\u0635\u0648\u0651\u0631 \u062F\u0641\u062A\u0631\u0643 \u0648\u0623\u0631\u0641\u0642 \u0635\u0648\u0631\u0629 \u0648\u0627\u062D\u062F\u0629 \u0639\u0644\u0649 \u0627\u0644\u0623\u0642\u0644" });
-      return;
-    }
-    let initChecks = [];
-    try {
-      const { data: task } = await supabaseQuery(
-        `notebook_tasks?id=eq.${enc2(req.params.id)}&select=requirements&limit=1`
-      );
-      const reqs = task?.[0]?.requirements;
-      const arr = Array.isArray(reqs) ? reqs : JSON.parse(reqs || "[]");
-      initChecks = arr.map((r) => ({ label: String(r.label || ""), done: false }));
-    } catch {
-    }
-    const payload = {
-      task_id: req.params.id,
-      user_id: userId,
-      photos,
-      note: note || "",
-      status: "\u0645\u0633\u0644\u0651\u0645",
-      checks: initChecks,
-      submitted_at: (/* @__PURE__ */ new Date()).toISOString()
-    };
-    const existing = await supabaseQuery(
-      `notebook_submissions?task_id=eq.${enc2(req.params.id)}&user_id=eq.${enc2(userId)}&limit=1`
-    );
-    if (existing.data?.[0]) {
-      const { error } = await supabaseQuery(`notebook_submissions?id=eq.${existing.data[0].id}`, {
-        method: "PATCH",
-        body: { ...payload, score: null, feedback: "" }
-      });
-      if (error) throw new Error(String(error));
-    } else {
-      const { error } = await supabaseQuery("notebook_submissions", { method: "POST", body: [payload] });
-      if (error) throw new Error(String(error));
-    }
-    res.json({ success: true, message: "\u062A\u0645 \u062A\u0633\u0644\u064A\u0645 \u0635\u0648\u0631 \u062F\u0641\u062A\u0631\u0643 \u0644\u0644\u0623\u0633\u062A\u0627\u0630 \u0628\u0646\u062C\u0627\u062D! \u0623\u062D\u0633\u0646\u062A." });
-  } catch (err) {
-    logger.error({ err }, "POST notebook submit failed");
-    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u0633\u0644\u064A\u0645 \u0627\u0644\u062F\u0641\u062A\u0631 \u2014 " + V3_HINT });
-  }
-});
-router5.get("/notebooks/:id/mine", async (req, res) => {
-  try {
-    const { user_id } = req.query;
-    if (!user_id) {
-      res.status(400).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u062F\u064A\u062F \u0627\u0644\u0637\u0627\u0644\u0628" });
-      return;
-    }
-    const { data } = await supabaseQuery(
-      `notebook_submissions?task_id=eq.${enc2(req.params.id)}&user_id=eq.${enc2(user_id)}&limit=1`
-    );
-    const s = data?.[0];
-    if (!s) {
-      res.json(null);
-      return;
-    }
-    let checks = [];
-    try {
-      checks = Array.isArray(s.checks) ? s.checks : JSON.parse(s.checks || "[]");
-    } catch {
-      checks = [];
-    }
-    res.json({
-      photos: Array.isArray(s.photos) ? s.photos : [],
-      note: s.note || "",
-      status: s.status || "\u0645\u0633\u0644\u0651\u0645",
-      score: s.score ?? null,
-      feedback: s.feedback || "",
-      checks,
-      submittedAt: s.submitted_at
-    });
-  } catch (err) {
-    logger.error({ err }, "GET notebook mine failed");
-    res.json(null);
-  }
-});
-router5.patch("/teacher/curriculum/notebook-submissions/:id", requireAdmin, async (req, res) => {
-  try {
-    const { score, feedback, status, checks } = req.body || {};
-    const full = { reviewed_at: (/* @__PURE__ */ new Date()).toISOString() };
-    if (score !== void 0) full.score = score === null || score === "" ? null : Number(score);
-    if (feedback !== void 0) full.feedback = feedback;
-    if (checks !== void 0) {
-      full.checks = Array.isArray(checks) ? checks.map((c) => ({ label: String(c.label || ""), done: !!c.done })) : [];
-    }
-    if (status !== void 0) full.status = status;
-    else if (score !== void 0 || checks !== void 0) full.status = "\u062A\u0645 \u0627\u0644\u062A\u0642\u064A\u064A\u0645";
-    const { error } = await supabaseQuery(`notebook_submissions?id=eq.${enc2(req.params.id)}`, {
-      method: "PATCH",
-      body: full
-    });
-    if (error) throw new Error(String(error));
-    res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u062A\u0642\u064A\u064A\u0645!" });
-  } catch (err) {
-    logger.error({ err }, "PATCH notebook submission failed");
-    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u062A\u0642\u064A\u064A\u0645" });
-  }
-});
-router5.post("/student/upload", requireAuth, async (req, res) => {
-  try {
-    const { file, fileName } = req.body || {};
-    if (!file || typeof file !== "string") {
-      res.status(400).json({ error: "\u0645\u0644\u0641 \u063A\u064A\u0631 \u0635\u0627\u0644\u062D \u0644\u0644\u0631\u0641\u0639" });
-      return;
-    }
-    const result = await uploadFile(file, fileName || `notebook-${Date.now()}`, "/ard-al-lughah/notebooks");
-    res.json({ success: true, ...result });
-  } catch (err) {
-    logger.error({ err }, "POST /api/student/upload failed");
-    res.status(500).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u0631\u0641\u0639 \u0627\u0644\u0635\u0648\u0631\u0629" });
-  }
-});
-var study_default = router5;
+// src/routes/index.ts
+init_study();
 
 // src/routes/auth.ts
 var import_express6 = __toESM(require_express2(), 1);
