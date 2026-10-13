@@ -325,20 +325,14 @@ router.post("/auth/verify/send", async (req, res): Promise<void> => {
     await sendMail({ to: state.email, ...content });
   } catch (err) {
     if (err instanceof MailNotConfiguredError) {
+      // تفاصيل السبب للمشغّل في السجل فقط — الطالب يرى رسالة محايدة
       logger.error({ err, mail: describeMailSetup() }, "Verification email is not configured");
-      res.status(503).json({ error: `${err.message} (${describeMailSetup()})` });
+      res.status(503).json({ error: "خدمة إرسال الكود غير مفعّلة على الخادم. راجع إعدادات البريد." });
       return;
     }
     logger.error({ err, mail: describeMailSetup() }, "Failed to send the verification code");
-    const detail = (err as Error)?.message ?? "";
     res.status(502).json({
-      error: /unauthorized ip/i.test(detail)
-        ? "تم رفض الاتصال من Brevo — عنوان الخادم غير مُصرّح به. أضف 0.0.0.0/0 في Brevo ← Senders, domains, IPs."
-        : /sender|not verified|unauthorized|550/i.test(detail)
-          ? "Brevo رفض البريد المرسل — ضع بريداً موثّقاً في المتغير BREVO_MAIL_FROM."
-          : err instanceof MailSendError
-            ? "تعذّر إرسال الكود إلى بريدك الآن. تأكد من العنوان أو حاول بعد قليل."
-            : "تعذّر إرسال الكود إلى بريدك الآن. حاول بعد قليل.",
+      error: "تعذّر إرسال الكود إلى بريدك الآن. حاول بعد قليل.",
     });
     return;
   }
