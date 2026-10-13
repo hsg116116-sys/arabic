@@ -17,6 +17,17 @@ const enc = (v: string | string[] | undefined): string =>
 const V3_HINT = "نفّذ ملف sql_curriculum_v3.sql في Supabase SQL Editor أولاً";
 
 /**
+ * تاريخ آمن لقاعدة البيانات: حقل <input type="date"> غير المعبّأ يرسل
+ * سلسلة فارغة، وPostgres يرفضها لـ DATE فيسقط الحفظ كله. نحوّلها إلى
+ * null (بلا موعد) أو نتركها كما هي إن كانت تاريخاً صحيحاً.
+ */
+export function dateOrNull(v: unknown, fallback: string | null = null): string | null {
+  const s = String(v ?? "").trim();
+  if (!s) return fallback;
+  return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : fallback;
+}
+
+/**
  * رسالة خطأ تشخّص نفسها: تكشف سبب فشل الحفظ الحقيقي (عمود ناقص، تكرار،
  * ...) بدل جملة عامة عديمة الفائدة. نقصّها إلى 180 حرفاً فلا تتسرب بيانات.
  */
@@ -282,7 +293,7 @@ router.post("/teacher/curriculum/notebooks", requireAdmin, async (req, res) => {
         course_id: b.courseId || b.course_id || null,
         lesson_id: b.lessonId || b.lesson_id || null,
         requirements,
-        due_date: b.dueDate || b.due_date || null,
+        due_date: dateOrNull(b.dueDate ?? b.due_date),
         points: Number(b.points) || 10,
         section: b.section || "الجميع",
         published: b.published !== false,
@@ -317,7 +328,7 @@ router.patch("/teacher/curriculum/notebooks/:id", requireAdmin, async (req, res)
           }))
         : [];
     }
-    if (b.dueDate !== undefined || b.due_date !== undefined) full.due_date = b.dueDate ?? b.due_date ?? null;
+    if (b.dueDate !== undefined || b.due_date !== undefined) full.due_date = dateOrNull(b.dueDate ?? b.due_date);
     if (b.points !== undefined) full.points = Number(b.points) || 10;
     if (b.section !== undefined) full.section = b.section || "الجميع";
     if (b.school !== undefined) full.school = String(b.school || "").trim();

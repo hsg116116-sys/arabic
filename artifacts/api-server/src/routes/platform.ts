@@ -15,7 +15,7 @@ import {
 import { supabaseQuery, getSupabaseUser } from "../lib/supabase";
 import { requireAuth, requireAdmin, type AuthedRequest } from "../middlewares/auth";
 import { logger } from "../lib/logger";
-import { saveError } from "./study";
+import { saveError, dateOrNull } from "./study";
 
 const router: IRouter = Router();
 
@@ -1474,7 +1474,7 @@ router.post("/teacher/assignments", requireAdmin, async (req, res) => {
       course_id: courseId,
       lesson_id: lessonId,
       images,
-      due_date: dueDate || new Date(Date.now() + 86400000 * 7).toISOString().split("T")[0],
+      due_date: dateOrNull(dueDate, new Date(Date.now() + 86400000 * 7).toISOString().split("T")[0]),
       points: parseInt(points, 10) || 20,
       published: true,
       grade: grade || "الجميع",

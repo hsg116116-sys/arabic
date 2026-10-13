@@ -30166,7 +30166,7 @@ var init_curriculum = __esm({
           unit_title: b.unitTitle || b.unit_title || "",
           questions_count: Array.isArray(b.questions) ? b.questions.length : Number(b.questions) || 0,
           duration: b.duration || "20 \u062F\u0642\u064A\u0642\u0629",
-          available_date: b.date || b.available_date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
+          available_date: dateOrNull(b.date ?? b.available_date, (/* @__PURE__ */ new Date()).toISOString().split("T")[0]),
           published: b.published !== false,
           grade: b.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
           term: b.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
@@ -30214,7 +30214,7 @@ var init_curriculum = __esm({
         if (b.courseId !== void 0 || b.course_id !== void 0) full.course_id = b.courseId ?? b.course_id ?? null;
         if (b.lessonId !== void 0 || b.lesson_id !== void 0) full.lesson_id = b.lessonId ?? b.lesson_id ?? null;
         if (b.duration !== void 0) full.duration = b.duration;
-        if (b.date !== void 0 || b.available_date !== void 0) full.available_date = b.date ?? b.available_date;
+        if (b.date !== void 0 || b.available_date !== void 0) full.available_date = dateOrNull(b.date ?? b.available_date, (/* @__PURE__ */ new Date()).toISOString().split("T")[0]);
         if (b.published !== void 0) full.published = !!b.published;
         if (b.grade !== void 0) full.grade = b.grade;
         if (b.term !== void 0) full.term = b.term;
@@ -30425,7 +30425,7 @@ var init_curriculum = __esm({
         if (b.courseId !== void 0 || b.course_id !== void 0) full.course_id = b.courseId ?? b.course_id ?? null;
         if (b.lessonId !== void 0 || b.lesson_id !== void 0) full.lesson_id = b.lessonId ?? b.lesson_id ?? null;
         if (b.images !== void 0) full.images = Array.isArray(b.images) ? b.images.filter((u) => String(u || "").trim()) : [];
-        if (b.dueDate !== void 0 || b.due_date !== void 0) full.due_date = b.dueDate ?? b.due_date ?? null;
+        if (b.dueDate !== void 0 || b.due_date !== void 0) full.due_date = dateOrNull(b.dueDate ?? b.due_date);
         if (b.points !== void 0) full.points = Number(b.points) || 0;
         if (b.published !== void 0) full.published = !!b.published;
         if (b.grade !== void 0) full.grade = b.grade || "\u0627\u0644\u062C\u0645\u064A\u0639";
@@ -30514,6 +30514,11 @@ var init_curriculum = __esm({
 });
 
 // src/routes/study.ts
+function dateOrNull(v, fallback = null) {
+  const s = String(v ?? "").trim();
+  if (!s) return fallback;
+  return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : fallback;
+}
 function saveError(err, prefix) {
   const raw = String(err?.message ?? err ?? "").trim();
   const pg = raw.match(/"message"\s*:\s*"([^"]+)"/);
@@ -30771,7 +30776,7 @@ var init_study = __esm({
             course_id: b.courseId || b.course_id || null,
             lesson_id: b.lessonId || b.lesson_id || null,
             requirements,
-            due_date: b.dueDate || b.due_date || null,
+            due_date: dateOrNull(b.dueDate ?? b.due_date),
             points: Number(b.points) || 10,
             section: b.section || "\u0627\u0644\u062C\u0645\u064A\u0639",
             published: b.published !== false,
@@ -30803,7 +30808,7 @@ var init_study = __esm({
             place: String(r.place || "").slice(0, 120)
           })) : [];
         }
-        if (b.dueDate !== void 0 || b.due_date !== void 0) full.due_date = b.dueDate ?? b.due_date ?? null;
+        if (b.dueDate !== void 0 || b.due_date !== void 0) full.due_date = dateOrNull(b.dueDate ?? b.due_date);
         if (b.points !== void 0) full.points = Number(b.points) || 10;
         if (b.section !== void 0) full.section = b.section || "\u0627\u0644\u062C\u0645\u064A\u0639";
         if (b.school !== void 0) full.school = String(b.school || "").trim();
@@ -36423,7 +36428,7 @@ router4.post("/teacher/assignments", requireAdmin, async (req, res) => {
       course_id: courseId,
       lesson_id: lessonId,
       images,
-      due_date: dueDate || new Date(Date.now() + 864e5 * 7).toISOString().split("T")[0],
+      due_date: dateOrNull(dueDate, new Date(Date.now() + 864e5 * 7).toISOString().split("T")[0]),
       points: parseInt(points, 10) || 20,
       published: true,
       grade: grade || "\u0627\u0644\u062C\u0645\u064A\u0639",

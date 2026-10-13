@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { supabaseQuery } from "../lib/supabase";
 import { requireAuth, requireAdmin } from "../middlewares/auth";
 import { logger } from "../lib/logger";
-import { saveError } from "./study";
+import { saveError, dateOrNull } from "./study";
 
 const router: IRouter = Router();
 
@@ -692,7 +692,7 @@ router.post("/teacher/curriculum/assessments", requireAdmin, async (req, res) =>
       unit_title: b.unitTitle || b.unit_title || "",
       questions_count: Array.isArray(b.questions) ? b.questions.length : Number(b.questions) || 0,
       duration: b.duration || "20 دقيقة",
-      available_date: b.date || b.available_date || new Date().toISOString().split("T")[0],
+      available_date: dateOrNull(b.date ?? b.available_date, new Date().toISOString().split("T")[0]),
       published: b.published !== false,
       grade: b.grade || "الصف العاشر",
       term: b.term || "الفصل الأول",
@@ -743,7 +743,7 @@ router.patch("/teacher/curriculum/assessments/:id", requireAdmin, async (req, re
     if (b.courseId !== undefined || b.course_id !== undefined) full.course_id = b.courseId ?? b.course_id ?? null;
     if (b.lessonId !== undefined || b.lesson_id !== undefined) full.lesson_id = b.lessonId ?? b.lesson_id ?? null;
     if (b.duration !== undefined) full.duration = b.duration;
-    if (b.date !== undefined || b.available_date !== undefined) full.available_date = b.date ?? b.available_date;
+    if (b.date !== undefined || b.available_date !== undefined) full.available_date = dateOrNull(b.date ?? b.available_date, new Date().toISOString().split("T")[0]);
     if (b.published !== undefined) full.published = !!b.published;
     if (b.grade !== undefined) full.grade = b.grade;
     if (b.term !== undefined) full.term = b.term;
@@ -1005,7 +1005,7 @@ router.patch("/teacher/curriculum/assignments/:id", requireAdmin, async (req, re
     if (b.courseId !== undefined || b.course_id !== undefined) full.course_id = b.courseId ?? b.course_id ?? null;
     if (b.lessonId !== undefined || b.lesson_id !== undefined) full.lesson_id = b.lessonId ?? b.lesson_id ?? null;
     if (b.images !== undefined) full.images = Array.isArray(b.images) ? b.images.filter((u: unknown) => String(u || "").trim()) : [];
-    if (b.dueDate !== undefined || b.due_date !== undefined) full.due_date = b.dueDate ?? b.due_date ?? null;
+    if (b.dueDate !== undefined || b.due_date !== undefined) full.due_date = dateOrNull(b.dueDate ?? b.due_date);
     if (b.points !== undefined) full.points = Number(b.points) || 0;
     if (b.published !== undefined) full.published = !!b.published;
     if (b.grade !== undefined) full.grade = b.grade || "الجميع";
