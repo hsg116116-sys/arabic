@@ -318,6 +318,29 @@ const FALLBACK_CATALOG = {
   })) as CatalogSchool[],
 };
 
+/**
+ * قائمة الصفوف والمدارس الحيّة — تُستخدم في التسجيل وإكمال الحساب.
+ * تقرأ من الكتالوج مباشرة فيظهر أي صف أو مدرسة أضافه الأستاذ فوراً.
+ * تعرض "جارٍ التحميل" بدل قائمة وهمية حتى يصل Catalog.
+ */
+function LiveSelectField({ name, label, kind, placeholder, testId }: {
+  name: string; label: string; kind: 'grade' | 'school'; placeholder?: string; testId?: string;
+}) {
+  const cat = useCatalog();
+  const options = kind === 'grade' ? cat.gradeNames : cat.schoolNames;
+  if (!options.length) {
+    return (
+      <label className="block text-sm font-semibold">
+        <span className="mb-2 block">{label}</span>
+        <span className="flex items-center gap-2 rounded-xl border border-input bg-background px-4 py-3 text-sm text-muted-foreground">
+          <RefreshCw size={15} className="animate-spin" /> جارٍ تحميل {kind === 'grade' ? 'الصفوف' : 'المدارس'}...
+        </span>
+      </label>
+    );
+  }
+  return <SelectField name={name} label={label} options={options} testId={testId || name} />;
+}
+
 /* =========================================================================
    كتالوج حيّ — مصدر واحد للصفوف والمدارس في كل الموقع
    ========================================================================= */
@@ -1804,8 +1827,8 @@ function Register() {
         <Field name="email" label="البريد الإلكتروني" type="email" placeholder="name@example.com" testId="input-register-email" />
         <Field name="password" label="كلمة المرور (6 خانات على الأقل)" type="password" placeholder="••••••••" testId="input-register-password" />
         <div className="grid gap-4 sm:grid-cols-2">
-          <SelectField name="school" label="المدرسة" options={['مدرسة وايلد', 'مبادرة أهرامات الأمل']} testId="select-school" />
-          <SelectField name="grade" label="الصف الدراسي" options={['الصف الثامن', 'الصف التاسع', 'الصف العاشر']} testId="select-grade" />
+          <LiveSelectField name="school" label="المدرسة" kind="school" testId="select-school" />
+          <LiveSelectField name="grade" label="الصف الدراسي" kind="grade" testId="select-grade" />
           <SelectField name="gender" label="الجنس" options={['طالب', 'طالبة']} testId="select-gender" />
           <Field name="phone" label="رقم الهاتف (اختياري)" placeholder="059xxxxxxx" testId="input-phone" />
         </div>
@@ -1987,8 +2010,8 @@ function CompleteProfilePage() {
         <Field name="fullName" label="الاسم الكامل (اسم المستخدم)" placeholder="اكتب الاسم الثلاثي أو الرباعي — إلزامي" testId="input-complete-name" />
         <div className="grid gap-4 sm:grid-cols-2">
           <SelectField name="gender" label="طالب أم طالبة؟" options={['طالب', 'طالبة']} testId="select-complete-gender" />
-          <SelectField name="grade" label="الصف الدراسي" options={['الصف الثامن', 'الصف التاسع', 'الصف العاشر']} testId="select-complete-grade" />
-          <SelectField name="school" label="المدرسة" options={['مدرسة وايلد', 'مبادرة أهرامات الأمل']} testId="select-complete-school" />
+          <LiveSelectField name="grade" label="الصف الدراسي" kind="grade" testId="select-complete-grade" />
+          <LiveSelectField name="school" label="المدرسة" kind="school" testId="select-complete-school" />
           <Field name="phone" label="رقم الهاتف (اختياري)" placeholder="059xxxxxxx" testId="input-complete-phone" />
         </div>
         {message && <p className="rounded-xl bg-accent/20 px-4 py-3 text-sm leading-6 text-accent-foreground font-semibold">{message}</p>}
