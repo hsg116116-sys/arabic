@@ -6114,7 +6114,7 @@ function HwQuickSubmitModal({ hw, onClose, onSubmitted }: { hw: any; onClose: ()
 }
 
 function StudentCoursesPage() {
-  const { grade: effectiveGrade, term, split, gender, student } = useStudentGradeTerm();
+  const { grade: effectiveGrade, school, term, split, gender, student } = useStudentGradeTerm();
   const [courses, setCourses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -8876,7 +8876,7 @@ function TeacherSummariesPage() {
    إعلانات الأستاذ — صفحة الطالب الكاملة (كل ما ينشره الأستاذ)
 ========================================================================= */
 function StudentAnnouncementsPage() {
-  const { grade: effectiveGrade, term, split, gender, student } = useStudentGradeTerm();
+  const { grade: effectiveGrade, school, term, split, gender, student } = useStudentGradeTerm();
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState('الكل');
@@ -8949,7 +8949,7 @@ function StudentAnnouncementsPage() {
 }
 
 function StudentNotebookPage() {
-  const { grade: effectiveGrade, term, split, gender, student } = useStudentGradeTerm();
+  const { grade: effectiveGrade, school, term, split, gender, student } = useStudentGradeTerm();
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [active, setActive] = useState<any | null>(null);
