@@ -242,6 +242,19 @@ async function livePlatformName(): Promise<string> {
   }
 }
 
+/** هل البريد مقيَّد بحساب طالب سابق؟ (يمنع أكثر من حساب على نفس الإيميل) */
+async function emailAlreadyRegistered(email: string): Promise<boolean> {
+  try {
+    const { data } = await supabaseQuery<any[]>(
+      `profiles?select=id&email=eq.${encodeURIComponent(email)}&limit=1`,
+    );
+    return Array.isArray(data) && data.length > 0;
+  } catch {
+    // تعذّر الفحص لا يعني منع — التسجيل نفسه يبقى الحَكَم في النهاية
+    return false;
+  }
+}
+
 /** حالة طلب التحقق — الواجهة用它 لتحميل الصفحة ومعرفة المهلة المتبقية. */
 router.get("/auth/verify/status", (req, res) => {
   const state = readVerifyState(req);
@@ -277,6 +290,15 @@ router.post("/auth/verify/send", async (req, res): Promise<void> => {
     }
   } catch { /* تجاهل */ }
 
+  // إيميل واحد = حساب واحد. يُمنع قبل إرسال الكود حتى لا يضيع وقت الطالب.
+  if (await emailAlreadyRegistered(allowed.email)) {
+    res.status(409).json({
+      error: "هذا البريد مسجّل عندنا مسبقاً — لا يمكن إنشاء حساب ثانٍ لنفس الإيميل.",
+      hasAccount: true,
+    });
+    return;
+  }
+
   // إعادة الإرسال قبل مرور دقيقة ممنوعة حتى لا نستنزف حساب البريد
   const existing = readVerifyState(req);
   if (existing && existing.email === allowed.email) {
@@ -304,7 +326,7 @@ router.post("/auth/verify/send", async (req, res): Promise<void> => {
   } catch (err) {
     if (err instanceof MailNotConfiguredError) {
       logger.error({ err, mail: describeMailSetup() }, "Verification email is not configured");
-      res.status(503).json({ error: "خدمة إرسال الكود غير مفعّلة على الخادم بعد. راجع مفاتيح البريد." });
+      res.status(503).json({ error: `${err.message} (${describeMailSetup()})` });
       return;
     }
     logger.error({ err, mail: describeMailSetup() }, "Failed to send the verification code");
@@ -312,9 +334,11 @@ router.post("/auth/verify/send", async (req, res): Promise<void> => {
     res.status(502).json({
       error: /unauthorized ip/i.test(detail)
         ? "تم رفض الاتصال من Brevo — عنوان الخادم غير مُصرّح به. أضف 0.0.0.0/0 في Brevo ← Senders, domains, IPs."
-        : err instanceof MailSendError
-          ? "تعذّر إرسال الكود إلى بريدك الآن. تأكد من العنوان أو حاول بعد قليل."
-          : "تعذّر إرسال الكود إلى بريدك الآن. حاول بعد قليل.",
+        : /sender|not verified|unauthorized|550/i.test(detail)
+          ? "Brevo رفض البريد المرسل — ضع بريداً موثّقاً في المتغير BREVO_MAIL_FROM."
+          : err instanceof MailSendError
+            ? "تعذّر إرسال الكود إلى بريدك الآن. تأكد من العنوان أو حاول بعد قليل."
+            : "تعذّر إرسال الكود إلى بريدك الآن. حاول بعد قليل.",
     });
     return;
   }
@@ -429,8 +453,14 @@ router.post("/auth/register", async (req, res): Promise<void> => {
   });
 
   if (!response.ok) {
-    res.status(response.status === 422 ? 400 : response.status).json({
-      error: String(data.msg ?? data.error_description ?? data.message ?? "تعذر إنشاء الحساب"),
+    const supabaseMessage = String(data.msg ?? data.error_description ?? data.message ?? "تعذر إنشاء الحساب");
+    // إيميل واحد = حساب واحد: Supabase يرفض التكرار، ونترجمها للطالب
+    const alreadyThere = /already|registered|exists/i.test(supabaseMessage);
+    res.status(alreadyThere ? 409 : response.status === 422 ? 400 : response.status).json({
+      error: alreadyThere
+        ? "هذا البريد مسجّل عندنا مسبقاً — لا يمكن إنشاء حساب ثانٍ لنفس الإيميل."
+        : supabaseMessage,
+      ...(alreadyThere ? { hasAccount: true } : {}),
     });
     return;
   }

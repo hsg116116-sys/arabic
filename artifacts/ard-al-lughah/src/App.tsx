@@ -1893,8 +1893,7 @@ function Register() {
       .catch((err: Error) => {
         setSending(false);
         setMessage(err?.message || 'تعذّر إرسال كود التأكيد. حاول بعد قليل.');
-      });
-  };
+      });  };
 
   return (
     <AuthLayout title="انضم لأرض اللغة" eyebrow="حساب طالب جديد">
@@ -1920,7 +1919,16 @@ function Register() {
           <ShieldCheck size={15} className="mt-0.5 shrink-0 text-primary" />
           لن يُنشأ حسابك إلا بعد إدخال كود التأكيد — إن توقفت هنا فلا حساب لك.
         </div>
-        {message && <p className="rounded-xl bg-accent/20 px-4 py-3 text-sm leading-6 text-accent-foreground font-semibold">{message}</p>}
+        {message && (
+          <div className="rounded-xl bg-accent/20 px-4 py-3 text-sm leading-6 text-accent-foreground font-semibold">
+            <p>{message}</p>
+            {message.includes('مسجّل') && (
+              <Link href="/login" className="mt-2 inline-flex items-center gap-1.5 font-extrabold text-primary hover:underline" data-testid="link-login-duplicate">
+                سجّل دخولك بهذا البريد <ArrowLeft size={14} />
+              </Link>
+            )}
+          </div>
+        )}
         <Button type="submit" disabled={sending} className="mt-2 w-full py-3.5" data-testid="button-register">
           {sending ? (
             <><RefreshCw size={17} className="animate-spin" /> جارٍ إرسال كود التأكيد...</>

@@ -36874,12 +36874,15 @@ function readMailConfig() {
   const rawPort2 = firstEnv("BREVO_SMTP_PORT", "SMTP_PORT");
   const parsedPort = rawPort2 ? Number(rawPort2) : Number.NaN;
   const port2 = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : DEFAULT_PORT;
-  const from = firstEnv("BREVO_MAIL_FROM", "SMTP_FROM", "MAIL_FROM");
+  const rawLogin = firstEnv("BREVO_SMTP_LOGIN", "SMTP_LOGIN", "SMTP_USER", "SMTP_USERNAME");
+  const rawFrom = firstEnv("BREVO_MAIL_FROM", "SMTP_FROM", "MAIL_FROM");
+  const login = rawLogin || rawFrom;
+  const from = rawFrom || rawLogin;
   return {
     host,
     port: port2,
     secure: firstEnv("BREVO_SMTP_SECURE", "SMTP_SECURE").toLowerCase() === "true" || port2 === 465,
-    login: firstEnv("BREVO_SMTP_LOGIN", "SMTP_LOGIN", "SMTP_USER", "SMTP_USERNAME") || from,
+    login,
     pass: firstEnv(
       "BREVO_SMTP_KEY",
       "SMTP_KEY",
@@ -37043,11 +37046,8 @@ async function sendMail(msg) {
   if (!cfg.pass) {
     throw new MailNotConfiguredError("\u0644\u0645 \u064A\u064F\u0636\u0628\u0637 \u0645\u0641\u062A\u0627\u062D \u0628\u0631\u064A\u062F Brevo (BREVO_SMTP_KEY) \u0639\u0644\u0649 \u0627\u0644\u062E\u0627\u062F\u0645.");
   }
-  if (!cfg.from) {
-    throw new MailNotConfiguredError("\u0644\u0645 \u064A\u064F\u0636\u0628\u0637 \u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0645\u0631\u0633\u0644 (BREVO_MAIL_FROM) \u2014 \u064A\u062C\u0628 \u0627\u0644\u062A\u062D\u0642\u0642 \u0645\u0646\u0647 \u0641\u064A \u062D\u0633\u0627\u0628 Brevo.");
-  }
-  if (!cfg.login) {
-    throw new MailNotConfiguredError("\u0644\u0645 \u064A\u064F\u0636\u0628\u0637 \u0627\u0633\u0645 \u062F\u062E\u0648\u0644 \u0627\u0644\u0628\u0631\u064A\u062F (BREVO_SMTP_LOGIN).");
+  if (!cfg.from || !cfg.login) {
+    throw new MailNotConfiguredError("\u0644\u0645 \u062A\u064F\u0636\u0628\u0637 \u0628\u064A\u0627\u0646\u0627\u062A \u062F\u062E\u0648\u0644 \u0627\u0644\u0628\u0631\u064A\u062F (BREVO_SMTP_LOGIN / BREVO_MAIL_FROM) \u0639\u0644\u0649 \u0627\u0644\u062E\u0627\u062F\u0645.");
   }
   const boundary = `----=_ard_${randomBytes2(12).toString("hex")}`;
   const payload = dotStuff(buildMessage(cfg, msg, boundary));
@@ -37256,6 +37256,16 @@ async function livePlatformName() {
     return "\u0623\u0631\u0636 \u0627\u0644\u0644\u063A\u0629";
   }
 }
+async function emailAlreadyRegistered(email) {
+  try {
+    const { data } = await supabaseQuery(
+      `profiles?select=id&email=eq.${encodeURIComponent(email)}&limit=1`
+    );
+    return Array.isArray(data) && data.length > 0;
+  } catch {
+    return false;
+  }
+}
 router6.get("/auth/verify/status", (req, res) => {
   const state = readVerifyState(req);
   res.json({
@@ -37284,6 +37294,13 @@ router6.post("/auth/verify/send", async (req, res) => {
     }
   } catch {
   }
+  if (await emailAlreadyRegistered(allowed.email)) {
+    res.status(409).json({
+      error: "\u0647\u0630\u0627 \u0627\u0644\u0628\u0631\u064A\u062F \u0645\u0633\u062C\u0651\u0644 \u0639\u0646\u062F\u0646\u0627 \u0645\u0633\u0628\u0642\u0627\u064B \u2014 \u0644\u0627 \u064A\u0645\u0643\u0646 \u0625\u0646\u0634\u0627\u0621 \u062D\u0633\u0627\u0628 \u062B\u0627\u0646\u064D \u0644\u0646\u0641\u0633 \u0627\u0644\u0625\u064A\u0645\u064A\u0644.",
+      hasAccount: true
+    });
+    return;
+  }
   const existing = readVerifyState(req);
   if (existing && existing.email === allowed.email) {
     const wait = resendWaitSeconds(existing);
@@ -37305,13 +37322,13 @@ router6.post("/auth/verify/send", async (req, res) => {
   } catch (err) {
     if (err instanceof MailNotConfiguredError) {
       logger.error({ err, mail: describeMailSetup() }, "Verification email is not configured");
-      res.status(503).json({ error: "\u062E\u062F\u0645\u0629 \u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0643\u0648\u062F \u063A\u064A\u0631 \u0645\u0641\u0639\u0651\u0644\u0629 \u0639\u0644\u0649 \u0627\u0644\u062E\u0627\u062F\u0645 \u0628\u0639\u062F. \u0631\u0627\u062C\u0639 \u0645\u0641\u0627\u062A\u064A\u062D \u0627\u0644\u0628\u0631\u064A\u062F." });
+      res.status(503).json({ error: `${err.message} (${describeMailSetup()})` });
       return;
     }
     logger.error({ err, mail: describeMailSetup() }, "Failed to send the verification code");
     const detail = err?.message ?? "";
     res.status(502).json({
-      error: /unauthorized ip/i.test(detail) ? "\u062A\u0645 \u0631\u0641\u0636 \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0645\u0646 Brevo \u2014 \u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u062E\u0627\u062F\u0645 \u063A\u064A\u0631 \u0645\u064F\u0635\u0631\u0651\u062D \u0628\u0647. \u0623\u0636\u0641 0.0.0.0/0 \u0641\u064A Brevo \u2190 Senders, domains, IPs." : err instanceof MailSendError ? "\u062A\u0639\u0630\u0651\u0631 \u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0643\u0648\u062F \u0625\u0644\u0649 \u0628\u0631\u064A\u062F\u0643 \u0627\u0644\u0622\u0646. \u062A\u0623\u0643\u062F \u0645\u0646 \u0627\u0644\u0639\u0646\u0648\u0627\u0646 \u0623\u0648 \u062D\u0627\u0648\u0644 \u0628\u0639\u062F \u0642\u0644\u064A\u0644." : "\u062A\u0639\u0630\u0651\u0631 \u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0643\u0648\u062F \u0625\u0644\u0649 \u0628\u0631\u064A\u062F\u0643 \u0627\u0644\u0622\u0646. \u062D\u0627\u0648\u0644 \u0628\u0639\u062F \u0642\u0644\u064A\u0644."
+      error: /unauthorized ip/i.test(detail) ? "\u062A\u0645 \u0631\u0641\u0636 \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0645\u0646 Brevo \u2014 \u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u062E\u0627\u062F\u0645 \u063A\u064A\u0631 \u0645\u064F\u0635\u0631\u0651\u062D \u0628\u0647. \u0623\u0636\u0641 0.0.0.0/0 \u0641\u064A Brevo \u2190 Senders, domains, IPs." : /sender|not verified|unauthorized|550/i.test(detail) ? "Brevo \u0631\u0641\u0636 \u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0645\u0631\u0633\u0644 \u2014 \u0636\u0639 \u0628\u0631\u064A\u062F\u0627\u064B \u0645\u0648\u062B\u0651\u0642\u0627\u064B \u0641\u064A \u0627\u0644\u0645\u062A\u063A\u064A\u0631 BREVO_MAIL_FROM." : err instanceof MailSendError ? "\u062A\u0639\u0630\u0651\u0631 \u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0643\u0648\u062F \u0625\u0644\u0649 \u0628\u0631\u064A\u062F\u0643 \u0627\u0644\u0622\u0646. \u062A\u0623\u0643\u062F \u0645\u0646 \u0627\u0644\u0639\u0646\u0648\u0627\u0646 \u0623\u0648 \u062D\u0627\u0648\u0644 \u0628\u0639\u062F \u0642\u0644\u064A\u0644." : "\u062A\u0639\u0630\u0651\u0631 \u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0643\u0648\u062F \u0625\u0644\u0649 \u0628\u0631\u064A\u062F\u0643 \u0627\u0644\u0622\u0646. \u062D\u0627\u0648\u0644 \u0628\u0639\u062F \u0642\u0644\u064A\u0644."
     });
     return;
   }
@@ -37407,8 +37424,11 @@ router6.post("/auth/register", async (req, res) => {
     }
   });
   if (!response.ok) {
-    res.status(response.status === 422 ? 400 : response.status).json({
-      error: String(data.msg ?? data.error_description ?? data.message ?? "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u062D\u0633\u0627\u0628")
+    const supabaseMessage = String(data.msg ?? data.error_description ?? data.message ?? "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u062D\u0633\u0627\u0628");
+    const alreadyThere = /already|registered|exists/i.test(supabaseMessage);
+    res.status(alreadyThere ? 409 : response.status === 422 ? 400 : response.status).json({
+      error: alreadyThere ? "\u0647\u0630\u0627 \u0627\u0644\u0628\u0631\u064A\u062F \u0645\u0633\u062C\u0651\u0644 \u0639\u0646\u062F\u0646\u0627 \u0645\u0633\u0628\u0642\u0627\u064B \u2014 \u0644\u0627 \u064A\u0645\u0643\u0646 \u0625\u0646\u0634\u0627\u0621 \u062D\u0633\u0627\u0628 \u062B\u0627\u0646\u064D \u0644\u0646\u0641\u0633 \u0627\u0644\u0625\u064A\u0645\u064A\u0644." : supabaseMessage,
+      ...alreadyThere ? { hasAccount: true } : {}
     });
     return;
   }

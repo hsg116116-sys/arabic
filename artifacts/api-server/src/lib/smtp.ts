@@ -68,12 +68,17 @@ export function readMailConfig(): MailConfig {
   const rawPort = firstEnv("BREVO_SMTP_PORT", "SMTP_PORT");
   const parsedPort = rawPort ? Number(rawPort) : Number.NaN;
   const port = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : DEFAULT_PORT;
-  const from = firstEnv("BREVO_MAIL_FROM", "SMTP_FROM", "MAIL_FROM");
+  const rawLogin = firstEnv("BREVO_SMTP_LOGIN", "SMTP_LOGIN", "SMTP_USER", "SMTP_USERNAME");
+  const rawFrom = firstEnv("BREVO_MAIL_FROM", "SMTP_FROM", "MAIL_FROM");
+  // المرسل يغيب عن الإعداد فنسقط على اسم الدخول —Sending attempt فقط، ورفض
+  // Brevo لمرسل غير موثّق يظهر كرسالة عربية واضحة بدل "غير مفعّل" ambiguously.
+  const login = rawLogin || rawFrom;
+  const from = rawFrom || rawLogin;
   return {
     host,
     port,
     secure: firstEnv("BREVO_SMTP_SECURE", "SMTP_SECURE").toLowerCase() === "true" || port === 465,
-    login: firstEnv("BREVO_SMTP_LOGIN", "SMTP_LOGIN", "SMTP_USER", "SMTP_USERNAME") || from,
+    login,
     pass: firstEnv(
       "BREVO_SMTP_KEY",
       "SMTP_KEY",
@@ -281,11 +286,8 @@ export async function sendMail(msg: MailMessage): Promise<void> {
   if (!cfg.pass) {
     throw new MailNotConfiguredError("لم يُضبط مفتاح بريد Brevo (BREVO_SMTP_KEY) على الخادم.");
   }
-  if (!cfg.from) {
-    throw new MailNotConfiguredError("لم يُضبط البريد المرسل (BREVO_MAIL_FROM) — يجب التحقق منه في حساب Brevo.");
-  }
-  if (!cfg.login) {
-    throw new MailNotConfiguredError("لم يُضبط اسم دخول البريد (BREVO_SMTP_LOGIN).");
+  if (!cfg.from || !cfg.login) {
+    throw new MailNotConfiguredError("لم تُضبط بيانات دخول البريد (BREVO_SMTP_LOGIN / BREVO_MAIL_FROM) على الخادم.");
   }
 
   const boundary = `----=_ard_${randomBytes(12).toString("hex")}`;
