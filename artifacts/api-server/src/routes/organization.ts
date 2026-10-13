@@ -203,8 +203,22 @@ router.post("/teacher/org/grades", requireAdmin, async (req, res) => {
       color: String(req.body?.color || "#37474f"),
       is_active: true,
     };
-    const { error } = await supabaseQuery("grade_levels", { method: "POST", body: [payload] });
-    if (error) throw new Error(String(error));
+    // grade_levels عندنا قيود فريدة على (name) وعلى (id) معاً، فنُدخل
+    // بـ on_conflict=id لتتجاهل التعارض بدل أن يفشل الإضافة كاملاً.
+    const { error } = await supabaseQuery("grade_levels?on_conflict=id", {
+      method: "POST",
+      headers: { Prefer: "resolution=ignore-duplicates,return=representation" },
+      body: [payload],
+    });
+    if (error) {
+      // احتياط: لو اختلف اسم القيد عندك نضيف الأعمدة الأساسية فقط
+      const fallback = await supabaseQuery("grade_levels?on_conflict=id", {
+        method: "POST",
+        headers: { Prefer: "resolution=ignore-duplicates" },
+        body: [{ id, name, sort_order: payload.sort_order }],
+      });
+      if (fallback.error) throw new Error(String(fallback.error));
+    }
 
     // صف_settings لازم يُوجد حتى يظهر مفتاح التقسيم له
     try {

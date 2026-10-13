@@ -19,6 +19,23 @@
 
 
 -- ────────────────────────────────────────────────────────────────────
+-- 0) فحص مسبق — نوقف التنفيذ برسالة واضحة لو غابت جدولة أساسية
+-- ────────────────────────────────────────────────────────────────────
+DO $$
+DECLARE
+  missing TEXT;
+BEGIN
+  SELECT string_agg(t, ' , ') INTO missing
+  FROM unnest(ARRAY['profiles']) AS t
+  WHERE to_regclass('public.' || t) IS NULL;
+
+  IF missing IS NOT NULL THEN
+    RAISE EXCEPTION 'نقص في: % — نفّذ supabase_schema_and_data.sql أولاً', missing;
+  END IF;
+END $$;
+
+
+-- ────────────────────────────────────────────────────────────────────
 -- 1) الصفوف الرسمية
 -- ────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.grade_levels (
@@ -35,12 +52,15 @@ ALTER TABLE public.grade_levels ADD COLUMN IF NOT EXISTS is_active  BOOLEAN NOT 
 ALTER TABLE public.grade_levels ADD COLUMN IF NOT EXISTS color      TEXT NOT NULL DEFAULT '#17413f';
 ALTER TABLE public.grade_levels ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
--- الصفوف الثلاثة الأولى (مع تجاهل التكرار)
+-- الصفوف الثلاثة الأولى.
+-- ملاحظة مهمة: جدول grade_levels عندك عليه قيد فريد على (name) وليس (id)
+-- فقط، فاستخدمنا ON CONFLICT DO NOTHING بلا هدف ليتعامل مع أي تعارض
+-- (تعارض id أو تعارض name معاً) ولا يتوقف التنفيذ.
 INSERT INTO public.grade_levels (id, name, sort_order, is_active, color) VALUES
   ('grade-8',  'الصف الثامن',  1, TRUE, '#2f7772'),
   ('grade-9',  'الصف التاسع',  2, TRUE, '#b7791f'),
   ('grade-10', 'الصف العاشر',  3, TRUE, '#17413f')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 
 -- ────────────────────────────────────────────────────────────────────
@@ -88,6 +108,7 @@ CREATE INDEX IF NOT EXISTS grade_schools_school_idx ON public.grade_schools (sch
 -- ────────────────────────────────────────────────────────────────────
 
 -- 4.1) مدارس موجودة في بيانات الطلاب ولم تُسجَّل بعد
+-- schools له قيد فريد على (name)، لذا نستخدم ON CONFLICT DO NOTHING بلا هدف
 INSERT INTO public.schools (id, name, sort_order, is_active, color)
 SELECT
   'school-' || substr(md5(p.school), 1, 10),
@@ -96,7 +117,7 @@ SELECT
   TRUE,
   '#37474f'
 FROM (SELECT DISTINCT school FROM public.profiles WHERE school IS NOT NULL AND school <> '') p
-ON CONFLICT (name) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- 4.2) صفوف موجودة في بيانات الطلاب ولم تُسجَّل بعد
 INSERT INTO public.grade_levels (id, name, sort_order, is_active, color)
@@ -107,7 +128,7 @@ SELECT
   TRUE,
   '#37474f'
 FROM (SELECT DISTINCT grade FROM public.profiles WHERE grade IS NOT NULL AND grade <> '') p
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- 4.3) كل صف في كل مدرسة فعلاً فيها طلاب له
 INSERT INTO public.grade_schools (grade_id, school_id, sort_order)
