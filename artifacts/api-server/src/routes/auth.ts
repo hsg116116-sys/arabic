@@ -11,10 +11,54 @@ import {
 } from "@workspace/api-zod";
 import { logger } from "../lib/logger";
 import { getSupabaseUser, supabaseQuery } from "../lib/supabase";
+import {
+  ALLOWED_EMAIL_DOMAINS,
+  ALLOWED_PROVIDERS_LABEL,
+  MAX_CODE_TRIES,
+  RESEND_COOLDOWN_MS,
+  VERIFY_COOKIE,
+  VERIFY_TTL_MS,
+  checkEmailAllowed,
+  codeMatches,
+  createState,
+  maskEmail,
+  newCode,
+  openState,
+  resendWaitSeconds,
+  sealState,
+  verificationEmailContent,
+  type VerifyState,
+} from "../lib/email-verification";
+import { MailNotConfiguredError, MailSendError, describeMailSetup, sendMail } from "../lib/smtp";
 import { getAdminEmails } from "./platform";
 
 const router: IRouter = Router();
 const authUnavailableMessage = "خدمة المصادقة غير متاحة مؤقتًا. حاول مرة أخرى بعد قليل.";
+
+type CookieReq = { cookies?: Record<string, unknown>; body?: any };
+type CookieRes = Parameters<Parameters<IRouter["post"]>[1]>[1];
+
+/** كوكي التحقق: مشفّر، httpOnly، ولا يُقرأ إلا من السيرفر. */
+function writeVerifyCookie(res: CookieRes, state: VerifyState): void {
+  res.cookie(VERIFY_COOKIE, sealState(state), {
+    httpOnly: true,
+    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: VERIFY_TTL_MS,
+  });
+}
+
+function clearVerifyCookie(res: CookieRes): void {
+  res.clearCookie(VERIFY_COOKIE, { path: "/" });
+}
+
+function readVerifyState(req: CookieReq): VerifyState | null {
+  const state = openState(req.cookies?.[VERIFY_COOKIE]);
+  if (!state) return null;
+  if (!state.expiresAt || state.expiresAt < Date.now()) return null;
+  return state;
+}
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co";
 const SUPABASE_KEY =
@@ -182,6 +226,139 @@ async function trySilentRefresh(
   }
 }
 
+// ============================================================================
+// التحقق من البريد قبل إنشاء الحساب.
+// القاعدة الذهبية: /auth/register لا ينشئ شيئاً بلا كود صحيح، فإن ترك الطالب
+// الصفحة بلا إدخال الكود فلا حساب له إطلاقاً — لا في Supabase ولا في profiles.
+// ============================================================================
+
+/** اسم المنصة الحيّ لرسالة البريد — falls back إلى الاسم الافتراضي. */
+async function livePlatformName(): Promise<string> {
+  try {
+    const { data } = await supabaseQuery<any[]>("platform_settings?select=platform_name&limit=1");
+    return String(data?.[0]?.platform_name || "أرض اللغة");
+  } catch {
+    return "أرض اللغة";
+  }
+}
+
+/** حالة طلب التحقق — الواجهة用它 لتحميل الصفحة ومعرفة المهلة المتبقية. */
+router.get("/auth/verify/status", (req, res) => {
+  const state = readVerifyState(req);
+  res.json({
+    pending: Boolean(state),
+    providers: ALLOWED_EMAIL_DOMAINS.slice(0, 3),
+    providersLabel: ALLOWED_PROVIDERS_LABEL,
+    ...(state
+      ? {
+          email: maskEmail(state.email),
+          resendIn: resendWaitSeconds(state),
+          expiresIn: Math.max(0, Math.round((state.expiresAt - Date.now()) / 1000)),
+        }
+      : {}),
+  });
+});
+
+/** إرسال الكود — وأعادته بعد اكتمال الدقيقة، لا قبل ذلك. */
+router.post("/auth/verify/send", async (req, res): Promise<void> => {
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const allowed = checkEmailAllowed(body.email);
+  if (!allowed.ok) {
+    res.status(400).json({ error: allowed.error });
+    return;
+  }
+
+  // بريد الإدارة محجوز — لا حساب طالب عليه
+  try {
+    const adminList = await getAdminEmails().catch(() => [] as string[]);
+    if (adminList.includes(allowed.email)) {
+      res.status(400).json({ error: "هذا البريد محجوز لحساب الإدارة — سجل الدخول به عبر Google." });
+      return;
+    }
+  } catch { /* تجاهل */ }
+
+  // إعادة الإرسال قبل مرور دقيقة ممنوعة حتى لا نستنزف حساب البريد
+  const existing = readVerifyState(req);
+  if (existing && existing.email === allowed.email) {
+    const wait = resendWaitSeconds(existing);
+    if (wait > 0) {
+      res.status(429).json({ error: `انتظر ${wait} ثانية قبل طلب كود جديد.`, resendIn: wait });
+      return;
+    }
+  }
+
+  const name = String(body.name ?? "").trim();
+  const state =
+    existing && existing.email === allowed.email
+      ? { ...createState(allowed.email, name || existing.name), tries: 0 }
+      : createState(allowed.email, name);
+
+  try {
+    const content = verificationEmailContent({
+      code: state.code,
+      name: state.name,
+      minutes: Math.round(VERIFY_TTL_MS / 60_000),
+      platformName: await livePlatformName(),
+    });
+    await sendMail({ to: state.email, ...content });
+  } catch (err) {
+    if (err instanceof MailNotConfiguredError) {
+      logger.error({ err, mail: describeMailSetup() }, "Verification email is not configured");
+      res.status(503).json({ error: "خدمة إرسال الكود غير مفعّلة على الخادم بعد. راجع مفاتيح البريد." });
+      return;
+    }
+    logger.error({ err, mail: describeMailSetup() }, "Failed to send the verification code");
+    res.status(502).json({
+      error:
+        err instanceof MailSendError
+          ? "تعذّر إرسال الكود إلى بريدك الآن. تأكد من العنوان أو حاول بعد قليل."
+          : "تعذّر إرسال الكود إلى بريدك الآن. حاول بعد قليل.",
+    });
+    return;
+  }
+
+  writeVerifyCookie(res, state);
+  res.json({
+    ok: true,
+    email: maskEmail(state.email),
+    resendIn: Math.round(RESEND_COOLDOWN_MS / 1000),
+    expiresIn: Math.round(VERIFY_TTL_MS / 1000),
+    message: `أرسلنا كوداً إلى ${maskEmail(state.email)} — أدخله لإنشاء حسابك.`,
+  });
+});
+
+/** إلغاء الطلب — يمسح الكوكي فلا يبقى كود معلّق على المتصفح. */
+router.post("/auth/verify/cancel", (_req, res) => {
+  clearVerifyCookie(res);
+  res.json({ ok: true, message: "تم إلغاء طلب التأكيد." });
+});
+
+/** يؤكّد البريد من لوحة إدارة Supabase ثم يعيد جلسة — حين يطلب Supabase تأكيداً إضافياً. */
+async function confirmVerifiedEmail(
+  email: string,
+  password: string,
+  userId: string,
+): Promise<Record<string, unknown> | null> {
+  const secretKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_KEY;
+  if (!secretKey) return null;
+  try {
+    await fetch(`${SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/admin/users/${userId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: secretKey,
+        Authorization: `Bearer ${secretKey}`,
+      },
+      body: JSON.stringify({ email_confirm: true }),
+    });
+    const { response, data } = await supabaseRequest("token?grant_type=password", { email, password });
+    return response.ok && typeof data.access_token === "string" ? data : null;
+  } catch (err) {
+    logger.warn({ err }, "Could not open a session right after email verification");
+    return null;
+  }
+}
+
 router.post("/auth/register", async (req, res): Promise<void> => {
   const parsed = RegisterAccountBody.safeParse(req.body);
   if (!parsed.success) {
@@ -189,18 +366,53 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     return;
   }
 
+  // ── بوابة التحقق: بلا كود صحيح لا يُنشأ حساب مهما كان الطلب ──
+  const emailCheck = checkEmailAllowed(parsed.data.email);
+  if (!emailCheck.ok) {
+    res.status(400).json({ error: emailCheck.error });
+    return;
+  }
+  const state = readVerifyState(req);
+  if (!state) {
+    res.status(400).json({
+      error: "انتهت صلاحية طلب التأكيد أو لم يبدأ بعد. عُد إلى صفحة التسجيل لطلب كود جديد.",
+    });
+    return;
+  }
+  if (state.email !== emailCheck.email) {
+    res.status(400).json({ error: "البريد المؤكَّد لا يطابق البريد المطلوب إنشاء الحساب به." });
+    return;
+  }
+  const submittedCode = String((req.body ?? {}).code ?? "").trim();
+  if (!codeMatches(state.code, submittedCode)) {
+    state.tries += 1;
+    writeVerifyCookie(res, state);
+    const triesLeft = Math.max(0, MAX_CODE_TRIES - state.tries);
+    res.status(400).json({
+      error:
+        triesLeft > 0
+          ? `الكود غير صحيح. بقيت لك ${triesLeft} محاولات.`
+          : "انتهت محاولات التحقق. ابدأ التسجيل من جديد للحصول على كود جديد.",
+      triesLeft,
+    });
+    return;
+  }
+  clearVerifyCookie(res);
+
   // بريد الإدارة محجوز — لا يُنشأ به حساب طالب
   try {
     const adminList = await getAdminEmails().catch(() => [] as string[]);
-    if (adminList.includes(String(parsed.data.email || "").trim().toLowerCase())) {
+    if (adminList.includes(emailCheck.email)) {
       res.status(400).json({ error: "هذا البريد محجوز لحساب الإدارة — سجل الدخول به عبر Google." });
       return;
     }
   } catch { /* تجاهل */ }
 
   const { fullName } = parsed.data;
+  // نستعمل البريد المُطبَّع (نفس الذي تأكّد) حتى لا يختلف بين الحساب والملف
+  const email = emailCheck.email;
   const { response, data } = await supabaseRequest("signup", {
-    email: parsed.data.email,
+    email,
     password: parsed.data.password,
     data: {
       full_name: fullName,
@@ -228,7 +440,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     : "";
   const profilePayload = {
     id: newUserId,
-    email: parsed.data.email,
+    email,
     full_name: fullName,
     role: "student",
     student_number: parsed.data.studentNumber || "",
@@ -252,13 +464,21 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     }
   }
 
-  setSessionCookies(res, data);
+  // تحقّقنا من البريد بكود مرسل من عندنا، فإن كان Supabase يطلب تأكيداً إضافياً
+  // فنؤكّده من لوحة الإدارة ثم نفتح الجلسة — وإلا بقي الطالب بلا دخول بعد التأكيد.
+  let session = data;
+  if (!session.access_token && newUserId) {
+    const forced = await confirmVerifiedEmail(email, parsed.data.password, newUserId);
+    if (forced) session = forced;
+  }
+
+  setSessionCookies(res, session);
   res.json(
     RegisterAccountResponse.parse({
-      message: data.access_token
-        ? "تم إنشاء حسابك وتسجيل دخولك."
-        : "تم إنشاء الحساب. تحقق من بريدك الإلكتروني لإكمال التسجيل.",
-      user: authUser(data),
+      message: session.access_token
+        ? "تم تأكيد بريدك وإنشاء حسابك بنجاح."
+        : "تم إنشاء الحساب بعد تأكيد بريدك. سجّل دخولك بكلمة المرور.",
+      user: authUser(session),
     }),
   );
 });

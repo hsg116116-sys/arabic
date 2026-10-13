@@ -18618,8 +18618,8 @@ var require_escape_html = __commonJS({
   "../../node_modules/.pnpm/escape-html@1.0.3/node_modules/escape-html/index.js"(exports, module) {
     "use strict";
     var matchHtmlRegExp = /["'&<>]/;
-    module.exports = escapeHtml;
-    function escapeHtml(string) {
+    module.exports = escapeHtml2;
+    function escapeHtml2(string) {
       var str = "" + string;
       var match = matchHtmlRegExp.exec(str);
       if (!match) {
@@ -18750,13 +18750,13 @@ var require_finalhandler = __commonJS({
     "use strict";
     var debug = require_src()("finalhandler");
     var encodeUrl = require_encodeurl();
-    var escapeHtml = require_escape_html();
+    var escapeHtml2 = require_escape_html();
     var onFinished = require_on_finished();
     var parseUrl = require_parseurl();
     var statuses = require_statuses();
     var isFinished = onFinished.isFinished;
     function createHtmlDocument(message) {
-      var body = escapeHtml(message).replaceAll("\n", "<br>").replaceAll("  ", " &nbsp;");
+      var body = escapeHtml2(message).replaceAll("\n", "<br>").replaceAll("  ", " &nbsp;");
       return '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>Error</title>\n</head>\n<body>\n<pre>' + body + "</pre>\n</body>\n</html>\n";
     }
     module.exports = finalhandler;
@@ -22224,10 +22224,10 @@ var require_request = __commonJS({
       return addrs;
     });
     defineGetter(req, "subdomains", function subdomains() {
-      var hostname = this.hostname;
-      if (!hostname) return [];
+      var hostname2 = this.hostname;
+      if (!hostname2) return [];
       var offset = this.app.get("subdomain offset");
-      var subdomains2 = !isIP(hostname) ? hostname.split(".").reverse() : [hostname];
+      var subdomains2 = !isIP(hostname2) ? hostname2.split(".").reverse() : [hostname2];
       return subdomains2.slice(offset);
     });
     defineGetter(req, "path", function path() {
@@ -22243,7 +22243,7 @@ var require_request = __commonJS({
       }
       return val || void 0;
     });
-    defineGetter(req, "hostname", function hostname() {
+    defineGetter(req, "hostname", function hostname2() {
       var host = this.host;
       if (!host) return;
       var offset = host[0] === "[" ? host.indexOf("]") + 1 : 0;
@@ -22680,7 +22680,7 @@ var require_send = __commonJS({
     var createError = require_http_errors();
     var debug = require_src()("send");
     var encodeUrl = require_encodeurl();
-    var escapeHtml = require_escape_html();
+    var escapeHtml2 = require_escape_html();
     var etag = require_etag();
     var fresh = require_fresh();
     var fs = __require("fs");
@@ -22733,7 +22733,7 @@ var require_send = __commonJS({
       }
       var res = this.res;
       var msg = statuses.message[status] || String(status);
-      var doc = createHtmlDocument("Error", escapeHtml(msg));
+      var doc = createHtmlDocument("Error", escapeHtml2(msg));
       clearHeaders(res);
       if (err && err.headers) {
         setHeaders(res, err.headers);
@@ -22833,7 +22833,7 @@ var require_send = __commonJS({
         return;
       }
       var loc = encodeUrl(collapseLeadingSlashes(this.path + "/"));
-      var doc = createHtmlDocument("Redirecting", "Redirecting to " + escapeHtml(loc));
+      var doc = createHtmlDocument("Redirecting", "Redirecting to " + escapeHtml2(loc));
       res.statusCode = 301;
       res.setHeader("Content-Type", "text/html; charset=UTF-8");
       res.setHeader("Content-Length", Buffer.byteLength(doc));
@@ -23237,7 +23237,7 @@ var require_response = __commonJS({
     var createError = require_http_errors();
     var deprecate = require_depd()("express");
     var encodeUrl = require_encodeurl();
-    var escapeHtml = require_escape_html();
+    var escapeHtml2 = require_escape_html();
     var http = __require("node:http");
     var onFinished = require_on_finished();
     var mime = require_mime_types();
@@ -23576,7 +23576,7 @@ var require_response = __commonJS({
           body = statuses.message[status] + ". Redirecting to " + address;
         },
         html: function() {
-          var u = escapeHtml(address);
+          var u = escapeHtml2(address);
           body = "<p>" + statuses.message[status] + ". Redirecting to " + u + "</p>";
         },
         default: function() {
@@ -23704,7 +23704,7 @@ var require_serve_static = __commonJS({
   "../../node_modules/.pnpm/serve-static@2.2.1/node_modules/serve-static/index.js"(exports, module) {
     "use strict";
     var encodeUrl = require_encodeurl();
-    var escapeHtml = require_escape_html();
+    var escapeHtml2 = require_escape_html();
     var parseUrl = require_parseurl();
     var resolve2 = __require("path").resolve;
     var send = require_send();
@@ -23790,7 +23790,7 @@ var require_serve_static = __commonJS({
         originalUrl.path = null;
         originalUrl.pathname = collapseLeadingSlashes(originalUrl.pathname + "/");
         var loc = encodeUrl(url.format(originalUrl));
-        var doc = createHtmlDocument("Redirecting", "Redirecting to " + escapeHtml(loc));
+        var doc = createHtmlDocument("Redirecting", "Redirecting to " + escapeHtml2(loc));
         res.statusCode = 301;
         res.setHeader("Content-Type", "text/html; charset=UTF-8");
         res.setHeader("Content-Length", Buffer.byteLength(doc));
@@ -28398,7 +28398,7 @@ var require_pino = __commonJS({
     } = symbols;
     var { epochTime, nullTime } = time;
     var { pid } = process;
-    var hostname = os.hostname();
+    var hostname2 = os.hostname();
     var defaultErrorSerializer = stdSerializers.err;
     var defaultOptions = {
       level: "info",
@@ -28408,7 +28408,7 @@ var require_pino = __commonJS({
       errorKey: "err",
       nestedKey: null,
       enabled: true,
-      base: { pid, hostname },
+      base: { pid, hostname: hostname2 },
       serializers: Object.assign(/* @__PURE__ */ Object.create(null), {
         err: defaultErrorSerializer
       }),
@@ -36637,11 +36637,489 @@ init_study();
 
 // src/routes/auth.ts
 var import_express6 = __toESM(require_express2(), 1);
-import { createHash, randomBytes } from "node:crypto";
+import { createHash as createHash2, randomBytes as randomBytes3 } from "node:crypto";
 init_logger();
 init_supabase();
+
+// src/lib/email-verification.ts
+init_env();
+init_logger();
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
+loadLocalEnvOnce();
+var ALLOWED_EMAIL_DOMAINS = [
+  "gmail.com",
+  "googlemail.com",
+  "hotmail.com",
+  "outlook.com",
+  "live.com",
+  "msn.com"
+];
+var ALLOWED_PROVIDERS_LABEL = "Gmail \u0623\u0648 Hotmail \u0623\u0648 Outlook";
+var VERIFY_COOKIE = "ard_verify";
+var VERIFY_TTL_MS = 10 * 60 * 1e3;
+var RESEND_COOLDOWN_MS = 60 * 1e3;
+var MAX_CODE_TRIES = 5;
+var EMAIL_SHAPE = /^[^\s@]{1,64}@[^\s@.]+(\.[^\s@.]+)+$/;
+function normalizeEmail(raw) {
+  return String(raw ?? "").trim().toLowerCase();
+}
+function emailDomain(email) {
+  const at = email.lastIndexOf("@");
+  return at === -1 ? "" : email.slice(at + 1);
+}
+function isAllowedDomain(domain) {
+  if (ALLOWED_EMAIL_DOMAINS.includes(domain)) return true;
+  return ["hotmail.", "outlook.", "live.", "msn."].some((prefix) => domain.startsWith(prefix));
+}
+function checkEmailAllowed(raw) {
+  const email = normalizeEmail(raw);
+  if (!email) return { ok: false, error: "\u0627\u0643\u062A\u0628 \u0628\u0631\u064A\u062F\u0643 \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A \u0623\u0648\u0644\u0627\u064B." };
+  if (!EMAIL_SHAPE.test(email)) {
+    return { ok: false, error: "\u0635\u064A\u063A\u0629 \u0627\u0644\u0628\u0631\u064A\u062F \u063A\u064A\u0631 \u0635\u062D\u064A\u062D\u0629. \u0645\u062B\u0627\u0644 \u0635\u062D\u064A\u062D: name@gmail.com" };
+  }
+  const domain = emailDomain(email);
+  if (!isAllowedDomain(domain)) {
+    return {
+      ok: false,
+      error: `\u0647\u0630\u0627 \u0627\u0644\u0646\u0637\u0627\u0642 \u063A\u064A\u0631 \u0645\u0633\u0645\u0648\u062D \u0628\u0627\u0644\u062A\u0633\u062C\u064A\u0644. \u0627\u0633\u062A\u062E\u062F\u0645 \u0628\u0631\u064A\u062F ${ALLOWED_PROVIDERS_LABEL} \u0641\u0642\u0637.`
+    };
+  }
+  return { ok: true, email };
+}
+function maskEmail(email) {
+  const [name = "", domain = ""] = email.split("@");
+  if (!domain) return email;
+  const head = name.slice(0, 1);
+  const tail = name.length > 2 ? name.slice(-1) : "";
+  return `${head}${"*".repeat(Math.max(3, Math.min(6, name.length - 2)))}${tail}@${domain}`;
+}
+function sealingKey() {
+  const secret = process.env.EMAIL_VERIFY_SECRET || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || "ard-al-lughah-verify-fallback-secret";
+  return createHash("sha256").update(String(secret)).digest();
+}
+function sealState(state) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", sealingKey(), iv);
+  const body = Buffer.concat([cipher.update(JSON.stringify(state), "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, tag, body]).toString("base64url");
+}
+function openState(token) {
+  if (typeof token !== "string" || !token) return null;
+  try {
+    const raw = Buffer.from(token, "base64url");
+    if (raw.length <= 28) return null;
+    const iv = raw.subarray(0, 12);
+    const tag = raw.subarray(12, 28);
+    const body = raw.subarray(28);
+    const decipher = createDecipheriv("aes-256-gcm", sealingKey(), iv);
+    decipher.setAuthTag(tag);
+    const text = Buffer.concat([decipher.update(body), decipher.final()]).toString("utf8");
+    const parsed = JSON.parse(text);
+    if (!parsed?.email || !parsed?.code) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+function newCode() {
+  return String(randomInt(0, 1e6)).padStart(6, "0");
+}
+function codeMatches(expected, given) {
+  const a = Buffer.from(String(expected ?? ""), "utf8");
+  const b = Buffer.from(String(given ?? ""), "utf8");
+  if (a.length !== b.length || a.length === 0) return false;
+  return timingSafeEqual(a, b);
+}
+function createState(email, name) {
+  const now = Date.now();
+  return {
+    email,
+    code: newCode(),
+    sentAt: now,
+    expiresAt: now + VERIFY_TTL_MS,
+    tries: 0,
+    name: name ? String(name).slice(0, 80) : void 0
+  };
+}
+function resendWaitSeconds(state) {
+  if (!state) return 0;
+  return Math.max(0, Math.ceil((RESEND_COOLDOWN_MS - (Date.now() - state.sentAt)) / 1e3));
+}
+var BRAND = {
+  primary: "#255055",
+  primaryDark: "#16383c",
+  accent: "#e7b55f",
+  cream: "#fbf8f1",
+  border: "#e7dfd0",
+  muted: "#6b7c7a"
+};
+function verificationEmailContent(input) {
+  const code = input.code;
+  const platform = input.platformName;
+  const who = input.name?.trim() ? input.name.trim() : "\u0637\u0627\u0644\u0628\u0646\u0627 \u0627\u0644\u0639\u0632\u064A\u0632";
+  const subject = `${code} \u0647\u0648 \u0643\u0648\u062F \u062A\u0623\u0643\u064A\u062F \u062D\u0633\u0627\u0628\u0643 \u0641\u064A ${platform}`;
+  const text = [
+    `\u0645\u0631\u062D\u0628\u0627\u064B ${who}\u060C`,
+    "",
+    `\u0631\u0645\u0632\u0643 \u0644\u062A\u0623\u0643\u064A\u062F \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u062D\u0633\u0627\u0628 \u0641\u064A ${platform}:`,
+    code,
+    "",
+    `\u0627\u0644\u0631\u0645\u0632 \u0635\u0627\u0644\u062D \u0644\u0645\u062F\u0629 ${input.minutes} \u062F\u0642\u0627\u0626\u0642 \u0648\u0644\u0627 \u064A\u064F\u0646\u0634\u0623 \u0627\u0644\u062D\u0633\u0627\u0628 \u0625\u0644\u0627 \u0628\u0639\u062F \u0625\u062F\u062E\u0627\u0644\u0647.`,
+    "\u0625\u0630\u0627 \u0644\u0645 \u062A\u0637\u0644\u0628 \u0647\u0630\u0627 \u0627\u0644\u0631\u0645\u0632 \u0641\u062A\u062C\u0627\u0647\u0644\u0647 \u062A\u0645\u0627\u0645\u0627\u064B."
+  ].join("\n");
+  const html = `<!doctype html>
+<html lang="ar" dir="rtl">
+<body style="margin:0;padding:0;background:${BRAND.cream};font-family:'Segoe UI',Tahoma,Arial,sans-serif;color:${BRAND.primaryDark};">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">\u0631\u0645\u0632\u0643 \u0647\u0648 ${code} \u2014 \u0635\u0627\u0644\u062D ${input.minutes} \u062F\u0642\u0627\u0626\u0642 \u0641\u0642\u0637</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${BRAND.cream};padding:28px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid ${BRAND.border};border-radius:24px;overflow:hidden;">
+          <tr>
+            <td style="background:linear-gradient(135deg,${BRAND.primary},${BRAND.primaryDark});padding:28px 28px 24px;text-align:center;">
+              <div style="display:inline-block;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:6px 16px;font-size:13px;color:${BRAND.accent};letter-spacing:.5px;">
+                \u062A\u0623\u0643\u064A\u062F \u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A
+              </div>
+              <h1 style="margin:14px 0 6px;font-size:26px;color:#ffffff;">${platform}</h1>
+              <p style="margin:0;font-size:15px;color:rgba(255,255,255,.82);">\u0645\u0646\u0635\u0629 \u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0644\u0644\u062A\u0639\u0644\u064A\u0645 \u0627\u0644\u0631\u0642\u0645\u064A</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:32px 28px 8px;text-align:center;">
+              <p style="margin:0 0 6px;font-size:17px;font-weight:700;">\u0645\u0631\u062D\u0628\u0627\u064B ${escapeHtml(who)} \u{1F44B}</p>
+              <p style="margin:0;font-size:15px;line-height:2;color:${BRAND.muted};">
+                \u0623\u0631\u0633\u0644\u0646\u0627 \u0625\u0644\u064A\u0643 \u0631\u0645\u0632\u0627\u064B \u0645\u0646 <strong style="color:${BRAND.primaryDark};">${code.length} \u0623\u0631\u0642\u0627\u0645</strong>
+                \u0644\u062A\u0623\u0643\u064A\u062F \u0628\u0631\u064A\u062F\u0643 \u0648\u0625\u0646\u0634\u0627\u0621 \u062D\u0633\u0627\u0628\u0643.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:18px 28px 4px;">
+              <div style="background:${BRAND.cream};border:2px dashed ${BRAND.border};border-radius:20px;padding:22px 16px;text-align:center;">
+                <div style="font-size:44px;font-weight:800;letter-spacing:16px;direction:ltr;color:${BRAND.primary};font-family:Consolas,'Courier New',monospace;">
+                  ${code}
+                </div>
+              </div>
+              <p style="margin:16px 0 0;text-align:center;font-size:13px;color:${BRAND.muted};">
+                \u0635\u0627\u0644\u062D \u0644\u0645\u062F\u0629 <strong style="color:${BRAND.primaryDark};">${input.minutes} \u062F\u0642\u0627\u0626\u0642</strong> \u2014 \u0648\u0644\u0627 \u064A\u064F\u0646\u0634\u0623 \u062D\u0633\u0627\u0628\u0643 \u0625\u0644\u0627 \u0628\u0639\u062F \u0625\u062F\u062E\u0627\u0644\u0647.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:26px 28px 0;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f1e6;border-radius:16px;">
+                <tr>
+                  <td style="padding:16px 18px;font-size:13px;line-height:2;color:${BRAND.muted};">
+                    <strong style="color:${BRAND.primaryDark};">\u0644\u0645 \u062A\u0637\u0644\u0628 \u0647\u0630\u0627 \u0627\u0644\u0631\u0645\u0632\u061F</strong><br />
+                    \u062A\u062C\u0627\u0647\u0644 \u0647\u0630\u0647 \u0627\u0644\u0631\u0633\u0627\u0644\u0629 \u0648\u0644\u0627 \u062A\u0641\u0639\u0644 \u0634\u064A\u0626\u0627\u064B \u2014 \u0644\u0646 \u064A\u064F\u0646\u0634\u0623 \u0623\u064A \u062D\u0633\u0627\u0628 \u0642\u0628\u0644 \u0625\u062F\u062E\u0627\u0644 \u0627\u0644\u0631\u0645\u0632.
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:26px 28px 30px;text-align:center;">
+              <p style="margin:0;font-size:12px;line-height:1.9;color:${BRAND.muted};">
+                \u0647\u0630\u0647 \u0631\u0633\u0627\u0644\u0629 \u0622\u0644\u064A\u0629 \u0645\u0646 ${platform} \u2014 \u0644\u0627 \u062A\u0631\u062F \u0639\u0644\u064A\u0647\u0627.<br />
+                \u0631\u0627\u0628\u0637 \u0627\u0644\u0645\u0648\u0642\u0639: ${escapeHtml(input.platformName)}
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+  return { subject, html, text };
+}
+function escapeHtml(value) {
+  return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+// src/lib/smtp.ts
+init_env();
+init_logger();
+import { connect as tcpConnect } from "node:net";
+import { connect as tlsConnect } from "node:tls";
+import { randomBytes as randomBytes2 } from "node:crypto";
+import { hostname } from "node:os";
+loadLocalEnvOnce();
+var MailNotConfiguredError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "MailNotConfiguredError";
+  }
+};
+var MailSendError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "MailSendError";
+  }
+};
+var DEFAULT_HOST = "smtp-relay.brevo.com";
+var DEFAULT_PORT = 587;
+var REPLY_TIMEOUT_MS = 25e3;
+function firstEnv(...names) {
+  for (const name of names) {
+    const raw = process.env[name];
+    const value = typeof raw === "string" ? raw.trim() : "";
+    if (value) return value;
+  }
+  return "";
+}
+function readMailConfig() {
+  const host = firstEnv("BREVO_SMTP_HOST", "SMTP_HOST") || DEFAULT_HOST;
+  const rawPort2 = firstEnv("BREVO_SMTP_PORT", "SMTP_PORT");
+  const parsedPort = rawPort2 ? Number(rawPort2) : Number.NaN;
+  const port2 = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : DEFAULT_PORT;
+  const from = firstEnv("BREVO_MAIL_FROM", "SMTP_FROM", "MAIL_FROM");
+  return {
+    host,
+    port: port2,
+    secure: firstEnv("BREVO_SMTP_SECURE", "SMTP_SECURE").toLowerCase() === "true" || port2 === 465,
+    login: firstEnv("BREVO_SMTP_LOGIN", "SMTP_LOGIN", "SMTP_USER", "SMTP_USERNAME") || from,
+    pass: firstEnv(
+      "BREVO_SMTP_KEY",
+      "SMTP_KEY",
+      "BREVO_SMTP_PASSWORD",
+      "SMTP_PASSWORD",
+      "SMTP_PASS"
+    ),
+    from,
+    fromName: firstEnv("BREVO_MAIL_FROM_NAME", "MAIL_FROM_NAME", "SMTP_FROM_NAME") || "\u0623\u0631\u0636 \u0627\u0644\u0644\u063A\u0629",
+    helo: firstEnv("BREVO_SMTP_HELO", "SMTP_HELO") || "ard-al-lughah"
+  };
+}
+function describeMailSetup() {
+  const cfg = readMailConfig();
+  return `smtp=${cfg.host}:${cfg.port} from=${cfg.from || "-"} login=${cfg.login || "-"} key=${cfg.pass ? "\u0645\u0648\u062C\u0648\u062F" : "\u0645\u0641\u0642\u0648\u062F"}`;
+}
+function withTimeout(promise, ms, label) {
+  return new Promise((resolve2, reject) => {
+    const timer = setTimeout(
+      () => reject(new MailSendError(`\u0627\u0646\u062A\u0647\u062A \u0645\u0647\u0644\u0629 \u0627\u0644\u0631\u062F \u0645\u0646 \u0633\u064A\u0631\u0641\u0631 \u0627\u0644\u0628\u0631\u064A\u062F \u0623\u062B\u0646\u0627\u0621 ${label}.`)),
+      ms
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve2(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    );
+  });
+}
+function attachReader(socket) {
+  let buffer = "";
+  const lines = [];
+  const waiters = [];
+  const pump = () => {
+    while (lines.length > 0 && waiters.length > 0) {
+      const waiter = waiters.shift();
+      waiter.resolve(lines.shift());
+    }
+  };
+  const onData = (chunk) => {
+    buffer += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+    let index = buffer.indexOf("\r\n");
+    while (index !== -1) {
+      lines.push(buffer.slice(0, index));
+      buffer = buffer.slice(index + 2);
+      index = buffer.indexOf("\r\n");
+    }
+    pump();
+  };
+  const onError = (err) => {
+    const waiter = waiters.shift();
+    if (waiter) waiter.reject(err);
+  };
+  socket.on("data", onData);
+  socket.on("error", onError);
+  return {
+    read: () => new Promise((resolve2, reject) => {
+      waiters.push({ resolve: resolve2, reject });
+      pump();
+    }),
+    // يفكّ المستمعين دون إغلاق المقبس — لازم قبل ترقية STARTTLS
+    release: () => {
+      socket.off("data", onData);
+      socket.off("error", onError);
+      for (const waiter of waiters.splice(0)) waiter.reject(new MailSendError("\u0623\u064F\u063A\u0644\u0642\u062A \u062C\u0644\u0633\u0629 \u0627\u0644\u0628\u0631\u064A\u062F."));
+    }
+  };
+}
+async function expectCode(reader, expected, label) {
+  const collected = [];
+  for (let guard = 0; guard < 64; guard += 1) {
+    const line = await withTimeout(reader.read(), REPLY_TIMEOUT_MS, label);
+    collected.push(line);
+    const status = Number.parseInt(line.slice(0, 3), 10);
+    if (!Number.isFinite(status)) {
+      throw new MailSendError(`\u0631\u062F \u063A\u064A\u0631 \u0645\u0641\u0647\u0648\u0645 \u0645\u0646 \u0633\u064A\u0631\u0641\u0631 \u0627\u0644\u0628\u0631\u064A\u062F \u0623\u062B\u0646\u0627\u0621 ${label}: ${line}`);
+    }
+    if (line.length > 3 && line[3] === "-") continue;
+    if (status !== expected) {
+      const detail = line.slice(4).trim() || line;
+      throw new MailSendError(`\u0641\u0634\u0644 ${label} \u0639\u0646\u062F \u0633\u064A\u0631\u0641\u0631 \u0627\u0644\u0628\u0631\u064A\u062F (${status}): ${detail}`);
+    }
+    return collected;
+  }
+  throw new MailSendError(`\u0631\u062F \u0637\u0648\u064A\u0644 \u0628\u0634\u0643\u0644 \u063A\u064A\u0631 \u0645\u062A\u0648\u0642\u0639 \u0645\u0646 \u0633\u064A\u0631\u0641\u0631 \u0627\u0644\u0628\u0631\u064A\u062F \u0623\u062B\u0646\u0627\u0621 ${label}.`);
+}
+function openSocket(cfg) {
+  return new Promise((resolve2, reject) => {
+    const socket = cfg.secure ? tlsConnect({ host: cfg.host, port: cfg.port, servername: cfg.host, rejectUnauthorized: true }) : tcpConnect({ host: cfg.host, port: cfg.port });
+    const onError = (err) => {
+      socket.destroy();
+      reject(new MailSendError(`\u062A\u0639\u0630\u0651\u0631 \u0627\u0644\u0648\u0635\u0648\u0644 \u0625\u0644\u0649 \u0633\u064A\u0631\u0641\u0631 \u0627\u0644\u0628\u0631\u064A\u062F (${cfg.host}:${cfg.port}): ${err.message}`));
+    };
+    socket.once("error", onError);
+    socket.once(cfg.secure ? "secureConnect" : "connect", () => {
+      socket.off("error", onError);
+      socket.setTimeout(REPLY_TIMEOUT_MS, () => {
+        socket.destroy();
+        reject(new MailSendError("\u0627\u0646\u062A\u0647\u062A \u0645\u0647\u0644\u0629 \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0628\u0633\u064A\u0631\u0641\u0631 \u0627\u0644\u0628\u0631\u064A\u062F."));
+      });
+      resolve2(socket);
+    });
+  });
+}
+function upgradeToTls(socket, host) {
+  return new Promise((resolve2, reject) => {
+    const secure = tlsConnect({ socket, servername: host, rejectUnauthorized: true });
+    const onError = (err) => {
+      secure.destroy();
+      reject(new MailSendError(`\u062A\u0639\u0630\u0651\u0631 \u062A\u0634\u0641\u064A\u0631 \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0628\u0633\u064A\u0631\u0641\u0631 \u0627\u0644\u0628\u0631\u064A\u062F: ${err.message}`));
+    };
+    secure.once("error", onError);
+    secure.once("secureConnect", () => {
+      secure.off("error", onError);
+      resolve2(secure);
+    });
+  });
+}
+function encodeHeaderValue(value) {
+  if (/^[\x20-\x7e]*$/.test(value)) return value;
+  return `=?UTF-8?B?${Buffer.from(value, "utf8").toString("base64")}?=`;
+}
+function buildMessage(cfg, msg, boundary) {
+  const headers = [
+    `Date: ${(/* @__PURE__ */ new Date()).toUTCString()}`,
+    `From: ${encodeHeaderValue(cfg.fromName)} <${cfg.from}>`,
+    `To: <${msg.to}>`,
+    `Subject: ${encodeHeaderValue(msg.subject)}`,
+    `Message-ID: <${randomBytes2(16).toString("hex")}@${hostname()}>`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/alternative; boundary="${boundary}"`
+  ];
+  const parts = [
+    `--${boundary}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    "Content-Transfer-Encoding: base64",
+    "",
+    Buffer.from(msg.text ?? "", "utf8").toString("base64"),
+    `--${boundary}`,
+    'Content-Type: text/html; charset="UTF-8"',
+    "Content-Transfer-Encoding: base64",
+    "",
+    Buffer.from(msg.html, "utf8").toString("base64"),
+    `--${boundary}--`
+  ];
+  return `${headers.join("\r\n")}\r
+\r
+${parts.join("\r\n")}\r
+`;
+}
+function dotStuff(payload) {
+  return payload.replace(/(^|\r\n)\./g, "$1..");
+}
+async function sendMail(msg) {
+  const cfg = readMailConfig();
+  if (!cfg.pass) {
+    throw new MailNotConfiguredError("\u0644\u0645 \u064A\u064F\u0636\u0628\u0637 \u0645\u0641\u062A\u0627\u062D \u0628\u0631\u064A\u062F Brevo (BREVO_SMTP_KEY) \u0639\u0644\u0649 \u0627\u0644\u062E\u0627\u062F\u0645.");
+  }
+  if (!cfg.from) {
+    throw new MailNotConfiguredError("\u0644\u0645 \u064A\u064F\u0636\u0628\u0637 \u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0645\u0631\u0633\u0644 (BREVO_MAIL_FROM) \u2014 \u064A\u062C\u0628 \u0627\u0644\u062A\u062D\u0642\u0642 \u0645\u0646\u0647 \u0641\u064A \u062D\u0633\u0627\u0628 Brevo.");
+  }
+  if (!cfg.login) {
+    throw new MailNotConfiguredError("\u0644\u0645 \u064A\u064F\u0636\u0628\u0637 \u0627\u0633\u0645 \u062F\u062E\u0648\u0644 \u0627\u0644\u0628\u0631\u064A\u062F (BREVO_SMTP_LOGIN).");
+  }
+  const boundary = `----=_ard_${randomBytes2(12).toString("hex")}`;
+  const payload = dotStuff(buildMessage(cfg, msg, boundary));
+  let socket = await openSocket(cfg);
+  let reader = attachReader(socket);
+  const write = (line) => socket.write(`${line}\r
+`);
+  try {
+    await expectCode(reader, 220, "\u0627\u0644\u062A\u0631\u062D\u064A\u0628");
+    write(`EHLO ${cfg.helo}`);
+    let caps = (await expectCode(reader, 250, "\u062A\u0639\u0631\u064A\u0641 \u0627\u0644\u062E\u0627\u062F\u0645")).join("\n").toUpperCase();
+    if (!cfg.secure) {
+      if (!caps.includes("STARTTLS")) {
+        throw new MailSendError("\u0633\u064A\u0631\u0641\u0631 \u0627\u0644\u0628\u0631\u064A\u062F \u0644\u0627 \u064A\u062F\u0639\u0645 STARTTLS \u2014 \u0644\u0627 \u0646\u0631\u0633\u0644 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u0628\u0644\u0627 \u062A\u0634\u0641\u064A\u0631.");
+      }
+      write("STARTTLS");
+      await expectCode(reader, 220, "\u062A\u0641\u0639\u064A\u0644 \u0627\u0644\u062A\u0634\u0641\u064A\u0631");
+      reader.release();
+      socket = await upgradeToTls(socket, cfg.host);
+      reader = attachReader(socket);
+      write(`EHLO ${cfg.helo}`);
+      caps = (await expectCode(reader, 250, "\u062A\u0639\u0631\u064A\u0641 \u0627\u0644\u062E\u0627\u062F\u0645 \u0628\u0639\u062F \u0627\u0644\u062A\u0634\u0641\u064A\u0631")).join("\n").toUpperCase();
+    }
+    if (caps.includes("AUTH") && caps.includes("PLAIN") && !caps.includes("LOGIN")) {
+      write(`AUTH PLAIN ${Buffer.from(`\0${cfg.login}\0${cfg.pass}`, "utf8").toString("base64")}`);
+    } else {
+      write("AUTH LOGIN");
+      await expectCode(reader, 334, "\u0627\u0633\u0645 \u0627\u0644\u0645\u0633\u062A\u062E\u062F\u0645");
+      write(Buffer.from(cfg.login, "utf8").toString("base64"));
+      await expectCode(reader, 334, "\u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631");
+      write(Buffer.from(cfg.pass, "utf8").toString("base64"));
+    }
+    await expectCode(reader, 235, "\u0645\u0635\u0627\u062F\u0642\u0629 \u0627\u0644\u0628\u0631\u064A\u062F");
+    write(`MAIL FROM:<${cfg.from}>`);
+    await expectCode(reader, 250, "\u0645\u0631\u0633\u0644 \u0627\u0644\u0631\u0633\u0627\u0644\u0629");
+    write(`RCPT TO:<${msg.to}>`);
+    await expectCode(reader, 250, "\u0645\u0633\u062A\u0644\u0645 \u0627\u0644\u0631\u0633\u0627\u0644\u0629");
+    write("DATA");
+    await expectCode(reader, 354, "\u0628\u062F\u0627\u064A\u0629 \u0627\u0644\u0645\u062D\u062A\u0648\u0649");
+    write(`${payload}\r
+.`);
+    await expectCode(reader, 250, "\u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0645\u062D\u062A\u0648\u0649");
+    write("QUIT");
+  } catch (err) {
+    logger.error({ err }, "SMTP send failed");
+    throw err instanceof MailSendError || err instanceof MailNotConfiguredError ? err : new MailSendError(err?.message || "\u062A\u0639\u0630\u0651\u0631 \u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0628\u0631\u064A\u062F.");
+  } finally {
+    socket.destroy();
+  }
+}
+
+// src/routes/auth.ts
 var router6 = (0, import_express6.Router)();
 var authUnavailableMessage = "\u062E\u062F\u0645\u0629 \u0627\u0644\u0645\u0635\u0627\u062F\u0642\u0629 \u063A\u064A\u0631 \u0645\u062A\u0627\u062D\u0629 \u0645\u0624\u0642\u062A\u064B\u0627. \u062D\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649 \u0628\u0639\u062F \u0642\u0644\u064A\u0644.";
+function writeVerifyCookie(res, state) {
+  res.cookie(VERIFY_COOKIE, sealState(state), {
+    httpOnly: true,
+    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: VERIFY_TTL_MS
+  });
+}
+function clearVerifyCookie(res) {
+  res.clearCookie(VERIFY_COOKIE, { path: "/" });
+}
+function readVerifyState(req) {
+  const state = openState(req.cookies?.[VERIFY_COOKIE]);
+  if (!state) return null;
+  if (!state.expiresAt || state.expiresAt < Date.now()) return null;
+  return state;
+}
 var SUPABASE_URL3 = process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co";
 var SUPABASE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SECRET_KEY || "sb_publishable_kPG7zfG0FFZpRTkNnHhO1Q_oXoOq8fg";
 async function supabaseRequest(path, body) {
@@ -36700,10 +37178,10 @@ function base64url(input) {
   return input.toString("base64url");
 }
 function generateCodeVerifier() {
-  return base64url(randomBytes(48));
+  return base64url(randomBytes3(48));
 }
 function generateCodeChallenge(verifier) {
-  return base64url(createHash("sha256").update(verifier).digest());
+  return base64url(createHash2("sha256").update(verifier).digest());
 }
 function callbackUrlFromRequest(req) {
   const headers = req.headers;
@@ -36770,23 +37248,151 @@ async function trySilentRefresh2(req, res) {
     return null;
   }
 }
+async function livePlatformName() {
+  try {
+    const { data } = await supabaseQuery("platform_settings?select=platform_name&limit=1");
+    return String(data?.[0]?.platform_name || "\u0623\u0631\u0636 \u0627\u0644\u0644\u063A\u0629");
+  } catch {
+    return "\u0623\u0631\u0636 \u0627\u0644\u0644\u063A\u0629";
+  }
+}
+router6.get("/auth/verify/status", (req, res) => {
+  const state = readVerifyState(req);
+  res.json({
+    pending: Boolean(state),
+    providers: ALLOWED_EMAIL_DOMAINS.slice(0, 3),
+    providersLabel: ALLOWED_PROVIDERS_LABEL,
+    ...state ? {
+      email: maskEmail(state.email),
+      resendIn: resendWaitSeconds(state),
+      expiresIn: Math.max(0, Math.round((state.expiresAt - Date.now()) / 1e3))
+    } : {}
+  });
+});
+router6.post("/auth/verify/send", async (req, res) => {
+  const body = req.body ?? {};
+  const allowed = checkEmailAllowed(body.email);
+  if (!allowed.ok) {
+    res.status(400).json({ error: allowed.error });
+    return;
+  }
+  try {
+    const adminList = await getAdminEmails().catch(() => []);
+    if (adminList.includes(allowed.email)) {
+      res.status(400).json({ error: "\u0647\u0630\u0627 \u0627\u0644\u0628\u0631\u064A\u062F \u0645\u062D\u062C\u0648\u0632 \u0644\u062D\u0633\u0627\u0628 \u0627\u0644\u0625\u062F\u0627\u0631\u0629 \u2014 \u0633\u062C\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0628\u0647 \u0639\u0628\u0631 Google." });
+      return;
+    }
+  } catch {
+  }
+  const existing = readVerifyState(req);
+  if (existing && existing.email === allowed.email) {
+    const wait = resendWaitSeconds(existing);
+    if (wait > 0) {
+      res.status(429).json({ error: `\u0627\u0646\u062A\u0638\u0631 ${wait} \u062B\u0627\u0646\u064A\u0629 \u0642\u0628\u0644 \u0637\u0644\u0628 \u0643\u0648\u062F \u062C\u062F\u064A\u062F.`, resendIn: wait });
+      return;
+    }
+  }
+  const name = String(body.name ?? "").trim();
+  const state = existing && existing.email === allowed.email ? { ...createState(allowed.email, name || existing.name), tries: 0 } : createState(allowed.email, name);
+  try {
+    const content = verificationEmailContent({
+      code: state.code,
+      name: state.name,
+      minutes: Math.round(VERIFY_TTL_MS / 6e4),
+      platformName: await livePlatformName()
+    });
+    await sendMail({ to: state.email, ...content });
+  } catch (err) {
+    if (err instanceof MailNotConfiguredError) {
+      logger.error({ err, mail: describeMailSetup() }, "Verification email is not configured");
+      res.status(503).json({ error: "\u062E\u062F\u0645\u0629 \u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0643\u0648\u062F \u063A\u064A\u0631 \u0645\u0641\u0639\u0651\u0644\u0629 \u0639\u0644\u0649 \u0627\u0644\u062E\u0627\u062F\u0645 \u0628\u0639\u062F. \u0631\u0627\u062C\u0639 \u0645\u0641\u0627\u062A\u064A\u062D \u0627\u0644\u0628\u0631\u064A\u062F." });
+      return;
+    }
+    logger.error({ err, mail: describeMailSetup() }, "Failed to send the verification code");
+    res.status(502).json({
+      error: err instanceof MailSendError ? "\u062A\u0639\u0630\u0651\u0631 \u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0643\u0648\u062F \u0625\u0644\u0649 \u0628\u0631\u064A\u062F\u0643 \u0627\u0644\u0622\u0646. \u062A\u0623\u0643\u062F \u0645\u0646 \u0627\u0644\u0639\u0646\u0648\u0627\u0646 \u0623\u0648 \u062D\u0627\u0648\u0644 \u0628\u0639\u062F \u0642\u0644\u064A\u0644." : "\u062A\u0639\u0630\u0651\u0631 \u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0643\u0648\u062F \u0625\u0644\u0649 \u0628\u0631\u064A\u062F\u0643 \u0627\u0644\u0622\u0646. \u062D\u0627\u0648\u0644 \u0628\u0639\u062F \u0642\u0644\u064A\u0644."
+    });
+    return;
+  }
+  writeVerifyCookie(res, state);
+  res.json({
+    ok: true,
+    email: maskEmail(state.email),
+    resendIn: Math.round(RESEND_COOLDOWN_MS / 1e3),
+    expiresIn: Math.round(VERIFY_TTL_MS / 1e3),
+    message: `\u0623\u0631\u0633\u0644\u0646\u0627 \u0643\u0648\u062F\u0627\u064B \u0625\u0644\u0649 ${maskEmail(state.email)} \u2014 \u0623\u062F\u062E\u0644\u0647 \u0644\u0625\u0646\u0634\u0627\u0621 \u062D\u0633\u0627\u0628\u0643.`
+  });
+});
+router6.post("/auth/verify/cancel", (_req, res) => {
+  clearVerifyCookie(res);
+  res.json({ ok: true, message: "\u062A\u0645 \u0625\u0644\u063A\u0627\u0621 \u0637\u0644\u0628 \u0627\u0644\u062A\u0623\u0643\u064A\u062F." });
+});
+async function confirmVerifiedEmail(email, password, userId) {
+  const secretKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_KEY;
+  if (!secretKey) return null;
+  try {
+    await fetch(`${SUPABASE_URL3.replace(/\/+$/, "")}/auth/v1/admin/users/${userId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: secretKey,
+        Authorization: `Bearer ${secretKey}`
+      },
+      body: JSON.stringify({ email_confirm: true })
+    });
+    const { response, data } = await supabaseRequest("token?grant_type=password", { email, password });
+    return response.ok && typeof data.access_token === "string" ? data : null;
+  } catch (err) {
+    logger.warn({ err }, "Could not open a session right after email verification");
+    return null;
+  }
+}
 router6.post("/auth/register", async (req, res) => {
   const parsed = RegisterAccountBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+  const emailCheck = checkEmailAllowed(parsed.data.email);
+  if (!emailCheck.ok) {
+    res.status(400).json({ error: emailCheck.error });
+    return;
+  }
+  const state = readVerifyState(req);
+  if (!state) {
+    res.status(400).json({
+      error: "\u0627\u0646\u062A\u0647\u062A \u0635\u0644\u0627\u062D\u064A\u0629 \u0637\u0644\u0628 \u0627\u0644\u062A\u0623\u0643\u064A\u062F \u0623\u0648 \u0644\u0645 \u064A\u0628\u062F\u0623 \u0628\u0639\u062F. \u0639\u064F\u062F \u0625\u0644\u0649 \u0635\u0641\u062D\u0629 \u0627\u0644\u062A\u0633\u062C\u064A\u0644 \u0644\u0637\u0644\u0628 \u0643\u0648\u062F \u062C\u062F\u064A\u062F."
+    });
+    return;
+  }
+  if (state.email !== emailCheck.email) {
+    res.status(400).json({ error: "\u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0645\u0624\u0643\u064E\u0651\u062F \u0644\u0627 \u064A\u0637\u0627\u0628\u0642 \u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0645\u0637\u0644\u0648\u0628 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u062D\u0633\u0627\u0628 \u0628\u0647." });
+    return;
+  }
+  const submittedCode = String((req.body ?? {}).code ?? "").trim();
+  if (!codeMatches(state.code, submittedCode)) {
+    state.tries += 1;
+    writeVerifyCookie(res, state);
+    const triesLeft = Math.max(0, MAX_CODE_TRIES - state.tries);
+    res.status(400).json({
+      error: triesLeft > 0 ? `\u0627\u0644\u0643\u0648\u062F \u063A\u064A\u0631 \u0635\u062D\u064A\u062D. \u0628\u0642\u064A\u062A \u0644\u0643 ${triesLeft} \u0645\u062D\u0627\u0648\u0644\u0627\u062A.` : "\u0627\u0646\u062A\u0647\u062A \u0645\u062D\u0627\u0648\u0644\u0627\u062A \u0627\u0644\u062A\u062D\u0642\u0642. \u0627\u0628\u062F\u0623 \u0627\u0644\u062A\u0633\u062C\u064A\u0644 \u0645\u0646 \u062C\u062F\u064A\u062F \u0644\u0644\u062D\u0635\u0648\u0644 \u0639\u0644\u0649 \u0643\u0648\u062F \u062C\u062F\u064A\u062F.",
+      triesLeft
+    });
+    return;
+  }
+  clearVerifyCookie(res);
   try {
     const adminList = await getAdminEmails().catch(() => []);
-    if (adminList.includes(String(parsed.data.email || "").trim().toLowerCase())) {
+    if (adminList.includes(emailCheck.email)) {
       res.status(400).json({ error: "\u0647\u0630\u0627 \u0627\u0644\u0628\u0631\u064A\u062F \u0645\u062D\u062C\u0648\u0632 \u0644\u062D\u0633\u0627\u0628 \u0627\u0644\u0625\u062F\u0627\u0631\u0629 \u2014 \u0633\u062C\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0628\u0647 \u0639\u0628\u0631 Google." });
       return;
     }
   } catch {
   }
   const { fullName } = parsed.data;
+  const email = emailCheck.email;
   const { response, data } = await supabaseRequest("signup", {
-    email: parsed.data.email,
+    email,
     password: parsed.data.password,
     data: {
       full_name: fullName,
@@ -36808,7 +37414,7 @@ router6.post("/auth/register", async (req, res) => {
   const newUserId = typeof data.user === "object" && data.user !== null ? String(data.user.id ?? "") : "";
   const profilePayload = {
     id: newUserId,
-    email: parsed.data.email,
+    email,
     full_name: fullName,
     role: "student",
     student_number: parsed.data.studentNumber || "",
@@ -36831,11 +37437,16 @@ router6.post("/auth/register", async (req, res) => {
       logger.error({ err }, "Failed to create profile after signup");
     }
   }
-  setSessionCookies(res, data);
+  let session = data;
+  if (!session.access_token && newUserId) {
+    const forced = await confirmVerifiedEmail(email, parsed.data.password, newUserId);
+    if (forced) session = forced;
+  }
+  setSessionCookies(res, session);
   res.json(
     RegisterAccountResponse.parse({
-      message: data.access_token ? "\u062A\u0645 \u0625\u0646\u0634\u0627\u0621 \u062D\u0633\u0627\u0628\u0643 \u0648\u062A\u0633\u062C\u064A\u0644 \u062F\u062E\u0648\u0644\u0643." : "\u062A\u0645 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u062D\u0633\u0627\u0628. \u062A\u062D\u0642\u0642 \u0645\u0646 \u0628\u0631\u064A\u062F\u0643 \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A \u0644\u0625\u0643\u0645\u0627\u0644 \u0627\u0644\u062A\u0633\u062C\u064A\u0644.",
-      user: authUser(data)
+      message: session.access_token ? "\u062A\u0645 \u062A\u0623\u0643\u064A\u062F \u0628\u0631\u064A\u062F\u0643 \u0648\u0625\u0646\u0634\u0627\u0621 \u062D\u0633\u0627\u0628\u0643 \u0628\u0646\u062C\u0627\u062D." : "\u062A\u0645 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u062D\u0633\u0627\u0628 \u0628\u0639\u062F \u062A\u0623\u0643\u064A\u062F \u0628\u0631\u064A\u062F\u0643. \u0633\u062C\u0651\u0644 \u062F\u062E\u0648\u0644\u0643 \u0628\u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631.",
+      user: authUser(session)
     })
   );
 });

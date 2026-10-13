@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tan
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import {
   useGetPlatformOverview,
   useGetGoogleAuthUrl,
@@ -17,7 +18,6 @@ import {
   useListStudents,
   useLoginAccount,
   useLogoutAccount,
-  useRegisterAccount,
   useRequestPasswordReset,
   useUpdateTeacherSettings,
   getGetGoogleAuthUrlQueryKey,
@@ -1774,14 +1774,80 @@ function Login() {
   );
 }
 
+/* =========================================================================
+   تأكيد البريد قبل إنشاء الحساب
+   — المزوّدون المسموحون (السيرفر هو المرجع، وهذا فحص مبكر لتجربة أسرع)
+   — بيانات التسجيل تُحفظ في sessionStorage حتى تستطيع صفحة التأكيد إنشاء
+     الحساب بعد إدخال الكود؛ تخرج من الصفحة ولا تُدخل الكود ⇒ لا حساب.
+   ========================================================================= */
+const ALLOWED_EMAIL_DOMAINS = ['gmail.com', 'googlemail.com', 'hotmail.com', 'outlook.com', 'live.com', 'msn.com'];
+const ALLOWED_EMAIL_FAMILIES = ['hotmail.', 'outlook.', 'live.', 'msn.'];
+const PENDING_REGISTRATION_KEY = 'ard-verify-pending';
+
+function emailDomainProblem(raw: string): string {
+  const email = String(raw ?? '').trim().toLowerCase();
+  if (!email) return 'اكتب بريدك الإلكتروني أولاً.';
+  if (!/^[^\s@]{1,64}@[^\s@.]+(\.[^\s@.]+)+$/.test(email)) return 'صيغة البريد غير صحيحة. مثال صحيح: name@gmail.com';
+  const domain = email.slice(email.lastIndexOf('@') + 1);
+  const allowed = ALLOWED_EMAIL_DOMAINS.includes(domain) || ALLOWED_EMAIL_FAMILIES.some((prefix) => domain.startsWith(prefix));
+  if (!allowed) return 'التسجيل مسموح ببريد Gmail أو Hotmail أو Outlook فقط.';
+  return '';
+}
+
+type PendingRegistration = {
+  fullName: string; email: string; password: string; studentNumber: string;
+  school: string; branch: string; grade: string; section: string; gender: string; phone: string;
+};
+
+function savePendingRegistration(payload: PendingRegistration) {
+  try { sessionStorage.setItem(PENDING_REGISTRATION_KEY, JSON.stringify(payload)); } catch { /* تجاهل */ }
+}
+
+function readPendingRegistration(): PendingRegistration | null {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(PENDING_REGISTRATION_KEY) || 'null');
+    return parsed?.email ? (parsed as PendingRegistration) : null;
+  } catch { return null; }
+}
+
+function clearPendingRegistration() {
+  try { sessionStorage.removeItem(PENDING_REGISTRATION_KEY); } catch { /* تجاهل */ }
+}
+
+/** 01:05 — عدّاد إعادة الإرسال */
+function formatClock(total: number): string {
+  const safe = Math.max(0, Math.floor(total));
+  return `${String(Math.floor(safe / 60)).padStart(2, '0')}:${String(safe % 60).padStart(2, '0')}`;
+}
+
+/** حلقة العدّاد النازلة حتى تُسمح إعادة الإرسال */
+function CountdownRing({ seconds, total = 60 }: { seconds: number; total?: number }) {
+  const radius = 16;
+  const circumference = 2 * Math.PI * radius;
+  const ratio = Math.max(0, Math.min(1, seconds / total));
+  return (
+    <span className="relative grid h-9 w-9 shrink-0 place-items-center">
+      <svg viewBox="0 0 40 40" className="h-9 w-9 -rotate-90">
+        <circle cx="20" cy="20" r={radius} fill="none" stroke="hsl(var(--border))" strokeWidth="4" />
+        <circle
+          cx="20" cy="20" r={radius} fill="none" stroke="hsl(var(--primary))" strokeWidth="4"
+          strokeLinecap="round" strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - ratio)} className="transition-[stroke-dashoffset] duration-1000 ease-linear"
+        />
+      </svg>
+      <span className="absolute text-[11px] font-extrabold tabular-nums text-primary">{seconds}</span>
+    </span>
+  );
+}
+
 function Register() {
   // الصفوف والمدارس تأتي من قاعدة البيانات — يشترك هنا ليعيد الرسم فور تغيّرها
   useCatalog();
   const [, setLocation] = useLocation();
   useRedirectIfAuthenticated();
-  const register = useRegisterAccount();
   const google = useGetGoogleAuthUrl({ query: { enabled: false, queryKey: getGetGoogleAuthUrlQueryKey() } });
   const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
 
   const continueWithGoogle = async () => {
     const result = await google.refetch();
@@ -1789,42 +1855,57 @@ function Register() {
     else setMessage('تسجيل الدخول باستخدام Google غير مفعّل حالياً.');
   };
 
+  // الخطوة الأولى: يتحقق السيرفر من نطاق البريد ثم يرسل الكود.
+  // الحساب نفسه لا يُنشأ هنا أبداً.
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const data = new FormData(e.currentTarget);
     const fullName = String(data.get('fullName') ?? '').trim();
+    const email = String(data.get('email') ?? '').trim();
     setMessage('');
     if (fullName.length < 3) {
       setMessage('اسم المستخدم إلزامي — اكتب اسمك الثلاثي أو الرباعي (3 أحرف على الأقل).');
       return;
     }
-    register.mutate(
-      {
-        data: {
+    const emailProblem = emailDomainProblem(email);
+    if (emailProblem) {
+      setMessage(emailProblem);
+      return;
+    }
+
+    setSending(true);
+    jsonFetch('/api/auth/verify/send', { method: 'POST', body: { email, name: fullName } })
+      .then(() => {
+        savePendingRegistration({
           fullName,
-          email: String(data.get('email') ?? ''),
+          email,
           password: String(data.get('password') ?? ''),
           studentNumber: '',
-          school: String(data.get('school') ?? 'مدرسة وايلد'),
+          school: String(data.get('school') ?? ''),
           branch: 'المسار الأكاديمي',
-          grade: String(data.get('grade') ?? 'الصف العاشر'),
+          grade: String(data.get('grade') ?? ''),
           section: 'أ',
-          gender: String(data.get('gender') ?? 'طالب'),
+          gender: String(data.get('gender') ?? ''),
           phone: String(data.get('phone') ?? ''),
-        },
-      },
-      {
-        onSuccess: () => { resetAuthGate(); redirectAfterAuth(setLocation); },
-        onError: (error) => setMessage(error?.message || 'تعذر إنشاء الحساب. تحقق من صحة البريد وكلمة المرور وحاول ثانية.'),
-      }
-    );
+        });
+        setLocation('/auth/verify');
+      })
+      .catch((err: Error) => {
+        setSending(false);
+        setMessage(err?.message || 'تعذّر إرسال كود التأكيد. حاول بعد قليل.');
+      });
   };
 
   return (
     <AuthLayout title="انضم لأرض اللغة" eyebrow="حساب طالب جديد">
       <form onSubmit={submit} className="mt-8 space-y-4">
         <Field name="fullName" label="الاسم الكامل (اسم المستخدم)" placeholder="اكتب الاسم الثلاثي أو الرباعي — إلزامي" testId="input-name" />
-        <Field name="email" label="البريد الإلكتروني" type="email" placeholder="name@example.com" testId="input-register-email" />
+        <div>
+          <Field name="email" label="البريد الإلكتروني" type="email" placeholder="name@gmail.com" testId="input-register-email" />
+          <p className="mt-2 flex items-center gap-2 px-1 text-xs font-semibold leading-5 text-muted-foreground" data-testid="hint-verify-email">
+            <Mail size={13} className="shrink-0 text-primary" /> بريد Gmail أو Hotmail أو Outlook فقط — سنرسل عليه كود التأكيد.
+          </p>
+        </div>
         <Field name="password" label="كلمة المرور (6 خانات على الأقل)" type="password" placeholder="••••••••" testId="input-register-password" />
         <div className="grid gap-4 sm:grid-cols-2">
           <LiveSelectField name="school" label="المدرسة" kind="school" testId="select-school" />
@@ -1835,9 +1916,17 @@ function Register() {
         <label className="flex items-start gap-2 pt-1 text-xs leading-5 text-muted-foreground">
           <input type="checkbox" required className="mt-1 accent-primary" /> أوافق على الالتزام بمتابعة الدروس والتكليفات وفق توجيهات الأستاذ أحمد الأسطل.
         </label>
+        <div className="flex items-start gap-2 rounded-2xl border border-border bg-secondary/50 px-4 py-3 text-xs font-semibold leading-6 text-muted-foreground">
+          <ShieldCheck size={15} className="mt-0.5 shrink-0 text-primary" />
+          لن يُنشأ حسابك إلا بعد إدخال كود التأكيد — إن توقفت هنا فلا حساب لك.
+        </div>
         {message && <p className="rounded-xl bg-accent/20 px-4 py-3 text-sm leading-6 text-accent-foreground font-semibold">{message}</p>}
-        <Button type="submit" disabled={register.isPending} className="mt-2 w-full py-3.5" data-testid="button-register">
-          {register.isPending ? 'جارٍ إنشاء الحساب...' : 'إنشاء حسابي والبدء فوراً'} <ArrowLeft size={17} />
+        <Button type="submit" disabled={sending} className="mt-2 w-full py-3.5" data-testid="button-register">
+          {sending ? (
+            <><RefreshCw size={17} className="animate-spin" /> جارٍ إرسال كود التأكيد...</>
+          ) : (
+            <>إرسال كود التأكيد إلى بريدي <ArrowLeft size={17} /></>
+          )}
         </Button>
       </form>
       <div className="mt-5 flex items-center gap-3 text-xs text-muted-foreground">
@@ -1858,6 +1947,262 @@ function Register() {
         <Link href="/login" className="font-bold text-primary hover:underline" data-testid="link-login-auth">
           سجل دخولك
         </Link>
+      </p>
+    </AuthLayout>
+  );
+}
+
+/* =========================================================================
+   صفحة تأكيد البريد — البوابة التي لا يُعبرها حساب بلا كود.
+   ========================================================================= */
+function VerifyEmailPage() {
+  const [, setLocation] = useLocation();
+  useRedirectIfAuthenticated();
+  const [phase, setPhase] = useState<'loading' | 'ready' | 'empty' | 'done'>('loading');
+  const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
+  const [message, setMessage] = useState('');
+  const [notice, setNotice] = useState('');
+  const [cooldown, setCooldown] = useState(0);
+  const [shakeKey, setShakeKey] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  // 1) حالة الطلب عند فتح الصفحة — بلا طلب نشط نخرج بموضحة لا بكود وهمي
+  useEffect(() => {
+    let cancelled = false;
+    jsonFetch('/api/auth/verify/status')
+      .then((data) => {
+        if (cancelled) return;
+        if (!data?.pending) { setPhase('empty'); return; }
+        setEmail(String(data.email || ''));
+        setCooldown(Math.max(0, Number(data.resendIn) || 0));
+        setPhase('ready');
+      })
+      .catch(() => { if (!cancelled) setPhase('empty'); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // 2) العدّاد: دقيقة كاملة قبل السماح بكود جديد
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setTimeout(() => setCooldown((value) => Math.max(0, value - 1)), 1000);
+    return () => clearTimeout(timer);
+  }, [cooldown]);
+
+  const submit = async () => {
+    if (busy || code.length !== 6) return;
+    const pending = readPendingRegistration();
+    if (!pending) {
+      setMessage('انتهت بيانات التسجيل في هذا المتصفح. عُد إلى صفحة التسجيل وابدأ من جديد.');
+      setCode('');
+      return;
+    }
+    setBusy(true);
+    setMessage('');
+    try {
+      await jsonFetch('/api/auth/register', { method: 'POST', body: { ...pending, code } });
+      clearPendingRegistration();
+      setPhase('done');
+      resetAuthGate();
+      setTimeout(() => redirectAfterAuth(setLocation), 1100);
+    } catch (err: any) {
+      setMessage(err?.message || 'تعذّر إنشاء الحساب. حاول ثانية.');
+      setCode('');
+      setShakeKey((key) => key + 1);
+      setBusy(false);
+    }
+  };
+
+  // 3) التأكيد تلقائياً عند اكتمال الأرقام الستة
+  useEffect(() => {
+    if (phase === 'ready' && code.length === 6 && !busy) submit();
+  }, [code, phase]);
+
+  const resend = async () => {
+    if (sending || cooldown > 0) return;
+    const pending = readPendingRegistration();
+    if (!pending) {
+      setMessage('انتهت بيانات التسجيل في هذا المتصفح. عُد إلى صفحة التسجيل وابدأ من جديد.');
+      return;
+    }
+    setSending(true);
+    setMessage('');
+    setNotice('');
+    try {
+      const data = await jsonFetch('/api/auth/verify/send', {
+        method: 'POST',
+        body: { email: pending.email, name: pending.fullName },
+      });
+      setEmail(String(data?.email || email));
+      setCooldown(Math.max(0, Number(data?.resendIn) || 60));
+      setCode('');
+      setNotice('وصل الكود الجديد إلى بريدك — الكود السابق لم يعد صالحاً.');
+    } catch (err: any) {
+      setMessage(err?.message || 'تعذّر إعادة الإرسال. حاول بعد قليل.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const cancel = () => {
+    clearPendingRegistration();
+    jsonFetch('/api/auth/verify/cancel', { method: 'POST' }).catch(() => undefined);
+    setLocation('/register');
+  };
+
+  if (phase === 'loading') {
+    return (
+      <AuthLayout title="لحظة واحدة فقط" eyebrow="تأكيد البريد الإلكتروني">
+        <div className="mt-8 flex items-center gap-3 rounded-2xl bg-secondary p-5 text-sm leading-7 text-muted-foreground">
+          <RefreshCw className="h-5 w-5 shrink-0 animate-spin text-primary" /> نجهّز طلب التأكيد...
+        </div>
+      </AuthLayout>
+    );
+  }
+
+  if (phase === 'empty') {
+    return (
+      <AuthLayout title="لا يوجد طلب تأكيد" eyebrow="تأكيد البريد الإلكتروني">
+        <div className="animate-fade-up mt-8 rounded-3xl border border-dashed border-border bg-card p-8 text-center">
+          <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-secondary text-muted-foreground">
+            <Mail size={28} />
+          </span>
+          <p className="text-sm font-semibold leading-7 text-foreground">لا يوجد طلب تأكيد قائم على هذا المتصفح.</p>
+          <p className="mt-2 text-sm leading-7 text-muted-foreground">
+            املأ بياناتك في صفحة التسجيل وسنرسل كود التأكيد إلى بريدك مباشرة.
+          </p>
+          <Button onClick={() => setLocation('/register')} className="mt-6 w-full py-3.5" data-testid="button-verify-back">
+            الذهاب إلى صفحة التسجيل <ArrowLeft size={17} />
+          </Button>
+        </div>
+      </AuthLayout>
+    );
+  }
+
+  if (phase === 'done') {
+    return (
+      <AuthLayout title="تم تأكيد بريدك" eyebrow="أهلاً بك في أرض اللغة">
+        <div className="animate-fade-up mt-8 rounded-3xl border border-border bg-card p-9 text-center shadow-sm">
+          <span className="animate-glow-pulse mx-auto mb-5 grid h-20 w-20 place-items-center rounded-full bg-accent/25 text-accent-foreground">
+            <CheckCircle2 size={40} />
+          </span>
+          <p className="font-display text-2xl font-bold text-primary">حسابك جاهز!</p>
+          <p className="mt-2 text-sm leading-7 text-muted-foreground">جارٍ إدخالك إلى مساحتك التعليمية...</p>
+          <div className="mt-6 flex items-center justify-center gap-2 text-sm font-bold text-primary">
+            <RefreshCw size={15} className="animate-spin" /> جارٍ الدخول إلى حسابك
+          </div>
+        </div>
+      </AuthLayout>
+    );
+  }
+
+  return (
+    <AuthLayout title="أدخل كود التأكيد" eyebrow="خطوة واحدة أخيرة">
+      {/* بطاقة البريد */}
+      <div className="animate-fade-up mt-8 flex items-center gap-4 rounded-3xl border border-border bg-card p-5 shadow-sm">
+        <span className="relative grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-primary to-[#2a7a72] text-primary-foreground shadow-md">
+          <Mail size={24} />
+          <span className="absolute -bottom-1.5 -left-1.5 grid h-7 w-7 place-items-center rounded-full bg-accent text-xs font-extrabold text-accent-foreground ring-4 ring-card">1</span>
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-bold text-accent-foreground">أرسلنا الكود إلى</p>
+          <p dir="ltr" className="truncate text-left font-mono text-base font-bold text-primary" data-testid="verify-email-target">
+            {email || '—'}
+          </p>
+        </div>
+      </div>
+
+      {/* خانات الكود */}
+      <div className="mt-9">
+        <p className="text-center text-sm font-bold text-foreground">أدخل الكود المكوّن من 6 أرقام</p>
+        <p className="mt-1.5 text-center text-xs leading-6 text-muted-foreground">تحقّقنا من بريدك برسالة تحمل الكود فقط — لا يُنشأ حساب إلا بإدخاله.</p>
+        <div className="mt-5 flex justify-center" key={shakeKey}>
+          <InputOTP
+            maxLength={6}
+            value={code}
+            onChange={(value: string) => { setCode(value.replace(/\D/g, '').slice(0, 6)); setMessage(''); }}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            disabled={busy}
+            containerClassName="animate-shake gap-2 sm:gap-3"
+            data-testid="input-verify-code"
+          >
+            <InputOTPGroup>
+              {[0, 1, 2, 3, 4, 5].map((index) => (
+                <InputOTPSlot
+                  key={index}
+                  index={index}
+                  className="h-14 w-11 rounded-2xl border-border bg-card font-display text-2xl font-extrabold text-primary shadow-sm transition-all sm:h-16 sm:w-14"
+                />
+              ))}
+            </InputOTPGroup>
+          </InputOTP>
+        </div>
+      </div>
+
+      {notice && (
+        <p className="mt-6 flex items-center justify-center gap-2 rounded-2xl bg-accent/20 px-4 py-3 text-center text-sm font-semibold leading-6 text-accent-foreground">
+          <Check size={15} className="shrink-0" /> {notice}
+        </p>
+      )}
+
+      {message && (
+        <p className="mt-6 flex items-start gap-2 rounded-2xl bg-destructive/10 px-4 py-3 text-sm font-semibold leading-6 text-destructive" data-testid="verify-error">
+          <CircleAlert size={16} className="mt-0.5 shrink-0" /> <span>{message}</span>
+        </p>
+      )}
+
+      <Button
+        type="button"
+        onClick={submit}
+        disabled={busy || code.length !== 6}
+        className="mt-7 w-full py-4 text-base"
+        data-testid="button-verify-submit"
+      >
+        {busy ? (
+          <><RefreshCw size={17} className="animate-spin" /> جارٍ إنشاء حسابك...</>
+        ) : (
+          <>تأكيد الكود وإنشاء الحساب <Check size={18} /></>
+        )}
+      </Button>
+
+      {/* إعادة الإرسال بعد دقيقة */}
+      <div className="mt-5 flex justify-center">
+        {cooldown > 0 ? (
+          <div className="flex items-center gap-3 rounded-2xl border border-border bg-secondary/60 px-5 py-3 text-sm font-semibold text-muted-foreground" data-testid="verify-resend-countdown">
+            <CountdownRing seconds={cooldown} />
+            <span>
+              كود جديد بعد <span className="font-extrabold tabular-nums text-primary">{formatClock(cooldown)}</span>
+            </span>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={resend}
+            disabled={sending}
+            className="group inline-flex items-center gap-2 rounded-2xl border border-border bg-card px-5 py-3 text-sm font-extrabold text-primary shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+            data-testid="button-verify-resend"
+          >
+            {sending ? (
+              <><RefreshCw size={16} className="animate-spin" /> جارٍ الإرسال...</>
+            ) : (
+              <><RefreshCw size={16} className="transition-transform duration-500 group-hover:rotate-180" /> إعادة إرسال الكود</>
+            )}
+          </button>
+        )}
+      </div>
+
+      <div className="mt-8 flex items-start gap-3 rounded-2xl border border-border bg-secondary/50 p-4 text-xs leading-6 text-muted-foreground">
+        <ShieldCheck size={16} className="mt-0.5 shrink-0 text-primary" />
+        <p>لو أغلقت هذه الصفحة الآن فلن يُنشأ لك أي حساب — الكود وحده هو ما يفتح الحساب.</p>
+      </div>
+
+      <p className="mt-6 text-center text-sm text-muted-foreground">
+        البريد غير صحيح؟{' '}
+        <button type="button" onClick={cancel} className="font-bold text-primary hover:underline" data-testid="link-verify-change-email">
+          غيّر البريد وابدأ من جديد
+        </button>
       </p>
     </AuthLayout>
   );
@@ -11402,6 +11747,7 @@ function Router() {
         <Route path="/" component={Home} />
         <Route path="/login" component={Login} />
         <Route path="/register" component={Register} />
+        <Route path="/auth/verify" component={VerifyEmailPage} />
         <Route path="/auth/callback" component={AuthCallback} />
         <Route path="/auth/complete" component={CompleteProfilePage} />
         <Route path="/student" component={StudentDashboardNew} />
