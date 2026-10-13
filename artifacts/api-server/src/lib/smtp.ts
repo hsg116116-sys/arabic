@@ -101,9 +101,8 @@ export function isMailConfigured(): boolean {
 /** وصف للإعداد بدون كشف المفتاح — للتشخيص في السجل فقط. */
 export function describeMailSetup(): string {
   const cfg = readMailConfig();
-  return `smtp=${cfg.host}:${cfg.port} from=${cfg.from || "-"} login=${cfg.login || "-"} key=${
-    cfg.pass ? "موجود" : "مفقود"
-  }`;
+  const resend = firstEnv("RESEND_API_KEY", "RESEND_KEY");
+  return `resend=${resend ? "موجود" : "مفقود"}${firstEnv("RESEND_FROM") ? ` from=${firstEnv("RESEND_FROM")}` : ""} | smtp=${cfg.host}:${cfg.port} from=${cfg.from || "-"} key=${cfg.pass ? "موجود" : "مفقود"}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -285,7 +284,20 @@ export async function sendMail(msg: MailMessage): Promise<void> {
   const failures: string[] = [];
   const providers: string[] = [];
 
-  // المزوّد الأول: Brevo عبر SMTP
+  // المزوّد الأول: Resend عبر HTTP
+  const resendKey = firstEnv("RESEND_API_KEY", "RESEND_KEY");
+  if (resendKey) {
+    providers.push("resend");
+    try {
+      await sendViaResend(msg, resendKey);
+      return;
+    } catch (err) {
+      failures.push(`resend: ${(err as Error)?.message || "فشل غير معروف"}`);
+      logger.warn({ err }, "Resend send failed — trying the next provider");
+    }
+  }
+
+  // الثاني: Brevo عبر SMTP
   if (isMailConfigured()) {
     providers.push("brevo");
     try {
@@ -312,10 +324,34 @@ export async function sendMail(msg: MailMessage): Promise<void> {
   }
 
   if (providers.length === 0) {
-    throw new MailNotConfiguredError("لم تُضبط أي خدمة بريد على الخادم (BREVO_SMTP_KEY / BIRD_API_KEY).");
+    throw new MailNotConfiguredError("لم تُضبط أي خدمة بريد على الخادم (RESEND_API_KEY / BREVO_SMTP_KEY / BIRD_API_KEY).");
   }
   logger.error({ failures }, "Every mail provider failed");
   throw new MailSendError(failures.join(" | "));
+}
+
+/** Resend عبر REST — بلا حزم ولا قيود IP. */
+async function sendViaResend(msg: MailMessage, key: string): Promise<void> {
+  const from = firstEnv("RESEND_FROM", "RESEND_MAIL_FROM") || "onboarding@resend.dev";
+  const fromName = firstEnv("RESEND_FROM_NAME", "RESEND_MAIL_FROM_NAME") || "أرض اللغة";
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: `${fromName} <${from}>`,
+      to: [msg.to],
+      subject: msg.subject,
+      html: msg.html,
+      text: msg.text ?? "",
+    }),
+  });
+  const text = await response.text().catch(() => "");
+  if (!response.ok) {
+    throw new MailSendError(`Resend رفض الإرسال (${response.status}): ${text.slice(0, 220)}`);
+  }
 }
 
 /** MessageBird عبر REST — يُستعمل احتياطاً حين يرفض Brevo الاتصال. */

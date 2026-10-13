@@ -333,13 +333,15 @@ router.post("/auth/verify/send", async (req, res): Promise<void> => {
     // تفاصيل العطل تظهر للطالب عمداً — بدونها لا أحد يعرف ما الذي يضبط في Brevo
     const detail = (err as Error)?.message ?? "";
     res.status(502).json({
-      error: /unauthorized ip/i.test(detail)
-        ? "تم رفض الاتصال من Brevo — عنوان الخادم غير مُصرّح به. أضف 0.0.0.0/0 في Brevo ← Senders, domains, IPs."
-        : /sender|not verified|550/i.test(detail)
-          ? "Brevo رفض البريد المرسل — ضع بريداً موثّقاً في المتغير BREVO_MAIL_FROM."
-          : /incorrect access_key|401/i.test(detail)
-            ? "مفتاح البريد الاحتياطي (MessageBird) غير صالح."
-            : "تعذّر إرسال الكود إلى بريدك الآن. تأكد من العنوان أو حاول بعد قليل.",
+      error: /only send testing emails|403/i.test(detail)
+        ? "حساب Resend ما يسمح بالإرسال لغير بريدك إلا بعد إضافة نطاقك — أضف نطاقك في Resend ثم حدّث RESEND_FROM."
+        : /unauthorized ip/i.test(detail)
+          ? "تم رفض الاتصال من Brevo — عنوان الخادم غير مُصرّح به. أضف 0.0.0.0/0 في Brevo ← Senders, domains, IPs."
+          : /sender|not verified|550/i.test(detail)
+            ? "Brevo رفض البريد المرسل — ضع بريداً موثّقاً في المتغير BREVO_MAIL_FROM."
+            : /incorrect access_key|401/i.test(detail)
+              ? "مفتاح البريد الاحتياطي (MessageBird) غير صالح."
+              : "تعذّر إرسال الكود إلى بريدك الآن. تأكد من العنوان أو حاول بعد قليل.",
     });
     return;
   }

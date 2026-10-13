@@ -36901,7 +36901,8 @@ function isMailConfigured() {
 }
 function describeMailSetup() {
   const cfg = readMailConfig();
-  return `smtp=${cfg.host}:${cfg.port} from=${cfg.from || "-"} login=${cfg.login || "-"} key=${cfg.pass ? "\u0645\u0648\u062C\u0648\u062F" : "\u0645\u0641\u0642\u0648\u062F"}`;
+  const resend = firstEnv("RESEND_API_KEY", "RESEND_KEY");
+  return `resend=${resend ? "\u0645\u0648\u062C\u0648\u062F" : "\u0645\u0641\u0642\u0648\u062F"}${firstEnv("RESEND_FROM") ? ` from=${firstEnv("RESEND_FROM")}` : ""} | smtp=${cfg.host}:${cfg.port} from=${cfg.from || "-"} key=${cfg.pass ? "\u0645\u0648\u062C\u0648\u062F" : "\u0645\u0641\u0642\u0648\u062F"}`;
 }
 function withTimeout(promise, ms, label) {
   return new Promise((resolve2, reject) => {
@@ -37048,6 +37049,17 @@ function dotStuff(payload) {
 async function sendMail(msg) {
   const failures = [];
   const providers = [];
+  const resendKey = firstEnv("RESEND_API_KEY", "RESEND_KEY");
+  if (resendKey) {
+    providers.push("resend");
+    try {
+      await sendViaResend(msg, resendKey);
+      return;
+    } catch (err) {
+      failures.push(`resend: ${err?.message || "\u0641\u0634\u0644 \u063A\u064A\u0631 \u0645\u0639\u0631\u0648\u0641"}`);
+      logger.warn({ err }, "Resend send failed \u2014 trying the next provider");
+    }
+  }
   if (isMailConfigured()) {
     providers.push("brevo");
     try {
@@ -37071,10 +37083,32 @@ async function sendMail(msg) {
     }
   }
   if (providers.length === 0) {
-    throw new MailNotConfiguredError("\u0644\u0645 \u062A\u064F\u0636\u0628\u0637 \u0623\u064A \u062E\u062F\u0645\u0629 \u0628\u0631\u064A\u062F \u0639\u0644\u0649 \u0627\u0644\u062E\u0627\u062F\u0645 (BREVO_SMTP_KEY / BIRD_API_KEY).");
+    throw new MailNotConfiguredError("\u0644\u0645 \u062A\u064F\u0636\u0628\u0637 \u0623\u064A \u062E\u062F\u0645\u0629 \u0628\u0631\u064A\u062F \u0639\u0644\u0649 \u0627\u0644\u062E\u0627\u062F\u0645 (RESEND_API_KEY / BREVO_SMTP_KEY / BIRD_API_KEY).");
   }
   logger.error({ failures }, "Every mail provider failed");
   throw new MailSendError(failures.join(" | "));
+}
+async function sendViaResend(msg, key) {
+  const from = firstEnv("RESEND_FROM", "RESEND_MAIL_FROM") || "onboarding@resend.dev";
+  const fromName = firstEnv("RESEND_FROM_NAME", "RESEND_MAIL_FROM_NAME") || "\u0623\u0631\u0636 \u0627\u0644\u0644\u063A\u0629";
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      from: `${fromName} <${from}>`,
+      to: [msg.to],
+      subject: msg.subject,
+      html: msg.html,
+      text: msg.text ?? ""
+    })
+  });
+  const text = await response.text().catch(() => "");
+  if (!response.ok) {
+    throw new MailSendError(`Resend \u0631\u0641\u0636 \u0627\u0644\u0625\u0631\u0633\u0627\u0644 (${response.status}): ${text.slice(0, 220)}`);
+  }
 }
 async function sendViaMessageBird(msg, key) {
   const from = firstEnv("BIRD_FROM", "MESSAGEBIRD_FROM") || "messagebird@messagebird.com";
@@ -37384,7 +37418,7 @@ router6.post("/auth/verify/send", async (req, res) => {
     logger.error({ err, mail: describeMailSetup() }, "Failed to send the verification code");
     const detail = err?.message ?? "";
     res.status(502).json({
-      error: /unauthorized ip/i.test(detail) ? "\u062A\u0645 \u0631\u0641\u0636 \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0645\u0646 Brevo \u2014 \u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u062E\u0627\u062F\u0645 \u063A\u064A\u0631 \u0645\u064F\u0635\u0631\u0651\u062D \u0628\u0647. \u0623\u0636\u0641 0.0.0.0/0 \u0641\u064A Brevo \u2190 Senders, domains, IPs." : /sender|not verified|550/i.test(detail) ? "Brevo \u0631\u0641\u0636 \u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0645\u0631\u0633\u0644 \u2014 \u0636\u0639 \u0628\u0631\u064A\u062F\u0627\u064B \u0645\u0648\u062B\u0651\u0642\u0627\u064B \u0641\u064A \u0627\u0644\u0645\u062A\u063A\u064A\u0631 BREVO_MAIL_FROM." : /incorrect access_key|401/i.test(detail) ? "\u0645\u0641\u062A\u0627\u062D \u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0627\u062D\u062A\u064A\u0627\u0637\u064A (MessageBird) \u063A\u064A\u0631 \u0635\u0627\u0644\u062D." : "\u062A\u0639\u0630\u0651\u0631 \u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0643\u0648\u062F \u0625\u0644\u0649 \u0628\u0631\u064A\u062F\u0643 \u0627\u0644\u0622\u0646. \u062A\u0623\u0643\u062F \u0645\u0646 \u0627\u0644\u0639\u0646\u0648\u0627\u0646 \u0623\u0648 \u062D\u0627\u0648\u0644 \u0628\u0639\u062F \u0642\u0644\u064A\u0644."
+      error: /only send testing emails|403/i.test(detail) ? "\u062D\u0633\u0627\u0628 Resend \u0645\u0627 \u064A\u0633\u0645\u062D \u0628\u0627\u0644\u0625\u0631\u0633\u0627\u0644 \u0644\u063A\u064A\u0631 \u0628\u0631\u064A\u062F\u0643 \u0625\u0644\u0627 \u0628\u0639\u062F \u0625\u0636\u0627\u0641\u0629 \u0646\u0637\u0627\u0642\u0643 \u2014 \u0623\u0636\u0641 \u0646\u0637\u0627\u0642\u0643 \u0641\u064A Resend \u062B\u0645 \u062D\u062F\u0651\u062B RESEND_FROM." : /unauthorized ip/i.test(detail) ? "\u062A\u0645 \u0631\u0641\u0636 \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0645\u0646 Brevo \u2014 \u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u062E\u0627\u062F\u0645 \u063A\u064A\u0631 \u0645\u064F\u0635\u0631\u0651\u062D \u0628\u0647. \u0623\u0636\u0641 0.0.0.0/0 \u0641\u064A Brevo \u2190 Senders, domains, IPs." : /sender|not verified|550/i.test(detail) ? "Brevo \u0631\u0641\u0636 \u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0645\u0631\u0633\u0644 \u2014 \u0636\u0639 \u0628\u0631\u064A\u062F\u0627\u064B \u0645\u0648\u062B\u0651\u0642\u0627\u064B \u0641\u064A \u0627\u0644\u0645\u062A\u063A\u064A\u0631 BREVO_MAIL_FROM." : /incorrect access_key|401/i.test(detail) ? "\u0645\u0641\u062A\u0627\u062D \u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0627\u062D\u062A\u064A\u0627\u0637\u064A (MessageBird) \u063A\u064A\u0631 \u0635\u0627\u0644\u062D." : "\u062A\u0639\u0630\u0651\u0631 \u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0643\u0648\u062F \u0625\u0644\u0649 \u0628\u0631\u064A\u062F\u0643 \u0627\u0644\u0622\u0646. \u062A\u0623\u0643\u062F \u0645\u0646 \u0627\u0644\u0639\u0646\u0648\u0627\u0646 \u0623\u0648 \u062D\u0627\u0648\u0644 \u0628\u0639\u062F \u0642\u0644\u064A\u0644."
     });
     return;
   }
