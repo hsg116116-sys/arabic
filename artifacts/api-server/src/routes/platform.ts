@@ -15,7 +15,7 @@ import {
 import { supabaseQuery, getSupabaseUser } from "../lib/supabase";
 import { requireAuth, requireAdmin, type AuthedRequest } from "../middlewares/auth";
 import { logger } from "../lib/logger";
-import { saveError, dateOrNull } from "./study";
+import { saveError, dateOrNull, firstUuid } from "./study";
 
 const router: IRouter = Router();
 
@@ -1464,8 +1464,8 @@ router.post("/teacher/courses", requireAdmin, async (req, res) => {
 router.post("/teacher/assignments", requireAdmin, async (req, res) => {
   try {
     const { title, description, unit, dueDate, points, grade, section } = req.body;
-    const courseId = req.body?.courseId ?? req.body?.course_id ?? null;
-    const lessonId = req.body?.lessonId ?? req.body?.lesson_id ?? null;
+    const courseId = firstUuid(req.body?.courseId, req.body?.course_id);
+    const lessonId = firstUuid(req.body?.lessonId, req.body?.lesson_id);
     const images = Array.isArray(req.body?.images) ? req.body.images.filter((u: unknown) => String(u || "").trim()) : [];
     const full = {
       title: title || "واجب جديد",

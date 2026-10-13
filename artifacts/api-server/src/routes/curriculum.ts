@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { supabaseQuery } from "../lib/supabase";
 import { requireAuth, requireAdmin } from "../middlewares/auth";
 import { logger } from "../lib/logger";
-import { saveError, dateOrNull } from "./study";
+import { saveError, dateOrNull, firstUuid } from "./study";
 
 const router: IRouter = Router();
 
@@ -541,7 +541,7 @@ router.patch("/teacher/curriculum/lessons/:id", requireAdmin, async (req, res) =
   try {
     const b = req.body || {};
     const full: Record<string, any> = {};
-    if (b.course_id !== undefined || b.courseId !== undefined) full.course_id = b.course_id || b.courseId;
+    if (b.course_id !== undefined || b.courseId !== undefined) full.course_id = firstUuid(b.course_id, b.courseId);
     if (b.title !== undefined) full.title = b.title;
     if (b.description !== undefined) full.description = b.description;
     if (b.position !== undefined) full.position = Number(b.position) || 1;
@@ -685,8 +685,8 @@ router.post("/teacher/curriculum/assessments", requireAdmin, async (req, res) =>
       return;
     }
     const full = {
-      course_id: b.courseId || b.course_id || null,
-      lesson_id: b.lessonId || b.lesson_id || null,
+      course_id: firstUuid(b.courseId, b.course_id),
+      lesson_id: firstUuid(b.lessonId, b.lesson_id),
       title: b.title,
       description: b.description || "",
       unit_title: b.unitTitle || b.unit_title || "",
@@ -740,8 +740,8 @@ router.patch("/teacher/curriculum/assessments/:id", requireAdmin, async (req, re
     if (b.title !== undefined) full.title = b.title;
     if (b.description !== undefined) full.description = b.description;
     if (b.unitTitle !== undefined || b.unit_title !== undefined) full.unit_title = b.unitTitle ?? b.unit_title ?? "";
-    if (b.courseId !== undefined || b.course_id !== undefined) full.course_id = b.courseId ?? b.course_id ?? null;
-    if (b.lessonId !== undefined || b.lesson_id !== undefined) full.lesson_id = b.lessonId ?? b.lesson_id ?? null;
+    if (b.courseId !== undefined || b.course_id !== undefined) full.course_id = firstUuid(b.courseId, b.course_id);
+    if (b.lessonId !== undefined || b.lesson_id !== undefined) full.lesson_id = firstUuid(b.lessonId, b.lesson_id);
     if (b.duration !== undefined) full.duration = b.duration;
     if (b.date !== undefined || b.available_date !== undefined) full.available_date = dateOrNull(b.date ?? b.available_date, new Date().toISOString().split("T")[0]);
     if (b.published !== undefined) full.published = !!b.published;
@@ -1002,8 +1002,8 @@ router.patch("/teacher/curriculum/assignments/:id", requireAdmin, async (req, re
     if (b.title !== undefined) full.title = b.title;
     if (b.description !== undefined) full.description = b.description;
     if (b.unit !== undefined) full.unit = b.unit;
-    if (b.courseId !== undefined || b.course_id !== undefined) full.course_id = b.courseId ?? b.course_id ?? null;
-    if (b.lessonId !== undefined || b.lesson_id !== undefined) full.lesson_id = b.lessonId ?? b.lesson_id ?? null;
+    if (b.courseId !== undefined || b.course_id !== undefined) full.course_id = firstUuid(b.courseId, b.course_id);
+    if (b.lessonId !== undefined || b.lesson_id !== undefined) full.lesson_id = firstUuid(b.lessonId, b.lesson_id);
     if (b.images !== undefined) full.images = Array.isArray(b.images) ? b.images.filter((u: unknown) => String(u || "").trim()) : [];
     if (b.dueDate !== undefined || b.due_date !== undefined) full.due_date = dateOrNull(b.dueDate ?? b.due_date);
     if (b.points !== undefined) full.points = Number(b.points) || 0;

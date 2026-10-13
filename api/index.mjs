@@ -30026,7 +30026,7 @@ var init_curriculum = __esm({
       try {
         const b = req.body || {};
         const full = {};
-        if (b.course_id !== void 0 || b.courseId !== void 0) full.course_id = b.course_id || b.courseId;
+        if (b.course_id !== void 0 || b.courseId !== void 0) full.course_id = firstUuid(b.course_id, b.courseId);
         if (b.title !== void 0) full.title = b.title;
         if (b.description !== void 0) full.description = b.description;
         if (b.position !== void 0) full.position = Number(b.position) || 1;
@@ -30159,8 +30159,8 @@ var init_curriculum = __esm({
           return;
         }
         const full = {
-          course_id: b.courseId || b.course_id || null,
-          lesson_id: b.lessonId || b.lesson_id || null,
+          course_id: firstUuid(b.courseId, b.course_id),
+          lesson_id: firstUuid(b.lessonId, b.lesson_id),
           title: b.title,
           description: b.description || "",
           unit_title: b.unitTitle || b.unit_title || "",
@@ -30211,8 +30211,8 @@ var init_curriculum = __esm({
         if (b.title !== void 0) full.title = b.title;
         if (b.description !== void 0) full.description = b.description;
         if (b.unitTitle !== void 0 || b.unit_title !== void 0) full.unit_title = b.unitTitle ?? b.unit_title ?? "";
-        if (b.courseId !== void 0 || b.course_id !== void 0) full.course_id = b.courseId ?? b.course_id ?? null;
-        if (b.lessonId !== void 0 || b.lesson_id !== void 0) full.lesson_id = b.lessonId ?? b.lesson_id ?? null;
+        if (b.courseId !== void 0 || b.course_id !== void 0) full.course_id = firstUuid(b.courseId, b.course_id);
+        if (b.lessonId !== void 0 || b.lesson_id !== void 0) full.lesson_id = firstUuid(b.lessonId, b.lesson_id);
         if (b.duration !== void 0) full.duration = b.duration;
         if (b.date !== void 0 || b.available_date !== void 0) full.available_date = dateOrNull(b.date ?? b.available_date, (/* @__PURE__ */ new Date()).toISOString().split("T")[0]);
         if (b.published !== void 0) full.published = !!b.published;
@@ -30422,8 +30422,8 @@ var init_curriculum = __esm({
         if (b.title !== void 0) full.title = b.title;
         if (b.description !== void 0) full.description = b.description;
         if (b.unit !== void 0) full.unit = b.unit;
-        if (b.courseId !== void 0 || b.course_id !== void 0) full.course_id = b.courseId ?? b.course_id ?? null;
-        if (b.lessonId !== void 0 || b.lesson_id !== void 0) full.lesson_id = b.lessonId ?? b.lesson_id ?? null;
+        if (b.courseId !== void 0 || b.course_id !== void 0) full.course_id = firstUuid(b.courseId, b.course_id);
+        if (b.lessonId !== void 0 || b.lesson_id !== void 0) full.lesson_id = firstUuid(b.lessonId, b.lesson_id);
         if (b.images !== void 0) full.images = Array.isArray(b.images) ? b.images.filter((u) => String(u || "").trim()) : [];
         if (b.dueDate !== void 0 || b.due_date !== void 0) full.due_date = dateOrNull(b.dueDate ?? b.due_date);
         if (b.points !== void 0) full.points = Number(b.points) || 0;
@@ -30518,6 +30518,18 @@ function dateOrNull(v, fallback = null) {
   const s = String(v ?? "").trim();
   if (!s) return fallback;
   return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : fallback;
+}
+function uuidOrNull(v) {
+  const s = String(v ?? "").trim();
+  if (!s) return null;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s) ? s : null;
+}
+function firstUuid(...vals) {
+  for (const v of vals) {
+    const u = uuidOrNull(v);
+    if (u) return u;
+  }
+  return null;
 }
 function saveError(err, prefix) {
   const raw = String(err?.message ?? err ?? "").trim();
@@ -30654,7 +30666,7 @@ var init_study = __esm({
             grade: b.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
             term: b.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
             unit_title: b.unitTitle || b.unit_title || "",
-            course_id: b.courseId || b.course_id || null,
+            course_id: firstUuid(b.courseId, b.course_id),
             cover_url: b.coverUrl || b.cover_url || "",
             file_url: b.fileUrl || b.file_url || "",
             section: b.section || "\u0627\u0644\u062C\u0645\u064A\u0639",
@@ -30680,7 +30692,7 @@ var init_study = __esm({
         if (b.grade !== void 0) full.grade = b.grade;
         if (b.term !== void 0) full.term = b.term;
         if (b.unitTitle !== void 0 || b.unit_title !== void 0) full.unit_title = b.unitTitle ?? b.unit_title ?? "";
-        if (b.courseId !== void 0 || b.course_id !== void 0) full.course_id = b.courseId ?? b.course_id ?? null;
+        if (b.courseId !== void 0 || b.course_id !== void 0) full.course_id = firstUuid(b.courseId, b.course_id);
         if (b.coverUrl !== void 0 || b.cover_url !== void 0) full.cover_url = b.coverUrl ?? b.cover_url ?? "";
         if (b.fileUrl !== void 0 || b.file_url !== void 0) full.file_url = b.fileUrl ?? b.file_url ?? "";
         if (b.section !== void 0) full.section = b.section || "\u0627\u0644\u062C\u0645\u064A\u0639";
@@ -30773,8 +30785,8 @@ var init_study = __esm({
             grade: b.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
             term: b.term || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644",
             unit_title: b.unitTitle || b.unit_title || "",
-            course_id: b.courseId || b.course_id || null,
-            lesson_id: b.lessonId || b.lesson_id || null,
+            course_id: firstUuid(b.courseId, b.course_id),
+            lesson_id: firstUuid(b.lessonId, b.lesson_id),
             requirements,
             due_date: dateOrNull(b.dueDate ?? b.due_date),
             points: Number(b.points) || 10,
@@ -30799,8 +30811,8 @@ var init_study = __esm({
         if (b.grade !== void 0) full.grade = b.grade;
         if (b.term !== void 0) full.term = b.term;
         if (b.unitTitle !== void 0 || b.unit_title !== void 0) full.unit_title = b.unitTitle ?? b.unit_title ?? "";
-        if (b.courseId !== void 0 || b.course_id !== void 0) full.course_id = b.courseId ?? b.course_id ?? null;
-        if (b.lessonId !== void 0 || b.lesson_id !== void 0) full.lesson_id = b.lessonId ?? b.lesson_id ?? null;
+        if (b.courseId !== void 0 || b.course_id !== void 0) full.course_id = firstUuid(b.courseId, b.course_id);
+        if (b.lessonId !== void 0 || b.lesson_id !== void 0) full.lesson_id = firstUuid(b.lessonId, b.lesson_id);
         if (b.requirements !== void 0) {
           full.requirements = Array.isArray(b.requirements) ? b.requirements.filter((r) => r?.label?.trim()).slice(0, 20).map((r) => ({
             label: String(r.label).slice(0, 200),
@@ -36418,8 +36430,8 @@ router4.post("/teacher/courses", requireAdmin, async (req, res) => {
 router4.post("/teacher/assignments", requireAdmin, async (req, res) => {
   try {
     const { title, description, unit, dueDate, points, grade, section } = req.body;
-    const courseId = req.body?.courseId ?? req.body?.course_id ?? null;
-    const lessonId = req.body?.lessonId ?? req.body?.lesson_id ?? null;
+    const courseId = firstUuid(req.body?.courseId, req.body?.course_id);
+    const lessonId = firstUuid(req.body?.lessonId, req.body?.lesson_id);
     const images = Array.isArray(req.body?.images) ? req.body.images.filter((u) => String(u || "").trim()) : [];
     const full = {
       title: title || "\u0648\u0627\u062C\u0628 \u062C\u062F\u064A\u062F",

@@ -28,6 +28,25 @@ export function dateOrNull(v: unknown, fallback: string | null = null): string |
 }
 
 /**
+ * معرّف UUID آمن: محدد الوحدة/الدرس في الواجهة يبدأ فارغاً ("")، و
+ * Postgres يرفض السلسلة الفارغة لعمود UUID. نحوّلها إلى null (بلا ربط).
+ */
+export function uuidOrNull(v: unknown): string | null {
+  const s = String(v ?? "").trim();
+  if (!s) return null;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s) ? s : null;
+}
+
+/** يختار أول قيمة صالحة من قائمة (يرفض الفارغ وغير الـ UUID) */
+export function firstUuid(...vals: unknown[]): string | null {
+  for (const v of vals) {
+    const u = uuidOrNull(v);
+    if (u) return u;
+  }
+  return null;
+}
+
+/**
  * رسالة خطأ تشخّص نفسها: تكشف سبب فشل الحفظ الحقيقي (عمود ناقص، تكرار،
  * ...) بدل جملة عامة عديمة الفائدة. نقصّها إلى 180 حرفاً فلا تتسرب بيانات.
  */
@@ -116,7 +135,7 @@ router.post("/teacher/curriculum/summaries", requireAdmin, async (req, res) => {
         grade: b.grade || "الصف العاشر",
         term: b.term || "الفصل الأول",
         unit_title: b.unitTitle || b.unit_title || "",
-        course_id: b.courseId || b.course_id || null,
+        course_id: firstUuid(b.courseId, b.course_id),
         cover_url: b.coverUrl || b.cover_url || "",
         file_url: b.fileUrl || b.file_url || "",
         section: b.section || "الجميع",
@@ -143,7 +162,7 @@ router.patch("/teacher/curriculum/summaries/:id", requireAdmin, async (req, res)
     if (b.grade !== undefined) full.grade = b.grade;
     if (b.term !== undefined) full.term = b.term;
     if (b.unitTitle !== undefined || b.unit_title !== undefined) full.unit_title = b.unitTitle ?? b.unit_title ?? "";
-    if (b.courseId !== undefined || b.course_id !== undefined) full.course_id = b.courseId ?? b.course_id ?? null;
+    if (b.courseId !== undefined || b.course_id !== undefined) full.course_id = firstUuid(b.courseId, b.course_id);
     if (b.coverUrl !== undefined || b.cover_url !== undefined) full.cover_url = b.coverUrl ?? b.cover_url ?? "";
     if (b.fileUrl !== undefined || b.file_url !== undefined) full.file_url = b.fileUrl ?? b.file_url ?? "";
     if (b.section !== undefined) full.section = b.section || "الجميع";
@@ -290,8 +309,8 @@ router.post("/teacher/curriculum/notebooks", requireAdmin, async (req, res) => {
         grade: b.grade || "الصف العاشر",
         term: b.term || "الفصل الأول",
         unit_title: b.unitTitle || b.unit_title || "",
-        course_id: b.courseId || b.course_id || null,
-        lesson_id: b.lessonId || b.lesson_id || null,
+        course_id: firstUuid(b.courseId, b.course_id),
+        lesson_id: firstUuid(b.lessonId, b.lesson_id),
         requirements,
         due_date: dateOrNull(b.dueDate ?? b.due_date),
         points: Number(b.points) || 10,
@@ -317,8 +336,8 @@ router.patch("/teacher/curriculum/notebooks/:id", requireAdmin, async (req, res)
     if (b.grade !== undefined) full.grade = b.grade;
     if (b.term !== undefined) full.term = b.term;
     if (b.unitTitle !== undefined || b.unit_title !== undefined) full.unit_title = b.unitTitle ?? b.unit_title ?? "";
-    if (b.courseId !== undefined || b.course_id !== undefined) full.course_id = b.courseId ?? b.course_id ?? null;
-    if (b.lessonId !== undefined || b.lesson_id !== undefined) full.lesson_id = b.lessonId ?? b.lesson_id ?? null;
+    if (b.courseId !== undefined || b.course_id !== undefined) full.course_id = firstUuid(b.courseId, b.course_id);
+    if (b.lessonId !== undefined || b.lesson_id !== undefined) full.lesson_id = firstUuid(b.lessonId, b.lesson_id);
     if (b.requirements !== undefined) {
       full.requirements = Array.isArray(b.requirements)
         ? b.requirements.filter((r: any) => r?.label?.trim()).slice(0, 20).map((r: any) => ({
