@@ -1,4 +1,4 @@
-﻿import { Router, type IRouter } from "express";
+import { Router, type IRouter } from "express";
 import { supabaseQuery } from "../lib/supabase";
 import { uploadFile } from "../lib/imagekit";
 import { getStudentProfile, getSplitMap, itemVisible } from "./curriculum";
@@ -34,6 +34,7 @@ function summaryToJson(s: any) {
     published: s.published !== false,
     sortOrder: s.sort_order ?? 1,
     section: s.section || "الجميع",
+    school: s.school || "",
   };
 }
 
@@ -48,7 +49,7 @@ router.get("/curriculum/summaries", async (req, res) => {
     let list = (data || []).filter((s) => s.published !== false).map(summaryToJson);
     if (student_id) {
       const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
-      if (profile) list = list.filter((s) => itemVisible(s.grade, s.section, profile.grade, profile.gender, splitMap));
+      if (profile) list = list.filter((s) => itemVisible(s.grade, s.section, profile!.grade, profile!.gender, splitMap, s.school, profile!.school));
     }
     res.json(list);
   } catch (err: any) {
@@ -120,6 +121,7 @@ router.patch("/teacher/curriculum/summaries/:id", requireAdmin, async (req, res)
     if (b.coverUrl !== undefined || b.cover_url !== undefined) full.cover_url = b.coverUrl ?? b.cover_url ?? "";
     if (b.fileUrl !== undefined || b.file_url !== undefined) full.file_url = b.fileUrl ?? b.file_url ?? "";
     if (b.section !== undefined) full.section = b.section || "الجميع";
+    if (b.school !== undefined) full.school = String(b.school || "").trim();
     if (b.published !== undefined) full.published = !!b.published;
     if (b.sortOrder !== undefined || b.sort_order !== undefined) full.sort_order = Number(b.sortOrder ?? b.sort_order) || 1;
     const { error } = await supabaseQuery(`summaries?id=eq.${enc(req.params.id)}`, { method: "PATCH", body: full });
@@ -182,6 +184,7 @@ function taskToJson(t: any, mySubmission?: any, lessonTitles: Record<string, str
     points: t.points ?? 10,
     published: t.published !== false,
     section: t.section || "الجميع",
+    school: t.school || "",
     myStatus: mySubmission?.status || null,
     myScore: mySubmission?.score ?? null,
     myFeedback: mySubmission?.feedback || "",
@@ -198,7 +201,7 @@ router.get("/curriculum/notebooks", async (req, res) => {
     const { data, error } = await supabaseQuery<any[]>(endpoint);
     if (error) throw new Error(String(error));
     let subs: Record<string, any> = {};
-    let profile: { grade: string; gender: string | null } | null = null;
+    let profile: { grade: string; gender: string | null; school: string } | null = null;
     let splitMap: Record<string, boolean> = {};
     if (student_id) {
       const ids = (data || []).map((t) => t.id);
@@ -212,7 +215,7 @@ router.get("/curriculum/notebooks", async (req, res) => {
     }
     const lessonTitles = await lessonTitlesFor((data || []).map((t) => t.lesson_id));
     let list = (data || []).filter((t) => t.published !== false).map((t) => taskToJson(t, subs[t.id], lessonTitles));
-    if (profile) list = list.filter((t) => itemVisible(t.grade, t.section, profile!.grade, profile!.gender, splitMap));
+    if (profile) list = list.filter((t) => itemVisible(t.grade, t.section, profile!.grade, profile!.gender, splitMap, t.school, profile!.school));
     res.json(list);
   } catch (err: any) {
     logger.error({ err }, "GET /curriculum/notebooks failed");
@@ -301,6 +304,7 @@ router.patch("/teacher/curriculum/notebooks/:id", requireAdmin, async (req, res)
     if (b.dueDate !== undefined || b.due_date !== undefined) full.due_date = b.dueDate ?? b.due_date ?? null;
     if (b.points !== undefined) full.points = Number(b.points) || 10;
     if (b.section !== undefined) full.section = b.section || "الجميع";
+    if (b.school !== undefined) full.school = String(b.school || "").trim();
     if (b.published !== undefined) full.published = !!b.published;
     const { error } = await supabaseQuery(`notebook_tasks?id=eq.${enc(req.params.id)}`, { method: "PATCH", body: full });
     if (error) throw new Error(String(error));

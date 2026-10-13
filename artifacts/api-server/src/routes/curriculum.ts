@@ -1,4 +1,4 @@
-﻿import { Router, type IRouter } from "express";
+import { Router, type IRouter } from "express";
 import { supabaseQuery } from "../lib/supabase";
 import { requireAuth, requireAdmin } from "../middlewares/auth";
 import { logger } from "../lib/logger";
@@ -57,19 +57,59 @@ export async function getSplitMap(): Promise<Record<string, boolean>> {
   }
 }
 
-/** بروفايل الطالب المختصر (الصف + الجنس) */
-export async function getStudentProfile(userId?: string): Promise<{ grade: string; gender: string | null } | null> {
+/** بروفايل الطالب المختصر (الصف + الجنس + المدرسة) */
+export async function getStudentProfile(
+  userId?: string,
+): Promise<{ grade: string; gender: string | null; school: string } | null> {
   if (!userId) return null;
   try {
-    const { data } = await supabaseQuery<any[]>(`profiles?id=eq.${enc(userId)}&select=grade,gender&limit=1`);
+    const { data } = await supabaseQuery<any[]>(
+      `profiles?id=eq.${enc(userId)}&select=grade,gender,school&limit=1`,
+    );
     const p = data?.[0];
     if (!p) return null;
     return {
       grade: p.grade || "",
       gender: p.gender === "طالب" || p.gender === "طالبة" ? p.gender : null,
+      school: p.school || "",
     };
   } catch {
     return null;
+  }
+}
+
+/** تطبيع للمقارنة — الهمزات والتاء المربوطة والمسافات فلا يتكرر الصف باسمين */
+export function foldName(v: unknown): string {
+  return String(v ?? "")
+    .replace(/[\u0622\u0623\u0625\u0671]/g, "\u0627")
+    .replace(/\u0649/g, "\u064A")
+    .replace(/\u0629/g, "\u0647")
+    .replace(/[\u064B-\u0652]/g, "")
+    .replace(/[\s_\-]+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * فلترة المدرسة: محتوى بلا مدرسة = لكل مدارس ذلك الصف (سلوك افتراضي).
+ * محتوى موجّه لمدرسة = يراه طلابها فقط.
+ */
+export function schoolVisible(itemSchool: string | undefined, studentSchool: string | null): boolean {
+  const target = String(itemSchool || "").trim();
+  if (!target || target === "الجميع") return true;
+  if (!studentSchool) return false;
+  return foldName(target) === foldName(studentSchool);
+}
+
+/** أسماء مدارس صف معيّن — لعرض «هذا الصف له مدرستان» في الإعدادات */
+export async function getSchoolsOfGrade(gradeName: string): Promise<string[]> {
+  try {
+    const { data } = await supabaseQuery<any[]>(
+      `profiles?grade=eq.${enc(gradeName)}&select=school&limit=5000`,
+    );
+    return [...new Set((data || []).map((p: any) => p.school || "").filter(Boolean))];
+  } catch {
+    return [];
   }
 }
 
@@ -78,6 +118,7 @@ export async function getStudentProfile(userId?: string): Promise<{ grade: strin
  * - القسم "الجميع" ظاهر دائماً.
  * - القسم المحدد (طلاب/طالبات) يُطبَّق فقط إن كان الصف المعني مقسّماً، وإلا يراه الجميع.
  * - الصف المعني: صف العنصر نفسه، أو صف الطالب إن كان العنصر عاماً (grade = الجميع).
+ * - المدرسة: إن كان العنصر موجهاً لمدرسة بعينها فلا يراه إلا طلابها.
  */
 export function itemVisible(
   itemGrade: string | undefined,
@@ -85,7 +126,10 @@ export function itemVisible(
   studentGrade: string,
   studentGender: string | null,
   splitMap: Record<string, boolean>,
+  itemSchool?: string,
+  studentSchool?: string | null,
 ): boolean {
+  if (!schoolVisible(itemSchool, studentSchool ?? null)) return false;
   const section = itemSection || "الجميع";
   if (section === "الجميع") return true;
   const relevant = itemGrade && itemGrade !== "الجميع" ? itemGrade : studentGrade;
@@ -113,6 +157,7 @@ function courseToJson(c: any) {
     isLocked: !!c.is_locked,
     isVisible: c.is_visible !== false,
     section: c.section || "الجميع",
+    school: c.school || "",
   };
 }
 
@@ -172,6 +217,7 @@ function lessonToJson(l: any) {
     isVisible: l.is_visible !== false,
     grade: l.grade || "الصف العاشر",
     term: l.term || "الفصل الأول",
+    school: l.school || "",
   };
 }
 
@@ -291,7 +337,7 @@ router.get("/curriculum/courses", async (req, res) => {
     if (student === "1" && progress) {
       const [profile, splitMap] = await Promise.all([getStudentProfile(progress), getSplitMap()]);
       if (profile) {
-        courses = courses.filter((c) => itemVisible(c.grade, c.section, profile.grade, profile.gender, splitMap));
+        courses = courses.filter((c) => itemVisible(c.grade, c.section, profile!.grade, profile!.gender, splitMap, c.school, profile!.school));
       }
     }
 
@@ -349,6 +395,7 @@ router.post("/teacher/curriculum/courses", requireAdmin, async (req, res) => {
       is_locked: !!b.isLocked,
       is_visible: b.isVisible !== false,
       section: b.section || "الجميع",
+      school: String(b.school || "").trim(),
     };
     const r = await tolerantWrite("courses", "POST", "courses", full, COURSE_BASE);
     if (r.error) throw new Error(String(r.error));
@@ -379,6 +426,7 @@ router.patch("/teacher/curriculum/courses/:id", requireAdmin, async (req, res) =
     if (b.isLocked !== undefined || b.is_locked !== undefined) full.is_locked = !!(b.isLocked ?? b.is_locked);
     if (b.isVisible !== undefined || b.is_visible !== undefined) full.is_visible = (b.isVisible ?? b.is_visible) !== false;
     if (b.section !== undefined) full.section = b.section || "الجميع";
+  if (b.school !== undefined) full.school = String(b.school || "").trim();
     const r = await tolerantWrite("courses", "PATCH", `courses?id=eq.${enc(req.params.id)}`, full, [...COURSE_BASE]);
     if (r.error) throw new Error(String(r.error));
     res.json({ success: true, message: "تم حفظ الوحدة بنجاح!" });
@@ -571,11 +619,12 @@ router.get("/curriculum/assessments", async (req, res) => {
       published: a.published !== false,
       isVisible: a.is_visible !== false,
       section: a.section || "الجميع",
+    school: String(a.school || "").trim(),
     }));
     if (student === "1") list = list.filter((a) => a.published && a.isVisible);
     if (student_id) {
       const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
-      if (profile) list = list.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap));
+      if (profile) list = list.filter((a) => itemVisible(a.grade, a.section, profile!.grade, profile!.gender, splitMap, a.school, profile!.school));
     }
     res.json(list);
   } catch (err: any) {
@@ -648,6 +697,7 @@ router.post("/teacher/curriculum/assessments", requireAdmin, async (req, res) =>
       term: b.term || "الفصل الأول",
       is_visible: b.isVisible !== false,
       section: b.section || "الجميع",
+      school: String(b.school || "").trim(),
     };
     const created = await tolerantWrite("assessments", "POST", "assessments?select=id", full, ASSESSMENT_BASE);
     if (created.error) throw new Error(String(created.error));
@@ -698,6 +748,7 @@ router.patch("/teacher/curriculum/assessments/:id", requireAdmin, async (req, re
     if (b.term !== undefined) full.term = b.term;
     if (b.isVisible !== undefined || b.is_visible !== undefined) full.is_visible = (b.isVisible ?? b.is_visible) !== false;
     if (b.section !== undefined) full.section = b.section || "الجميع";
+  if (b.school !== undefined) full.school = String(b.school || "").trim();
     const r = await tolerantWrite("assessments", "PATCH", `assessments?id=eq.${enc(req.params.id)}`, full, [...ASSESSMENT_BASE]);
     if (r.error) throw new Error(String(r.error));
     res.json({ success: true, message: "تم حفظ الاختبار!" });
@@ -800,6 +851,7 @@ function announcementToJson(a: any) {
     audience: a.audience || "الجميع",
     grade: a.grade || "الجميع",
     section: a.section || "الجميع",
+    school: String(a.school || "").trim(),
     published: a.published !== false,
   };
 }
@@ -826,7 +878,7 @@ router.get("/curriculum/announcements", async (req, res) => {
     if (grade) list = list.filter((a) => a.grade === "الجميع" || a.grade === grade);
     if (student_id) {
       const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
-      if (profile) list = list.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap));
+      if (profile) list = list.filter((a) => itemVisible(a.grade, a.section, profile!.grade, profile!.gender, splitMap, a.school, profile!.school));
     }
     res.json(list);
   } catch (err: any) {
@@ -849,6 +901,7 @@ router.post("/teacher/curriculum/announcements", requireAdmin, async (req, res) 
       audience: b.audience || "الجميع",
       grade: b.grade || "الجميع",
       section: b.section || "الجميع",
+      school: String(b.school || "").trim(),
       published: b.published !== false,
       published_at: new Date().toISOString(),
     };
@@ -871,6 +924,7 @@ router.patch("/teacher/curriculum/announcements/:id", requireAdmin, async (req, 
     if (b.audience !== undefined) full.audience = b.audience;
     if (b.grade !== undefined) full.grade = b.grade;
     if (b.section !== undefined) full.section = b.section || "الجميع";
+  if (b.school !== undefined) full.school = String(b.school || "").trim();
     if (b.published !== undefined) full.published = !!b.published;
     const r = await tolerantWrite("announcements", "PATCH", `announcements?id=eq.${enc(req.params.id)}`, full, ["title", "body", "announcement_type", "audience", "published"]);
     if (r.error) throw new Error(String(r.error));
@@ -911,6 +965,7 @@ function assignmentToJson(a: any) {
     published: a.published !== false,
     grade: a.grade || "الجميع",
     section: a.section || "الجميع",
+    school: String(a.school || "").trim(),
   };
 }
 
@@ -954,6 +1009,7 @@ router.patch("/teacher/curriculum/assignments/:id", requireAdmin, async (req, re
     if (b.published !== undefined) full.published = !!b.published;
     if (b.grade !== undefined) full.grade = b.grade || "الجميع";
     if (b.section !== undefined) full.section = b.section || "الجميع";
+  if (b.school !== undefined) full.school = String(b.school || "").trim();
     const base = ["title", "description", "unit", "due_date", "points", "published"];
     const r = await tolerantWrite("assignments", "PATCH", `assignments?id=eq.${enc(req.params.id)}`, full, base);
     if (r.error) throw new Error(String(r.error));

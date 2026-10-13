@@ -551,6 +551,7 @@ router.get("/assignments", async (req, res) => {
       points: a.points || 0,
       grade: a.grade || "الجميع",
       section: a.section || "الجميع",
+      school: a.school || "",
       };
     });
 
@@ -562,7 +563,7 @@ router.get("/assignments", async (req, res) => {
         getSplitMap(),
       ]);
       if (profile) {
-        parsed = parsed.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap));
+        parsed = parsed.filter((a) => itemVisible(a.grade, a.section, profile!.grade, profile!.gender, splitMap, a.school, profile!.school));
       }
     }
 
@@ -1075,17 +1076,28 @@ router.get("/teacher/students/report", requireAdmin, async (req, res) => {
     if (school) rows = rows.filter((r) => r.school === school);
     if (gender) rows = rows.filter((r) => r.gender === gender);
 
-    // قائمة المدارس كما هي من البيانات + الصفوف (بلا قيم فارغة)
+    // القوائم تُبنى من الصفوف والمدارس المُدارة + ما في بيانات الطلاب فعلياً.
+    // فلولا الدمج لما ظهر صفٌ جديد بلا طلاب ولا مدرسة بلا طلاب في الكشوف.
+    const [{ data: managedGrades }, { data: managedSchools }] = await Promise.all([
+      supabaseQuery<any[]>("grade_levels?order=sort_order.asc&limit=500"),
+      supabaseQuery<any[]>("schools?order=sort_order.asc&limit=500"),
+    ]);
     const allRows = (profilesRes.data || []).map((p) => ({
       school: p.school || "",
       grade: p.grade || "",
     }));
-    const schools = [...new Set(allRows.map((r) => r.school).filter(Boolean))].sort((a, b) =>
-      a.localeCompare(b, "ar"),
-    );
-    const grades = [...new Set(allRows.map((r) => r.grade).filter(Boolean))].sort((a, b) =>
-      a.localeCompare(b, "ar"),
-    );
+    const schools = [
+      ...new Set([
+        ...(managedSchools || []).filter((s: any) => s.is_active !== false).map((s: any) => s.name),
+        ...allRows.map((r) => r.school),
+      ].filter(Boolean)),
+    ].sort((a, b) => a.localeCompare(b, "ar"));
+    const grades = [
+      ...new Set([
+        ...(managedGrades || []).filter((g: any) => g.is_active !== false).map((g: any) => g.name),
+        ...allRows.map((r) => r.grade),
+      ].filter(Boolean)),
+    ];
 
     res.json({
       success: true,

@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -290,11 +290,301 @@ function useFoundationNavCount(enabled: boolean, userKey: string): number {
 }
 
 /* =========================================================================
-   منظومة المنهاج — ثوابت مشتركة (صفوف × فصول × أنواع الدروس)
-========================================================================= */
-const GRADES = ['الصف الثامن', 'الصف التاسع', 'الصف العاشر'];
-const SCHOOLS = ['مدرسة وايلد', 'مبادرة أهرامات الأمل'];
+   منظومة المنهاج — ثوابت مشتركة
+   الصفوف والمدارس لم تعد هنا ثابتة: صارت تُقرأ من قاعدة البيانات عبر
+   useCatalog() فيستطيع الأستاذ	add/delete/reorder من الإعدادات فتظهر
+   في كل شاشات النظام فوراً. الثوابت التالية احتياط لCaso فشل الطلب فقط.
+   ========================================================================= */
+const FALLBACK_GRADES = ['الصف الثامن', 'الصف التاسع', 'الصف العاشر'];
+const FALLBACK_SCHOOLS = ['مدرسة وايلد', 'مبادرة أهرامات الأمل'];
 const TERMS = ['الفصل الأول', 'الفصل الثاني'];
+
+/* قوائم حيّة محدَّثة من قاعدة البيانات عند كل تحميل كتالوج.
+   كل مكوّن يقرأها يستدعي useCatalog() أولاً ليعيد الرسم فور تغيّرها. */
+let GRADES: string[] = [...FALLBACK_GRADES];
+let SCHOOLS: string[] = [...FALLBACK_SCHOOLS];
+
+type CatalogGrade = { id: string; name: string; sortOrder: number; color: string; isActive: boolean; genderSplit: boolean; schools: string[]; schoolIds: string[]; students: number };
+type CatalogSchool = { id: string; name: string; sortOrder: number; color: string; isActive: boolean; grades: string[]; students: number };
+
+const FALLBACK_CATALOG = {
+  grades: FALLBACK_GRADES.map((name, i) => ({
+    id: `grade-${i + 8}`, name, sortOrder: i + 1, color: '#17413f', isActive: true,
+    genderSplit: false, schools: FALLBACK_SCHOOLS.slice(), schoolIds: ['school-wild', 'school-ahramat'], students: 0,
+  })) as CatalogGrade[],
+  schools: FALLBACK_SCHOOLS.map((name, i) => ({
+    id: `school-${i}`, name, sortOrder: i + 1, color: '#6a1b9a', isActive: true,
+    grades: FALLBACK_GRADES.slice(), students: 0,
+  })) as CatalogSchool[],
+};
+
+/* =========================================================================
+   كتالوج حيّ — مصدر واحد للصفوف والمدارس في كل الموقع
+   ========================================================================= */
+let catalogCache: { at: number; data: typeof FALLBACK_CATALOG } | null = null;
+const CATALOG_TTL = 60 * 1000;
+/** يُستدعى بعد أي تعديل على الكتالوج حتى لا ننتظر دقيقة */
+let catalogBust = 0;
+
+function useCatalog(enabled = true) {
+  const [data, setData] = useState<typeof FALLBACK_CATALOG>(
+    () => catalogCache?.data || FALLBACK_CATALOG,
+  );
+  const [loading, setLoading] = useState(false);
+  const [ready, setReady] = useState(!!catalogCache);
+
+  const reload = async (force = false) => {
+    if (!enabled) return;
+    if (!force && catalogCache && Date.now() - catalogCache.at < CATALOG_TTL) {
+      setData(catalogCache.data);
+      setReady(true);
+      return;
+    }
+    setLoading(true);
+    try {
+      const d = await jsonFetch('/api/org/catalog');
+      const next = {
+        grades: Array.isArray(d?.grades) && d.grades.length ? d.grades : FALLBACK_CATALOG.grades,
+        schools: Array.isArray(d?.schools) && d.schools.length ? d.schools : FALLBACK_CATALOG.schools,
+      };
+      catalogCache = { at: Date.now(), data: next };
+      setData(next);
+      // نشر القوائم الحيّة لكل_component يقرأها
+      const activeGrades = next.grades.filter((g) => g.isActive).map((g) => g.name);
+      const activeSchools = next.schools.filter((s) => s.isActive).map((s) => s.name);
+      if (activeGrades.length) GRADES = activeGrades;
+      if (activeSchools.length) SCHOOLS = activeSchools;
+    } catch {
+      // لا نكسر أي شاشة — نكمل بالافتراضي وننبّه الاستاذ بالكتالوج في الإعدادات
+      if (!catalogCache) { setData(FALLBACK_CATALOG); GRADES = [...FALLBACK_GRADES]; SCHOOLS = [...FALLBACK_SCHOOLS]; }
+    } finally {
+      setLoading(false);
+      setReady(true);
+    }
+  };
+
+  useEffect(() => { reload(false); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [enabled, catalogBust]);
+
+  const gradeNames = useMemo(() => data.grades.filter((g) => g.isActive).map((g) => g.name), [data]);
+  const schoolNames = useMemo(() => data.schools.filter((s) => s.isActive).map((s) => s.name), [data]);
+
+  return {
+    grades: data.grades,
+    schools: data.schools,
+    gradeNames,
+    schoolNames,
+    loading,
+    ready,
+    reload,
+    /** مدارس صف معيّن — إن كانت أكثر من واحدة نعرض منتقي المدرسة */
+    schoolsOfGrade: useCallback((gradeName?: string): string[] => {
+      if (!gradeName || gradeName === 'الجميع') return [];
+      const g = data.grades.find((x) => x.name === gradeName);
+      return g?.schools?.length ? g.schools : [];
+    }, [data]),
+    gradeOf: useCallback((name?: string) => data.grades.find((g) => g.name === name), [data]),
+  };
+}
+
+/** يبطل ذاكرة الكتالوج بعد الحفظ حتى تظهر التغييرات فوراً */
+export function bustCatalog() {
+  catalogBust++;
+  catalogCache = null;
+}
+
+/** تطبيع مطابق للسيرفر — فلا يتكرر الصف باسم مختلف */
+function foldGrade(v: any): string {
+  return String(v ?? '')
+    .replace(/[\u0622\u0623\u0625\u0671]/g, '\u0627')
+    .replace(/\u0649/g, '\u064A')
+    .replace(/\u0629/g, '\u0647')
+    .replace(/[\u064B-\u0652]/g, '')
+    .replace(/[\s_\-]+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/* =========================================================================
+   منتقي الصف + المدرسة — قلب النظام الجديد
+   صف في سطر، وتحته مباشرةً المدرسة (تظهر فقط إن كان للصف أكثر من مدرسة).
+   يُستخدم في كل مكان يختار فيه الأستاذ لِمن يصل المحتوى.
+   ========================================================================= */
+function GradeSchoolPicker({ grade, school, onGrade, onSchool, allowAllGrades, showCounts = true, compact = false }: {
+  grade: string;
+  school: string;
+  onGrade: (v: string) => void;
+  onSchool: (v: string) => void;
+  allowAllGrades?: boolean;
+  showCounts?: boolean;
+  compact?: boolean;
+}) {
+  const cat = useCatalog();
+  const grades = allowAllGrades ? ['الجميع', ...cat.gradeNames] : cat.gradeNames;
+  const options = cat.schoolsOfGrade(grade);
+  const multiSchool = options.length > 1;
+
+  return (
+    <div className="space-y-3">
+      {/* ── الصف ── */}
+      <div>
+        <p className="mb-2 flex items-center gap-2 text-sm font-bold text-foreground">
+          <GraduationCap size={16} className="text-primary" /> الصف الدراسي
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {grades.map((g) => {
+            const on = foldGrade(grade) === foldGrade(g);
+            const meta = g === 'الجميع' ? null : cat.gradeOf(g);
+            return (
+              <button
+                key={g}
+                type="button"
+                onClick={() => {
+                  onGrade(g);
+                  // الصف تغيّر ⇒ المدرسة القديمة قد لا تنتمي له — نرجّعها للجميع
+                  if (g !== 'الجميع') {
+                    const opts = cat.schoolsOfGrade(g);
+                    if (opts.length && !opts.some((o) => foldGrade(o) === foldGrade(school))) onSchool('');
+                  } else {
+                    onSchool('');
+                  }
+                }}
+                className={`min-h-[${compact ? '48' : '52'}px] rounded-2xl px-5 text-sm font-extrabold transition-all active:scale-[.97] ${on ? 'text-white shadow-md' : 'border-2 border-border bg-card text-muted-foreground active:bg-secondary'}`}
+                style={on ? { background: meta?.color || '#17413f' } : undefined}
+                data-testid={`gs-grade-${g}`}
+              >
+                {g}
+                {showCounts && meta && meta.students > 0 ? (
+                  <span className={`mr-1.5 tabular-nums ${on ? 'opacity-80' : 'opacity-60'}`}>({meta.students})</span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── المدرسة: تظهر تحت الصف مباشرةً، فقط إن كان له أكثر من مدرسة ── */}
+      {grade && grade !== 'الجميع' && options.length > 0 ? (
+        <div className="animate-fade-up">
+          <p className="mb-2 flex items-center gap-2 text-sm font-bold text-foreground">
+            <Landmark size={16} className="text-[#6a1b9a]" /> المدرسة
+            <span className="rounded-lg bg-secondary px-2 py-0.5 text-[11px] font-extrabold text-muted-foreground">
+              {multiSchool ? `${options.length} مدارس لهذا الصف` : 'مدرسة واحدة'}
+            </span>
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => onSchool('')}
+              className={`min-h-[48px] rounded-2xl px-5 text-sm font-extrabold transition-all active:scale-[.97] ${!school ? 'bg-[#6a1b9a] text-white shadow-md' : 'border-2 border-border bg-card text-muted-foreground active:bg-secondary'}`}
+              data-testid="gs-school-all"
+            >
+              كل المدارس
+            </button>
+            {options.map((s) => {
+              const on = foldGrade(school) === foldGrade(s);
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => onSchool(s)}
+                  className={`inline-flex min-h-[48px] items-center gap-2 rounded-2xl px-5 text-sm font-extrabold transition-all active:scale-[.97] ${on ? 'bg-[#6a1b9a] text-white shadow-md' : 'border-2 border-border bg-card text-muted-foreground active:bg-secondary'}`}
+                  data-testid={`gs-school-${s}`}
+                >
+                  {on ? <Check size={15} /> : null}
+                  {s}
+                </button>
+              );
+            })}
+          </div>
+          {school ? (
+            <p className="mt-2 flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground">
+              <Lock size={12} /> سيظهر هذا المحتوى لطلاب «{school}» فقط في {grade}.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** صف واحد من منتقي المدرسة — يُدرج مباشرة تحت اختيار القسم في كل نموذج */
+function SchoolTargetField({ grade, value, onChange }: { grade: string; value: string; onChange: (v: string) => void }) {
+  const cat = useCatalog();
+  const options = cat.schoolsOfGrade(grade);
+  if (!options.length || !grade || grade === 'الجميع') return null;
+  return (
+    <div className="mt-4 animate-fade-up">
+      <p className="mb-2 flex items-center gap-2 text-sm font-semibold">
+        <Landmark size={16} className="text-[#6a1b9a]" /> المدرسة المستهدفة
+        <span className="rounded-lg bg-secondary px-2 py-0.5 text-[11px] font-extrabold text-muted-foreground">
+          {options.length} مدارس في {grade}
+        </span>
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => onChange('')}
+          className={`min-h-[48px] rounded-2xl px-5 text-sm font-extrabold transition-all active:scale-[.97] ${!value ? 'bg-[#6a1b9a] text-white shadow-md' : 'border-2 border-border bg-background text-muted-foreground active:bg-secondary'}`}
+          data-testid="school-target-all"
+        >
+          كل مدارس الصف
+        </button>
+        {options.map((s) => {
+          const on = foldGrade(s) === foldGrade(value);
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() => onChange(s)}
+              className={`inline-flex min-h-[48px] items-center gap-2 rounded-2xl px-5 text-sm font-extrabold transition-all active:scale-[.97] ${on ? 'bg-[#6a1b9a] text-white shadow-md' : 'border-2 border-border bg-background text-muted-foreground active:bg-secondary'}`}
+              data-testid={`school-target-${s}`}
+            >
+              {on ? <Check size={15} /> : null}
+              {s}
+            </button>
+          );
+        })}
+      </div>
+      <p className="mt-2 flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground">
+        <Lock size={12} />
+        {value
+          ? `يراه طلاب «${value}» في ${grade} فقط — غيرهم لا يظهر لهم.`
+          : 'سيظهر لكل طلاب هذا الصف في كل مدارسه.'}
+      </p>
+    </div>
+  );
+}
+
+/** نسخة `<select>` للصف لل Places التي Forms صغيرة (تسجيل/ملف) */
+function CatalogGradeSelect({ name, value, onChange, testId, label, placeholder }: {
+  name: string; value: string; onChange: (v: string) => void; testId?: string; label?: string; placeholder?: string;
+}) {
+  const cat = useCatalog();
+  const schools = cat.schoolsOfGrade(value);
+  return (
+    <div className="space-y-2">
+      {label ? <span className="mb-2 block text-sm font-semibold">{label}</span> : null}
+      <select name={name} value={value} onChange={(e) => onChange(e.target.value)} className={inputCls} data-testid={testId}>
+        {placeholder ? <option value="">{placeholder}</option> : null}
+        {cat.gradeNames.map((g) => <option key={g} value={g}>{g}</option>)}
+      </select>
+      {schools.length > 1 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {schools.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => onChange(s)}
+              className={`min-h-[40px] rounded-xl px-3.5 text-xs font-extrabold ${value === s ? 'bg-[#6a1b9a] text-white' : 'border-2 border-border bg-card text-muted-foreground'}`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 const LESSON_TYPES = ['مطالعة', 'قراءة', 'استماع', 'شعر', 'قواعد', 'بلاغة', 'عروض', 'إملاء', 'خط', 'تعبير', 'تقويم'];
 const UNIT_STATUSES = [
   { id: 'published', label: 'منشورة ومفتوحة' },
@@ -466,28 +756,34 @@ function useStudentGradeTerm() {
   }, []);
   const splitMap = useSplitMap();
   const grade = dash.data?.student?.grade || 'الصف العاشر';
+  const school = (dash.data?.student?.school as string) || '';
   const term = liveSemester || (overview.data as any)?.semester || 'الفصل الأول';
   const split = splitMap[grade] === true;
   const gender = dash.data?.student?.gender || '';
-  return { grade, term, split, splitMap, gender, student: dash.data?.student, studentId: dash.data?.student?.id };
+  return { grade, school, term, split, splitMap, gender, student: dash.data?.student, studentId: dash.data?.student?.id };
 }
 
 /** شارة تعريفية: الصف والفصل والقسم المعتمدين تلقائياً */
-function GradeTermBadge({ grade, term, split, gender }: { grade: string; term: string; split?: boolean; gender?: string }) {
+function GradeTermBadge({ grade, term, split, gender, school }: { grade: string; term: string; split?: boolean; gender?: string; school?: string }) {
   return (
     <div className="mb-5 flex flex-wrap items-center gap-2">
       <span className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground shadow-sm">
         <GraduationCap size={16} /> {grade}
       </span>
+      {school ? (
+        <span className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-l from-[#6a1b9a] to-[#8a508f] px-4 py-2.5 text-sm font-bold text-white shadow-sm" title="مدرستك">
+          <Landmark size={16} /> {school}
+        </span>
+      ) : null}
       <span className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-4 py-2.5 text-sm font-bold text-accent-foreground shadow-sm">
         <BookOpen size={16} /> {term}
       </span>
       {split && (gender === 'طالب' || gender === 'طالبة') ? (
-        <span className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-l from-[#6a1b9a] to-[#8a508f] px-4 py-2.5 text-sm font-bold text-white shadow-sm">
+        <span className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-l from-[#17413f] to-[#2a7a72] px-4 py-2.5 text-sm font-bold text-white shadow-sm">
           <UsersRound size={16} /> {gender === 'طالب' ? 'قسم الطلاب' : 'قسم الطالبات'}
         </span>
       ) : null}
-      <span className="text-xs text-muted-foreground">صفك من حسابك — والفصل يحدده الأستاذ من الإعدادات</span>
+      <span className="text-xs text-muted-foreground">صفك ومدرستك من حسابك — والفصل يحدده الأستاذ من الإعدادات</span>
     </div>
   );
 }
@@ -1456,6 +1752,8 @@ function Login() {
 }
 
 function Register() {
+  // الصفوف والمدارس تأتي من قاعدة البيانات — يشترك هنا ليعيد الرسم فور تغيّرها
+  useCatalog();
   const [, setLocation] = useLocation();
   useRedirectIfAuthenticated();
   const register = useRegisterAccount();
@@ -1622,6 +1920,8 @@ function AuthCallback() {
 }
 
 function CompleteProfilePage() {
+  // الصفوف والمدارس تأتي من قاعدة البيانات — يشترك هنا ليعيد الرسم فور تغيّرها
+  useCatalog();
   const [, setLocation] = useLocation();
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(true);
@@ -3722,6 +4022,8 @@ function GradeStudentsRoute() {
 }
 
 function StudentsPage() {
+  // الصفوف والمدارس تأتي من قاعدة البيانات — يشترك هنا ليعيد الرسم فور تغيّرها
+  useCatalog();
   const query = useListStudents();
   const report = useStudentsReport();
   const [search, setSearch] = useState('');
@@ -3760,10 +4062,11 @@ function StudentsPage() {
     return g.byGrade.filter((gr) => (!gradeFilter || gr.grade === gradeFilter));
   }, [filteredReport, gradeFilter]);
 
+  // القوائم تأتي من الكتالوج المُدار مع بيانات الطلاب — فلا يفيد أي صف أو مدرسة جديدة
   const schoolsFromData = report.data?.schools?.length ? report.data.schools : SCHOOLS;
   const gradesFromData = report.data?.grades?.length ? report.data.grades : GRADES;
   const knownSchools = useMemo(() => [...new Set([...SCHOOLS, ...schoolsFromData])], [schoolsFromData]);
-  /** مدارس موجودة في البيانات لكنها خارج القائمة الرسمية → نافذة دمج */
+  /** مدارس لم تُسجَّل في الكتالوج بعد (بيانات قديمة) — نعرضها وننبّه */
   const straySchools = useMemo(() => schoolsFromData.filter((s) => !SCHOOLS.includes(s)), [schoolsFromData]);
 
   const exportExcel = (bundle: { students: ReportStudent[]; schools: string[]; grades: string[]; generatedAt: string }, onlyGrade?: string) => {
@@ -4350,7 +4653,292 @@ function ContentPage() {
   );
 }
 
+function OrgManager({ splitMapState, splitSaving, toggleSplit }: {
+  splitMapState: Record<string, boolean>;
+  splitSaving: string | null;
+  toggleSplit: (g: string) => void;
+}) {
+  const cat = useCatalog();
+  const [tab, setTab] = useState<'grades' | 'schools'>('grades');
+  const [toast, setToast] = useState<{ text: string; tone: 'ok' | 'err' } | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [newName, setNewName] = useState('');
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [linking, setLinking] = useState<string | null>(null);
+
+  const flash = (text: string, tone: 'ok' | 'err' = 'ok') => {
+    setToast({ text, tone });
+    window.setTimeout(() => setToast((p) => (p?.text === text ? null : p)), tone === 'err' ? 6000 : 3000);
+  };
+
+  const addOne = async (kind: 'grade' | 'school') => {
+    const name = newName.trim();
+    if (!name) { flash('اكتب الاسم أولاً', 'err'); return; }
+    setBusy('add');
+    try {
+      await jsonFetch(`/api/teacher/org/${kind === 'grade' ? 'grades' : 'schools'}`, { method: 'POST', body: { name } });
+      setNewName('');
+      await cat.reload(true);
+      bustCatalog();
+      flash(`تمت إضافة «${name}» — يظهر الآن في كل النظام.`);
+    } catch (e: any) { flash(e?.message || 'تعذر الإضافة', 'err'); }
+    finally { setBusy(null); }
+  };
+
+  const rename = async (kind: 'grade' | 'school', id: string) => {
+    const name = editName.trim();
+    if (!name) { flash('الاسم لا يمكن أن يكون فارغاً', 'err'); return; }
+    setBusy(id);
+    try {
+      const r = await jsonFetch(`/api/teacher/org/${kind === 'grade' ? 'grades' : 'schools'}/${id}`, { method: 'PATCH', body: { name } });
+      setEditing(null);
+      await cat.reload(true);
+      bustCatalog();
+      flash(r?.message || 'تم الحفظ');
+    } catch (e: any) { flash(e?.message || 'تعذر الحفظ', 'err'); }
+    finally { setBusy(null); }
+  };
+
+  const remove = async (kind: 'grade' | 'school', id: string, name: string) => {
+    if (!window.confirm(`حذف «${name}»؟`)) return;
+    setBusy(id);
+    try {
+      const r = await jsonFetch(`/api/teacher/org/${kind === 'grade' ? 'grades' : 'schools'}/${id}`, { method: 'DELETE' });
+      await cat.reload(true);
+      bustCatalog();
+      flash(r?.message || 'تم الحذف');
+    } catch (e: any) { flash(e?.message || 'تعذر الحذف', 'err'); }
+    finally { setBusy(null); }
+  };
+
+  const toggleLink = async (gradeId: string, schoolId: string, on: boolean) => {
+    setLinking(gradeId);
+    try {
+      await jsonFetch(`/api/teacher/org/grades/${encodeURIComponent(gradeId)}/schools/${encodeURIComponent(schoolId)}`, { method: 'POST', body: { linked: on } });
+      await cat.reload(true);
+      bustCatalog();
+      flash(on ? 'أُضيفت المدرسة للصف' : 'أُزيلت المدرسة من الصف');
+    } catch (e: any) { flash(e?.message || 'تعذر تحديث الربط', 'err'); }
+    finally { setLinking(null); }
+  };
+
+  const toggleActive = async (kind: 'grade' | 'school', id: string, isActive: boolean) => {
+    setBusy(id);
+    try {
+      await jsonFetch(`/api/teacher/org/${kind === 'grade' ? 'grades' : 'schools'}/${id}`, { method: 'PATCH', body: { isActive: !isActive } });
+      await cat.reload(true);
+      bustCatalog();
+    } catch (e: any) { flash(e?.message || 'تعذر التحديث', 'err'); }
+    finally { setBusy(null); }
+  };
+
+  const totalStudents = cat.grades.reduce((a, g) => a + (g.students || 0), 0);
+
+  return (
+    <div className="overflow-hidden rounded-[2rem] border border-[#17413f]/30 bg-card shadow-md">
+      {/* الترويسة */}
+      <div className="relative overflow-hidden bg-gradient-to-l from-[#0d2926] via-[#17413f] to-[#2a7a72] p-6 text-white">
+        <div className="pointer-events-none absolute -left-10 -top-12 h-40 w-40 rounded-full bg-accent/25 blur-3xl" />
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center">
+          <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-white/20 shadow-lg backdrop-blur-sm"><Landmark size={28} /></span>
+          <div className="min-w-0 flex-1">
+            <h2 className="font-display text-2xl font-extrabold">الصفوف والمدارس</h2>
+            <p className="mt-1 text-sm leading-6 text-white/80">
+              ابنِ نظامك بنفسك — أضف صفاً أو مدرسة فيظهران فوراً في كل شاشات المنصة.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            {[
+              { v: cat.grades.length, l: 'صف' },
+              { v: cat.schools.length, l: 'مدرسة' },
+              { v: totalStudents, l: 'طالب' },
+            ].map((s, i) => (
+              <div key={i} className="rounded-2xl bg-white/10 px-4 py-2 text-center ring-1 ring-white/15 backdrop-blur-md">
+                <p className="font-display text-xl font-bold text-accent">{s.v}</p>
+                <p className="text-[10px] font-semibold text-white/70">{s.l}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* التبويبات */}
+      <div className="flex gap-2 border-b border-border bg-secondary/40 p-3">
+        {[
+          { id: 'grades' as const, label: 'الصفوف الدراسية', icon: GraduationCap, n: cat.grades.length },
+          { id: 'schools' as const, label: 'المدارس', icon: Landmark, n: cat.schools.length },
+        ].map((t) => {
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`inline-flex min-h-[52px] flex-1 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-extrabold transition-all active:scale-[.98] ${tab === t.id ? 'bg-primary text-primary-foreground shadow-md' : 'border-2 border-border bg-card text-muted-foreground active:bg-secondary'}`}
+              data-testid={`org-tab-${t.id}`}
+            >
+              <Icon size={18} /> {t.label}
+              <span className={`rounded-lg px-2 py-0.5 text-[11px] tabular-nums ${tab === t.id ? 'bg-white/20' : 'bg-secondary'}`}>{t.n}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* الإضافة السريعة */}
+      <div className="flex flex-col gap-2.5 border-b border-border bg-secondary/20 p-4 sm:flex-row">
+        <input
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addOne(tab); } }}
+          placeholder={tab === 'grades' ? 'اسم الصف الجديد — مثال: الصف الحادي عشر' : 'اسم المدرسة الجديدة — مثال: مدرسة النور'}
+          className={`${touchCls} flex-1`}
+          data-testid="org-new-name"
+        />
+        <button type="button" onClick={() => addOne(tab)} disabled={busy === 'add' || !newName.trim()} className={`${touchBtnPrimary} shrink-0`} data-testid="org-add">
+          {busy === 'add' ? <RefreshCw size={18} className="animate-spin" /> : <Plus size={18} />}
+          {busy === 'add' ? 'جارٍ…' : 'إضافة'}
+        </button>
+      </div>
+
+      {/* القائمة */}
+      <div className="max-h-[620px] space-y-2.5 overflow-y-auto overscroll-contain p-4">
+        {tab === 'grades' ? (
+          !cat.grades.length ? <EmptyOrg /> : cat.grades.map((g) => {
+            const on = editing === g.id;
+            return (
+              <div key={g.id} className="overflow-hidden rounded-2xl border-2 border-border bg-background">
+                <div className="flex flex-wrap items-center gap-3 p-4">
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-white shadow" style={{ background: g.color }}><GraduationCap size={20} /></span>
+                  {on ? (
+                    <input
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') rename('grade', g.id); if (e.key === 'Escape') setEditing(null); }}
+                      className={`${touchCls} flex-1`}
+                      autoFocus
+                    />
+                  ) : (
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-base font-extrabold text-primary">{g.name}</p>
+                      <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] font-bold text-muted-foreground">
+                        <span className="rounded-md bg-secondary px-2 py-0.5">{g.students} طالب</span>
+                        <span className="rounded-md bg-[#6a1b9a]/10 px-2 py-0.5 text-[#6a1b9a]">{g.schools.length} مدرسة</span>
+                        {!g.isActive ? <span className="rounded-md bg-muted px-2 py-0.5">معطّل</span> : null}
+                      </p>
+                    </div>
+                  )}
+                  {on ? (
+                    <>
+                      <button type="button" onClick={() => rename('grade', g.id)} disabled={busy === g.id} className={`${touchBtnPrimary} min-h-[48px] px-4 text-sm`}><Save size={16} /> حفظ</button>
+                      <button type="button" onClick={() => setEditing(null)} className={`${touchBtnSoft} min-h-[48px] px-4 text-sm`}>إلغاء</button>
+                    </>
+                  ) : (
+                    <div className="flex shrink-0 flex-wrap gap-1.5">
+                      <button type="button" onClick={() => toggleSplit(g.name)} disabled={splitSaving === g.name} className={`min-h-[44px] rounded-xl px-3.5 text-xs font-extrabold transition-colors ${splitMapState[g.name] === true ? 'bg-gradient-to-l from-[#6a1b9a] to-[#b7791f] text-white shadow-sm' : 'border-2 border-border bg-card text-muted-foreground'}`} data-testid={`switch-split-${g.name}`} title="تقسيم طلاب هذا الصف عن طالباته">
+                        {splitSaving === g.name ? '…' : splitMapState[g.name] === true ? 'مقسّم ♂♀' : 'غير مقسّم'}
+                      </button>
+                      <button type="button" onClick={() => { setEditing(g.id); setEditName(g.name); }} className="grid h-11 w-11 place-items-center rounded-xl text-muted-foreground active:bg-secondary" aria-label="تعديل"><Pencil size={16} /></button>
+                      <button type="button" onClick={() => toggleActive('grade', g.id, g.isActive)} className="grid h-11 w-11 place-items-center rounded-xl text-muted-foreground active:bg-secondary" aria-label="تفعيل/تعطيل">{g.isActive ? <Eye size={16} /> : <EyeOff size={16} />}</button>
+                      <button type="button" onClick={() => remove('grade', g.id, g.name)} className="grid h-11 w-11 place-items-center rounded-xl text-destructive active:bg-destructive/10" aria-label="حذف"><Trash2 size={16} /></button>
+                    </div>
+                  )}
+                </div>
+
+                {/* مدارس هذا الصف */}
+                <div className="border-t border-border bg-secondary/25 p-4">
+                  <p className="mb-2.5 flex items-center gap-2 text-xs font-extrabold text-primary">
+                    <Landmark size={14} className="text-[#6a1b9a]" /> في أي مدرسة يوجد هذا الصف؟
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {cat.schools.filter((s) => s.isActive).map((s) => {
+                      const linked = g.schoolIds.includes(s.id);
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          disabled={linking === g.id}
+                          onClick={() => toggleLink(g.id, s.id, !linked)}
+                          className={`inline-flex min-h-[44px] items-center gap-2 rounded-xl px-4 text-xs font-extrabold transition-all active:scale-95 ${linked ? 'bg-[#6a1b9a] text-white shadow-sm' : 'border-2 border-dashed border-border bg-card text-muted-foreground'}`}
+                          data-testid={`link-${g.id}-${s.id}`}
+                        >
+                          <span className={`grid h-5 w-5 place-items-center rounded-md ${linked ? 'bg-white/25' : 'border border-border'}`}>{linked ? <Check size={12} /> : null}</span>
+                          {s.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {g.schools.length > 1 ? (
+                    <p className="mt-2.5 flex items-start gap-1.5 rounded-xl bg-[#6a1b9a]/8 px-3 py-2.5 text-[11px] font-bold leading-5 text-[#6a1b9a]">
+                      <ShieldCheck size={13} className="mt-0.5 shrink-0" />
+                      هذا الصف في {g.schools.length} مدارس — لذلك يظهر تحت الصف منتقي «المدرسة» في كل مكان تختار فيه من يصل إليه المحتوى.
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          !cat.schools.length ? <EmptyOrg /> : cat.schools.map((s) => {
+            const on = editing === s.id;
+            return (
+              <div key={s.id} className="flex flex-wrap items-center gap-3 rounded-2xl border-2 border-border bg-background p-4">
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-white shadow" style={{ background: s.color }}><Landmark size={20} /></span>
+                {on ? (
+                  <input value={editName} onChange={(e) => setEditName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') rename('school', s.id); if (e.key === 'Escape') setEditing(null); }} className={`${touchCls} flex-1`} autoFocus />
+                ) : (
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-base font-extrabold text-primary">{s.name}</p>
+                    <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] font-bold text-muted-foreground">
+                      <span className="rounded-md bg-secondary px-2 py-0.5">{s.students} طالب</span>
+                      <span className="rounded-md bg-[#17413f]/10 px-2 py-0.5 text-[#17413f]">{s.grades.length} صفوف</span>
+                      {!s.isActive ? <span className="rounded-md bg-muted px-2 py-0.5">معطّلة</span> : null}
+                    </p>
+                    {s.grades.length ? (
+                      <p className="mt-1.5 flex flex-wrap gap-1">
+                        {s.grades.map((g) => <span key={g} className="rounded-md bg-secondary/70 px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground">{g}</span>)}
+                      </p>
+                    ) : null}
+                  </div>
+                )}
+                {on ? (
+                  <>
+                    <button type="button" onClick={() => rename('school', s.id)} disabled={busy === s.id} className={`${touchBtnPrimary} min-h-[48px] px-4 text-sm`}><Save size={16} /> حفظ</button>
+                    <button type="button" onClick={() => setEditing(null)} className={`${touchBtnSoft} min-h-[48px] px-4 text-sm`}>إلغاء</button>
+                  </>
+                ) : (
+                  <div className="flex shrink-0 gap-1.5">
+                    <button type="button" onClick={() => { setEditing(s.id); setEditName(s.name); }} className="grid h-11 w-11 place-items-center rounded-xl text-muted-foreground active:bg-secondary" aria-label="تعديل"><Pencil size={16} /></button>
+                    <button type="button" onClick={() => toggleActive('school', s.id, s.isActive)} className="grid h-11 w-11 place-items-center rounded-xl text-muted-foreground active:bg-secondary" aria-label="تفعيل/تعطيل">{s.isActive ? <Eye size={16} /> : <EyeOff size={16} />}</button>
+                    <button type="button" onClick={() => remove('school', s.id, s.name)} className="grid h-11 w-11 place-items-center rounded-xl text-destructive active:bg-destructive/10" aria-label="حذف"><Trash2 size={16} /></button>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {toast ? (
+        <p className={`flex items-center gap-2 border-t px-5 py-3.5 text-sm font-extrabold ${toast.tone === 'ok' ? 'border-green-500/30 bg-green-500/10 text-green-800' : 'border-destructive/40 bg-destructive/10 text-destructive'}`}>
+          {toast.tone === 'ok' ? <CheckCircle2 size={17} /> : <CircleAlert size={17} />} {toast.text}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function EmptyOrg() {
+  return (
+    <p className="rounded-2xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
+      لا يوجد بعد — اكتب الاسم في الأعلى واضغط «إضافة».
+    </p>
+  );
+}
+
 function SettingsPage() {
+  // الصفوف والمدارس تأتي من قاعدة البيانات — يشترك هنا ليعيد الرسم فور تغيّرها
+  useCatalog();
   const query = useGetTeacherSettings();
   const mutation = useUpdateTeacherSettings();
   const [saved, setSaved] = useState(false);
@@ -4519,46 +5107,11 @@ function SettingsPage() {
                 })}
               </div>
             </div>
-            <div className="mt-8 overflow-hidden rounded-3xl border border-accent/40 bg-gradient-to-b from-accent/15 to-card">
-              <div className="flex items-center gap-4 p-6 pb-4">
-                <span className="grid h-13 w-13 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-[#6a1b9a] to-[#b7791f] p-3 text-white shadow-lg">
-                  <UsersRound size={24} />
-                </span>
-                <div>
-                  <p className="font-display text-lg font-bold text-primary">تقسيم الطلاب والطالبات — لكل صف لحاله</p>
-                  <p className="mt-1 max-w-xl text-xs leading-6 text-muted-foreground">
-                    فعّل التقسيم للصف الذي تريده فقط: طلابه يرون محتوى «الجميع» + «الطلاب فقط»، وطالباته يرين «الجميع» + «الطالبات فقط».
-                    الصف غير المقسّم يرى طلابه كل شيء. وخيار القسم يظهر لك تلقائياً عند إضافة محتوى لصف مقسّم.
-                  </p>
-                </div>
-              </div>
-              <div className="grid gap-3 p-5 pt-2 sm:grid-cols-3">
-                {GRADES.map((g) => {
-                  const on = splitMapState[g] === true;
-                  const busy = splitSaving === g;
-                  return (
-                    <div key={g} className={`rounded-2xl border-2 p-4 text-center transition-all ${on ? 'border-accent bg-accent/10 shadow-md' : 'border-border bg-background'}`}>
-                      <p className="text-sm font-extrabold text-primary">{g}</p>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={on}
-                        disabled={busy}
-                        onClick={() => toggleSplit(g)}
-                        className={`relative mx-auto mt-3 h-9 w-16 rounded-full p-1 shadow-inner transition-colors duration-300 ${on ? 'bg-gradient-to-l from-[#6a1b9a] to-[#b7791f]' : 'bg-muted'}`}
-                        data-testid={`switch-split-${g}`}
-                      >
-                        <span className={`block h-7 w-7 rounded-full bg-white shadow-md transition-transform duration-300 ${on ? '-translate-x-7' : 'translate-x-0'}`} />
-                      </button>
-                      <p className={`mt-2 text-[11px] font-bold ${on ? 'text-[#6a1b9a]' : 'text-muted-foreground'}`}>
-                        {busy ? 'جارٍ الحفظ...' : on ? 'مقسّم ✓ طلاب / طالبات' : 'غير مقسّم — الكل معاً'}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-              {splitMsg ? <p className="border-t border-accent/25 px-6 py-3 text-xs font-bold text-accent-foreground">{splitMsg}</p> : null}
+            {/* ═══ الصفوف والمدارس + التقسيم — كل إدارة النظام من مكان واحد ═══ */}
+            <div className="mt-8">
+              <OrgManager splitMapState={splitMapState} splitSaving={splitSaving} toggleSplit={toggleSplit} />
             </div>
+
             <div className="mt-8 border-t border-border pt-6">
               <p className="font-bold text-primary text-sm">صورة المعلم</p>
               <p className="mt-1 text-xs text-muted-foreground">تظهر في الصفحة الرئيسية ومساحات الطلاب.</p>
@@ -5749,7 +6302,7 @@ function StudentCoursesPage() {
           { value: courses.length, label: 'إجمالي الوحدات' },
         ]}
       />
-      <GradeTermBadge grade={effectiveGrade} term={term} split={split} gender={gender} />
+      <GradeTermBadge grade={effectiveGrade} term={term} split={split} gender={gender} school={school} />
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <button
           type="button"
@@ -6197,6 +6750,8 @@ function ImageUrlField({ label, value, onChange, testId, folder = '/ard-al-lugha
 type ManagerTab = 'units' | 'exams' | 'assignments' | 'notes';
 
 function CurriculumManagerPage({ onlyTab, hero }: {
+  // الصفوف والمدارس تأتي من قاعدة البيانات — يشترك هنا ليعيد الرسم فور تغيّرها
+  useCatalog();
   onlyTab?: ManagerTab;
   hero?: { eyebrow: string; title: string; body: string };
 }) {
@@ -6209,6 +6764,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
   const visibleTabIds: ManagerTab[] = onlyTab ? [onlyTab] : ['units'];
   // فلتر القسم (يظهر فقط للصف المقسّم)
   const [sectionFilter, setSectionFilter] = useState('الجميع');
+  const [schoolTarget, setSchoolTarget] = useState('');
   const [examSearch, setExamSearch] = useState('');
 
   const [courses, setCourses] = useState<any[]>([]);
@@ -6427,7 +6983,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
     e.preventDefault();
     setSavingHw(true);
     try {
-      const body = { ...hwForm, images: hwImages, grade, section: gradeSplit ? (hwForm.section || 'الجميع') : 'الجميع' };
+      const body = { ...hwForm, images: hwImages, grade, section: gradeSplit ? (hwForm.section || 'الجميع') : 'الجميع', school: schoolTarget };
       if (hwModal?.mode === 'create') {
         await jsonFetch('/api/teacher/assignments', { method: 'POST', body });
         flash('تمت إضافة الواجب بنجاح!');
@@ -6488,7 +7044,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
     e.preventDefault();
     setSavingUnit(true);
     try {
-      const payload = { ...unitForm, grade, term, section: gradeSplit ? (unitForm.section || 'الجميع') : 'الجميع' };
+      const payload = { ...unitForm, grade, term, section: gradeSplit ? (unitForm.section || 'الجميع') : 'الجميع', school: schoolTarget };
       if (unitModal?.mode === 'create') {
         await jsonFetch('/api/teacher/curriculum/courses', { method: 'POST', body: payload });
         flash('تمت إضافة الوحدة بنجاح!');
@@ -6564,6 +7120,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
         isLocked: !!lessonForm.isLocked,
         isVisible: !!lessonForm.isVisible,
         grade, term,
+        school: schoolTarget,
       };
       const syncExamLink = async (lessonId: string, prevExamId: string) => {
         const nextExamId = lessonForm.examId || '';
@@ -6614,7 +7171,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
     if (!clean.length) { flash('أضف سؤالاً واحداً على الأقل بخيارين'); return; }
     setSavingExam(true);
     try {
-      await jsonFetch('/api/teacher/curriculum/assessments', { method: 'POST', body: { ...examForm, grade, term, section: gradeSplit ? (examForm.section || 'الجميع') : 'الجميع', questions: clean } });
+      await jsonFetch('/api/teacher/curriculum/assessments', { method: 'POST', body: { ...examForm, grade, term, section: gradeSplit ? (examForm.section || 'الجميع') : 'الجميع', school: schoolTarget, questions: clean } });
       setExamModal(false);
       loadExams();
       flash('تم إنشاء الاختبار وأسئلته بنجاح!');
@@ -6669,7 +7226,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
     try {
       const noteGrade = noteForm.targetGrade || 'الجميع';
       const noteSplit = noteGrade !== 'الجميع' && splitMap[noteGrade] === true;
-      await jsonFetch('/api/teacher/curriculum/announcements', { method: 'POST', body: { ...noteForm, grade: noteGrade, section: noteSplit ? (noteForm.section || 'الجميع') : 'الجميع' } });
+      await jsonFetch('/api/teacher/curriculum/announcements', { method: 'POST', body: { ...noteForm, grade: noteGrade, section: noteSplit ? (noteForm.section || 'الجميع') : 'الجميع', school: schoolTarget } });
       setNoteModal(false);
       loadNotes();
       flash('تم نشر الإعلان بنجاح!');
@@ -7073,6 +7630,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                   </div>
                 </div>
                 {gradeSplit ? <SectionField value={unitForm.section || 'الجميع'} onChange={(v) => setUnitForm({ ...unitForm, section: v })} /> : <p className="rounded-xl bg-secondary/50 px-4 py-2.5 text-xs text-muted-foreground">هذا الصف غير مقسّم — الوحدة ستظهر للطلاب والطالبات معاً.</p>}
+              <SchoolTargetField grade={grade} value={unitForm.school || ''} onChange={(v) => setUnitForm({ ...unitForm, school: v })} />
               </div>
 
               {/* العمود الجانبي: المظهر */}
@@ -7583,6 +8141,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
               </div>
             </div>
             {gradeSplit ? <SectionField value={examForm.section || 'الجميع'} onChange={(v) => setExamForm({ ...examForm, section: v })} /> : <p className="text-xs text-muted-foreground">هذا الصف غير مقسّم — الاختبار سيظهر للجميع.</p>}
+              <SchoolTargetField grade={grade} value={examForm.school || ''} onChange={(v) => setExamForm({ ...examForm, school: v })} />
             <div className="rounded-3xl border border-border bg-background/50 p-5">
               <div className="mb-4 flex items-center justify-between">
                 <p className="flex items-center gap-2 text-sm font-extrabold text-primary"><HelpCircle size={16} /> الأسئلة اليدوية ({examQuestions.length})</p>
@@ -7744,6 +8303,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
               <div className="space-y-4 rounded-3xl border border-accent/30 bg-gradient-to-b from-accent/10 to-card p-5">
                 <p className="flex items-center gap-2 text-sm font-extrabold text-primary"><Settings size={16} /> النشر والاستهداف</p>
                 {gradeSplit ? <SectionField value={hwForm.section || 'الجميع'} onChange={(v) => setHwForm({ ...hwForm, section: v })} /> : <p className="rounded-xl bg-secondary/50 px-4 py-2.5 text-xs text-muted-foreground">هذا الصف غير مقسّم — الواجب سيظهر للجميع.</p>}
+              <SchoolTargetField grade={grade} value={hwForm.school || ''} onChange={(v) => setHwForm({ ...hwForm, school: v })} />
                 <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-secondary/60 px-3 py-3 text-sm font-semibold"><input type="checkbox" checked={hwForm.published !== false} onChange={(e) => setHwForm({ ...hwForm, published: e.target.checked })} className="accent-primary" /> منشور للطلاب فوراً</label>
               </div>
             </div>
@@ -7823,6 +8383,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                 ) : (
                   <p className="rounded-xl bg-secondary/50 px-4 py-2.5 text-xs text-muted-foreground">{!noteForm.targetGrade || noteForm.targetGrade === 'الجميع' ? 'الإعلان عام لكل الصفوف — يظهر للجميع.' : 'هذا الصف غير مقسّم — الإعلان سيظهر للجميع.'}</p>
                 )}
+                <SchoolTargetField grade={noteForm.targetGrade || 'الجميع'} value={noteForm.school || ''} onChange={(v) => setNoteForm({ ...noteForm, school: v })} />
                 <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-secondary/60 px-3 py-3 text-sm font-semibold"><input type="checkbox" checked={noteForm.published !== false} onChange={(e) => setNoteForm({ ...noteForm, published: e.target.checked })} className="accent-primary" /> نشر فوراً (إلغاؤها تحفظه كمسودة)</label>
               </div>
               <div className="space-y-4">
@@ -8131,6 +8692,8 @@ function summaryTypeColor(type: string) {
 }
 
 function TeacherSummariesPage() {
+  // الصفوف والمدارس تأتي من قاعدة البيانات — يشترك هنا ليعيد الرسم فور تغيّرها
+  useCatalog();
   const [grade, setGrade] = useState('الصف العاشر');
   const term = usePlatformTerm();
   const [items, setItems] = useState<any[]>([]);
@@ -8143,6 +8706,7 @@ function TeacherSummariesPage() {
   const splitMap = useSplitMap();
   const gradeSplit = splitMap[grade] === true;
   const [sectionFilter, setSectionFilter] = useState('الجميع');
+  const [schoolTarget, setSchoolTarget] = useState('');
   const shownItems = items.filter((s) => sectionFilter === 'الجميع' || (s.section || 'الجميع') === sectionFilter);
 
   const load = async () => {
@@ -8167,7 +8731,7 @@ function TeacherSummariesPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const payload = { ...form, grade, term, section: gradeSplit ? (form.section || 'الجميع') : 'الجميع' };
+      const payload = { ...form, grade, term, section: gradeSplit ? (form.section || 'الجميع') : 'الجميع', school: schoolTarget };
       if (modal?.mode === 'create') await jsonFetch('/api/teacher/curriculum/summaries', { method: 'POST', body: payload });
       else if (modal?.mode === 'edit') await jsonFetch(`/api/teacher/curriculum/summaries/${modal.item.id}`, { method: 'PATCH', body: payload });
       setModal(null);
@@ -8291,6 +8855,7 @@ function TeacherSummariesPage() {
               <Field2 label="الترتيب"><input type="number" min={1} value={form.sortOrder || 1} onChange={(e) => setForm({ ...form, sortOrder: Number(e.target.value) })} className={inputCls} /></Field2>
               <label className="flex cursor-pointer items-end gap-2 pb-1 text-sm font-semibold"><input type="checkbox" checked={form.published !== false} onChange={(e) => setForm({ ...form, published: e.target.checked })} className="accent-primary" /> منشور للطلاب</label>
               {gradeSplit ? <div className="sm:col-span-2"><SectionField value={form.section || 'الجميع'} onChange={(v) => setForm({ ...form, section: v })} /></div> : <p className="text-xs text-muted-foreground sm:col-span-2">هذا الصف غير مقسّم — الملخص سيظهر للجميع.</p>}
+              <SchoolTargetField grade={grade} value={form.school || ''} onChange={(v) => setForm({ ...form, school: v })} />
             </div>
             <div className="flex items-center justify-end gap-3 pt-2">
               <Button onClick={() => setModal(null)} variant="ghost">إلغاء</Button>
@@ -8348,7 +8913,7 @@ function StudentAnnouncementsPage() {
           { value: types.length - 1, label: 'تصنيفات' },
         ]}
       />
-      <GradeTermBadge grade={effectiveGrade} term={term} split={split} gender={gender} />
+      <GradeTermBadge grade={effectiveGrade} term={term} split={split} gender={gender} school={school} />
       <div className="mb-6 flex flex-wrap items-center gap-2">
         {types.map((t) => (
           <button key={t} type="button" onClick={() => setTypeFilter(t)} className={`rounded-full px-4 py-2 text-xs font-bold transition-all ${typeFilter === t ? 'bg-primary text-primary-foreground shadow-md' : 'bg-secondary text-muted-foreground hover:text-primary'}`}>{t}</button>
@@ -8490,7 +9055,7 @@ function StudentNotebookPage() {
           { value: tasks.filter((t) => t.myStatus === 'تم التقييم').length, label: 'تم تقييمها' },
         ]}
       />
-      <GradeTermBadge grade={effectiveGrade} term={term} split={split} gender={gender} />
+      <GradeTermBadge grade={effectiveGrade} term={term} split={split} gender={gender} school={school} />
 
       {loading ? <StateNotice type="loading" /> : !tasks.length ? (
         <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-14 text-center">
@@ -8631,6 +9196,8 @@ function StudentNotebookPage() {
 }
 
 function TeacherNotebooksPage() {
+  // الصفوف والمدارس تأتي من قاعدة البيانات — يشترك هنا ليعيد الرسم فور تغيّرها
+  useCatalog();
   const [grade, setGrade] = useState('الصف العاشر');
   const term = usePlatformTerm();
   const [tasks, setTasks] = useState<any[]>([]);
@@ -8643,6 +9210,7 @@ function TeacherNotebooksPage() {
   const splitMapNb = useSplitMap();
   const gradeSplitNb = splitMapNb[grade] === true;
   const [sectionFilter, setSectionFilter] = useState('الجميع');
+  const [schoolTarget, setSchoolTarget] = useState('');
   const shownTasks = tasks.filter((t) => sectionFilter === 'الجميع' || (t.section || 'الجميع') === sectionFilter);
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [taskCourses, setTaskCourses] = useState<any[]>([]);
@@ -8691,7 +9259,7 @@ function TeacherNotebooksPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const payload = { ...form, grade, term, section: gradeSplitNb ? (form.section || 'الجميع') : 'الجميع' };
+      const payload = { ...form, grade, term, section: gradeSplitNb ? (form.section || 'الجميع') : 'الجميع', school: schoolTarget };
       if (modal?.mode === 'create') await jsonFetch('/api/teacher/curriculum/notebooks', { method: 'POST', body: payload });
       else if (modal?.mode === 'edit') await jsonFetch(`/api/teacher/curriculum/notebooks/${modal.item.id}`, { method: 'PATCH', body: payload });
       setModal(null);
@@ -8897,6 +9465,7 @@ function TeacherNotebooksPage() {
                   <Field2 label="الوحدة (نص حر)"><input value={form.unitTitle || ''} onChange={(e) => setForm({ ...form, unitTitle: e.target.value })} placeholder="تُملأ تلقائياً" className={inputCls} /></Field2>
                 </div>
                 {gradeSplitNb ? <SectionField value={form.section || 'الجميع'} onChange={(v) => setForm({ ...form, section: v })} /> : <p className="rounded-xl bg-secondary/50 px-4 py-2.5 text-xs text-muted-foreground">هذا الصف غير مقسّم — المهمة ستظهر للجميع.</p>}
+              <SchoolTargetField grade={grade} value={form.school || ''} onChange={(v) => setForm({ ...form, school: v })} />
                 <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-secondary/60 px-3 py-3 text-sm font-semibold"><input type="checkbox" checked={form.published !== false} onChange={(e) => setForm({ ...form, published: e.target.checked })} className="accent-primary" /> منشورة للطلاب فوراً</label>
               </div>
             <div className="flex items-center justify-end gap-3 border-t border-border pt-4">
@@ -8975,6 +9544,8 @@ function TeacherNotebooksPage() {
    الكتب المدرسية — الإداري يحدد كل شيء: الصف/الفصل/الغلاف/ملف PDF
 ========================================================================= */
 function TeacherBooksPage() {
+  // الصفوف والمدارس تأتي من قاعدة البيانات — يشترك هنا ليعيد الرسم فور تغيّرها
+  useCatalog();
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<null | { mode: 'create' } | { mode: 'edit'; item: any }>(null);
@@ -9689,6 +10260,8 @@ function FoundationToast({ msg }: { msg: { text: string; tone: 'ok' | 'err' } | 
    الذي تريده تماماً — نص تحت نص، صورة تحت صورة، فيديو تحتهم.
    ═══════════════════════════════════════════════════════════════════════ */
 function TeacherFoundationPage() {
+  // الصفوف والمدارس تأتي من قاعدة البيانات — يشترك هنا ليعيد الرسم فور تغيّرها
+  useCatalog();
   const [sections, setSections] = useState<any[]>([]);
   const [bootLoading, setBootLoading] = useState(true);
   const [toast, setToast] = useState<{ text: string; tone: 'ok' | 'err' } | null>(null);
@@ -10127,6 +10700,8 @@ function FoundationMembersPanel({ sectionId, sectionTitle, flash, onChanged }: {
   const [dirty, setDirty] = useState(false);
   const [q, setQ] = useState('');
   const [gradeFilter, setGradeFilter] = useState('الكل');
+  const [schoolFilter, setSchoolFilter] = useState('الكل');
+  const cat = useCatalog();
 
   const load = async () => {
     setLoading(true);
@@ -10143,14 +10718,16 @@ function FoundationMembersPanel({ sectionId, sectionTitle, flash, onChanged }: {
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [sectionId]);
 
   const grades = useMemo(() => ['الكل', ...Array.from(new Set(students.map((s) => s.grade).filter(Boolean)))], [students]);
+  const schools = useMemo(() => ['الكل', ...Array.from(new Set(students.map((s) => s.school).filter(Boolean)))], [students]);
   const shown = useMemo(() => {
     const needle = foundationFold(q);
     return students.filter((s) => {
       if (gradeFilter !== 'الكل' && s.grade !== gradeFilter) return false;
+      if (schoolFilter !== 'الكل' && (s.school || '') !== schoolFilter) return false;
       if (!needle) return true;
-      return foundationFold(s.name).includes(needle) || foundationFold(s.grade).includes(needle);
+      return foundationFold(s.name).includes(needle) || foundationFold(s.grade).includes(needle) || foundationFold(s.school).includes(needle);
     });
-  }, [students, q, gradeFilter]);
+  }, [students, q, gradeFilter, schoolFilter]);
 
   const toggle = (id: string) => {
     setDirty(true);
@@ -10205,6 +10782,24 @@ function FoundationMembersPanel({ sectionId, sectionTitle, flash, onChanged }: {
                 {g}
               </button>
             ))}
+            {schools.length > 2 ? (
+              <>
+                <span className="mx-1 h-6 w-px self-center bg-border" />
+                <span className="flex items-center gap-1.5 text-xs font-extrabold text-[#6a1b9a]">
+                  <Landmark size={13} /> المدرسة:
+                </span>
+                {schools.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setSchoolFilter(s)}
+                    className={`min-h-[44px] rounded-xl px-4 text-xs font-extrabold transition-colors ${schoolFilter === s ? 'bg-[#6a1b9a] text-white shadow-sm' : 'border-2 border-border bg-card text-muted-foreground active:bg-secondary'}`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap gap-2">
