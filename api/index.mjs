@@ -36895,6 +36895,10 @@ function readMailConfig() {
     helo: firstEnv("BREVO_SMTP_HELO", "SMTP_HELO") || "ard-al-lughah"
   };
 }
+function isMailConfigured() {
+  const cfg = readMailConfig();
+  return Boolean(cfg.pass && cfg.from && cfg.login);
+}
 function describeMailSetup() {
   const cfg = readMailConfig();
   return `smtp=${cfg.host}:${cfg.port} from=${cfg.from || "-"} login=${cfg.login || "-"} key=${cfg.pass ? "\u0645\u0648\u062C\u0648\u062F" : "\u0645\u0641\u0642\u0648\u062F"}`;
@@ -37042,6 +37046,58 @@ function dotStuff(payload) {
   return payload.replace(/(^|\r\n)\./g, "$1..");
 }
 async function sendMail(msg) {
+  const failures = [];
+  const providers = [];
+  if (isMailConfigured()) {
+    providers.push("brevo");
+    try {
+      await sendViaBrevo(msg);
+      return;
+    } catch (err) {
+      if (err instanceof MailNotConfiguredError) throw err;
+      failures.push(`brevo: ${err?.message || "\u0641\u0634\u0644 \u063A\u064A\u0631 \u0645\u0639\u0631\u0648\u0641"}`);
+      logger.warn({ err }, "Brevo send failed \u2014 trying the next provider");
+    }
+  }
+  const birdKey = firstEnv("BIRD_API_KEY", "MESSAGEBIRD_API_KEY");
+  if (birdKey) {
+    providers.push("messagebird");
+    try {
+      await sendViaMessageBird(msg, birdKey);
+      return;
+    } catch (err) {
+      failures.push(`messagebird: ${err?.message || "\u0641\u0634\u0644 \u063A\u064A\u0631 \u0645\u0639\u0631\u0648\u0641"}`);
+      logger.warn({ err }, "MessageBird send failed");
+    }
+  }
+  if (providers.length === 0) {
+    throw new MailNotConfiguredError("\u0644\u0645 \u062A\u064F\u0636\u0628\u0637 \u0623\u064A \u062E\u062F\u0645\u0629 \u0628\u0631\u064A\u062F \u0639\u0644\u0649 \u0627\u0644\u062E\u0627\u062F\u0645 (BREVO_SMTP_KEY / BIRD_API_KEY).");
+  }
+  logger.error({ failures }, "Every mail provider failed");
+  throw new MailSendError(failures.join(" | "));
+}
+async function sendViaMessageBird(msg, key) {
+  const from = firstEnv("BIRD_FROM", "MESSAGEBIRD_FROM") || "messagebird@messagebird.com";
+  const response = await fetch("https://rest.messagebird.com/messages", {
+    method: "POST",
+    headers: {
+      Authorization: `AccessKey ${key}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      from,
+      to: [msg.to],
+      subject: msg.subject,
+      html: msg.html,
+      body: msg.text ?? ""
+    })
+  });
+  const text = await response.text().catch(() => "");
+  if (!response.ok) {
+    throw new MailSendError(`MessageBird \u0631\u0641\u0636 \u0627\u0644\u0625\u0631\u0633\u0627\u0644 (${response.status}): ${text.slice(0, 200)}`);
+  }
+}
+async function sendViaBrevo(msg) {
   const cfg = readMailConfig();
   if (!cfg.pass) {
     throw new MailNotConfiguredError("\u0644\u0645 \u064A\u064F\u0636\u0628\u0637 \u0645\u0641\u062A\u0627\u062D \u0628\u0631\u064A\u062F Brevo (BREVO_SMTP_KEY) \u0639\u0644\u0649 \u0627\u0644\u062E\u0627\u062F\u0645.");

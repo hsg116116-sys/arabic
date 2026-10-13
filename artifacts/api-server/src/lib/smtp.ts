@@ -282,6 +282,66 @@ function dotStuff(payload: string): string {
 
 /** يرسل رسالة واحدة. يرمي MailNotConfiguredError إن كان الإعداد ناقصاً. */
 export async function sendMail(msg: MailMessage): Promise<void> {
+  const failures: string[] = [];
+  const providers: string[] = [];
+
+  // المزوّد الأول: Brevo عبر SMTP
+  if (isMailConfigured()) {
+    providers.push("brevo");
+    try {
+      await sendViaBrevo(msg);
+      return;
+    } catch (err) {
+      if (err instanceof MailNotConfiguredError) throw err;
+      failures.push(`brevo: ${(err as Error)?.message || "فشل غير معروف"}`);
+      logger.warn({ err }, "Brevo send failed — trying the next provider");
+    }
+  }
+
+  // الاحتياطي: MessageBird عبر HTTP (بلا قيود IP)
+  const birdKey = firstEnv("BIRD_API_KEY", "MESSAGEBIRD_API_KEY");
+  if (birdKey) {
+    providers.push("messagebird");
+    try {
+      await sendViaMessageBird(msg, birdKey);
+      return;
+    } catch (err) {
+      failures.push(`messagebird: ${(err as Error)?.message || "فشل غير معروف"}`);
+      logger.warn({ err }, "MessageBird send failed");
+    }
+  }
+
+  if (providers.length === 0) {
+    throw new MailNotConfiguredError("لم تُضبط أي خدمة بريد على الخادم (BREVO_SMTP_KEY / BIRD_API_KEY).");
+  }
+  logger.error({ failures }, "Every mail provider failed");
+  throw new MailSendError(failures.join(" | "));
+}
+
+/** MessageBird عبر REST — يُستعمل احتياطاً حين يرفض Brevo الاتصال. */
+async function sendViaMessageBird(msg: MailMessage, key: string): Promise<void> {
+  const from = firstEnv("BIRD_FROM", "MESSAGEBIRD_FROM") || "messagebird@messagebird.com";
+  const response = await fetch("https://rest.messagebird.com/messages", {
+    method: "POST",
+    headers: {
+      Authorization: `AccessKey ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from,
+      to: [msg.to],
+      subject: msg.subject,
+      html: msg.html,
+      body: msg.text ?? "",
+    }),
+  });
+  const text = await response.text().catch(() => "");
+  if (!response.ok) {
+    throw new MailSendError(`MessageBird رفض الإرسال (${response.status}): ${text.slice(0, 200)}`);
+  }
+}
+
+async function sendViaBrevo(msg: MailMessage): Promise<void> {
   const cfg = readMailConfig();
   if (!cfg.pass) {
     throw new MailNotConfiguredError("لم يُضبط مفتاح بريد Brevo (BREVO_SMTP_KEY) على الخادم.");
