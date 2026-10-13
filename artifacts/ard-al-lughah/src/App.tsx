@@ -6764,7 +6764,6 @@ function CurriculumManagerPage({ onlyTab, hero }: {
   const visibleTabIds: ManagerTab[] = onlyTab ? [onlyTab] : ['units'];
   // فلتر القسم (يظهر فقط للصف المقسّم)
   const [sectionFilter, setSectionFilter] = useState('الجميع');
-  const [schoolTarget, setSchoolTarget] = useState('');
   const [examSearch, setExamSearch] = useState('');
 
   const [courses, setCourses] = useState<any[]>([]);
@@ -6957,7 +6956,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
 
   /* ---------- الواجبات ---------- */
   const openHwCreate = () => {
-    setHwForm({ title: '', description: '', courseId: courses[0]?.id || '', lessonId: '', unit: courses[0]?.title || '', images: [], dueDate: '', points: 20, published: true, section: 'الجميع' });
+    setHwForm({ title: '', description: '', courseId: courses[0]?.id || '', lessonId: '', unit: courses[0]?.title || '', images: [], dueDate: '', points: 20, published: true, section: 'الجميع', school: '' });
     setHwImages([]);
     setHwNewImageUrl('');
     setHwImagesErr('');
@@ -6965,7 +6964,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
   };
   const openHwEdit = (item: any) => {
     const linked = courses.find((c: any) => c.id === item.courseId || (item.unit && c.title === item.unit));
-    setHwForm({ title: item.title, description: item.description, courseId: item.courseId || linked?.id || '', lessonId: item.lessonId || '', unit: item.unit, dueDate: item.dueDate, points: item.points, published: item.published, section: item.section || 'الجميع' });
+    setHwForm({ title: item.title, description: item.description, courseId: item.courseId || linked?.id || '', lessonId: item.lessonId || '', unit: item.unit, dueDate: item.dueDate, points: item.points, published: item.published, section: item.section || 'الجميع', school: item.school || '' });
     setHwImages(Array.isArray(item.images) ? [...item.images] : []);
     setHwNewImageUrl('');
     setHwImagesErr('');
@@ -6983,7 +6982,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
     e.preventDefault();
     setSavingHw(true);
     try {
-      const body = { ...hwForm, images: hwImages, grade, section: gradeSplit ? (hwForm.section || 'الجميع') : 'الجميع', school: schoolTarget };
+      const body = { ...hwForm, images: hwImages, grade, section: gradeSplit ? (hwForm.section || 'الجميع') : 'الجميع', school: hwForm.school || '' };
       if (hwModal?.mode === 'create') {
         await jsonFetch('/api/teacher/assignments', { method: 'POST', body });
         flash('تمت إضافة الواجب بنجاح!');
@@ -7033,18 +7032,18 @@ function CurriculumManagerPage({ onlyTab, hero }: {
 
   /* ---------- الوحدات ---------- */
   const openUnitCreate = () => {
-    setUnitForm({ title: '', description: '', color: UNIT_COLORS[courses.length % UNIT_COLORS.length], icon: 'book-open', sortOrder: courses.length + 1, duration: '', coverUrl: '', avatarUrl: '', status: 'published', isLocked: false, isVisible: true, section: 'الجميع' });
+    setUnitForm({ title: '', description: '', color: UNIT_COLORS[courses.length % UNIT_COLORS.length], icon: 'book-open', sortOrder: courses.length + 1, duration: '', coverUrl: '', avatarUrl: '', status: 'published', isLocked: false, isVisible: true, section: 'الجميع', school: '' });
     setUnitModal({ mode: 'create' });
   };
   const openUnitEdit = (course: any) => {
-    setUnitForm({ title: course.title, description: course.description, color: course.color, icon: course.icon, sortOrder: course.sort_order, duration: course.duration, coverUrl: course.coverUrl || '', avatarUrl: course.avatarUrl || '', status: course.status || 'published', isLocked: !!course.isLocked, isVisible: course.isVisible !== false, section: course.section || 'الجميع' });
+    setUnitForm({ title: course.title, description: course.description, color: course.color, icon: course.icon, sortOrder: course.sort_order, duration: course.duration, coverUrl: course.coverUrl || '', avatarUrl: course.avatarUrl || '', status: course.status || 'published', isLocked: !!course.isLocked, isVisible: course.isVisible !== false, section: course.section || 'الجميع', school: course.school || '' });
     setUnitModal({ mode: 'edit', course });
   };
   const saveUnit = async (e: FormEvent) => {
     e.preventDefault();
     setSavingUnit(true);
     try {
-      const payload = { ...unitForm, grade, term, section: gradeSplit ? (unitForm.section || 'الجميع') : 'الجميع', school: schoolTarget };
+      const payload = { ...unitForm, grade, term, section: gradeSplit ? (unitForm.section || 'الجميع') : 'الجميع', school: unitForm.school || '' };
       if (unitModal?.mode === 'create') {
         await jsonFetch('/api/teacher/curriculum/courses', { method: 'POST', body: payload });
         flash('تمت إضافة الوحدة بنجاح!');
@@ -7076,7 +7075,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
 
   /* ---------- الدروس ---------- */
   const openLessonCreate = (courseId: string) => {
-    setLessonForm({ title: '', lessonType: 'مطالعة', description: '', position: lessons.length + 1, coverUrl: '', htmlContent: '', htmlFileUrl: '', introduction: '', mainText: '', grammarRule: '', summary: '', status: 'published', isLocked: false, isVisible: true, examId: '' });
+    setLessonForm({ title: '', lessonType: 'مطالعة', description: '', position: lessons.length + 1, coverUrl: '', htmlContent: '', htmlFileUrl: '', introduction: '', mainText: '', grammarRule: '', summary: '', status: 'published', isLocked: false, isVisible: true, examId: '', school: '' });
     setLessonImages([]);
     setNewImageUrl('');
     setShowHtmlPreview(false);
@@ -7088,7 +7087,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
   };
   const openLessonEdit = (lesson: any) => {
     const linked = exams.find((e: any) => e.lessonId === lesson.id);
-    setLessonForm({ title: lesson.title, lessonType: lesson.lessonType || 'مطالعة', description: lesson.description || '', position: lesson.position || 1, coverUrl: lesson.coverUrl || '', htmlContent: lesson.htmlContent || '', htmlFileUrl: lesson.htmlFileUrl || '', introduction: lesson.content?.introduction || '', mainText: lesson.content?.mainText || '', grammarRule: lesson.content?.grammarRule || '', summary: lesson.content?.summary || '', status: lesson.status || 'published', isLocked: !!lesson.isLocked, isVisible: lesson.isVisible !== false, examId: linked?.id || '' });
+    setLessonForm({ title: lesson.title, lessonType: lesson.lessonType || 'مطالعة', description: lesson.description || '', position: lesson.position || 1, coverUrl: lesson.coverUrl || '', htmlContent: lesson.htmlContent || '', htmlFileUrl: lesson.htmlFileUrl || '', introduction: lesson.content?.introduction || '', mainText: lesson.content?.mainText || '', grammarRule: lesson.content?.grammarRule || '', summary: lesson.content?.summary || '', status: lesson.status || 'published', isLocked: !!lesson.isLocked, isVisible: lesson.isVisible !== false, examId: linked?.id || '', school: lesson.school || '' });
     setLessonImages(Array.isArray(lesson.images) ? [...lesson.images] : []);
     setNewImageUrl('');
     setShowHtmlPreview(false);
@@ -7120,7 +7119,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
         isLocked: !!lessonForm.isLocked,
         isVisible: !!lessonForm.isVisible,
         grade, term,
-        school: schoolTarget,
+        school: lessonForm.school || '',
       };
       const syncExamLink = async (lessonId: string, prevExamId: string) => {
         const nextExamId = lessonForm.examId || '';
@@ -7159,7 +7158,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
 
   /* ---------- الاختبارات ---------- */
   const openExamCreate = () => {
-    setExamForm({ title: '', description: '', courseId: selectedCourseId || courses[0]?.id || '', lessonId: '', duration: '20 دقيقة', published: true, isVisible: true, section: 'الجميع' });
+    setExamForm({ title: '', description: '', courseId: selectedCourseId || courses[0]?.id || '', lessonId: '', duration: '20 دقيقة', published: true, isVisible: true, section: 'الجميع', school: '' });
     setAiPrompt(''); setAiDrafts([]); setAiMsg(''); setAiOk(true); setAiLevel('متوسط'); setAiCount(10);
     setExamQuestions([{ question: '', options: ['', '', '', ''], correctAnswer: 0, explanation: '' }]);
     setExamModal(true);
@@ -7171,7 +7170,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
     if (!clean.length) { flash('أضف سؤالاً واحداً على الأقل بخيارين'); return; }
     setSavingExam(true);
     try {
-      await jsonFetch('/api/teacher/curriculum/assessments', { method: 'POST', body: { ...examForm, grade, term, section: gradeSplit ? (examForm.section || 'الجميع') : 'الجميع', school: schoolTarget, questions: clean } });
+      await jsonFetch('/api/teacher/curriculum/assessments', { method: 'POST', body: { ...examForm, grade, term, section: gradeSplit ? (examForm.section || 'الجميع') : 'الجميع', school: examForm.school || '', questions: clean } });
       setExamModal(false);
       loadExams();
       flash('تم إنشاء الاختبار وأسئلته بنجاح!');
@@ -7216,7 +7215,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
 
   /* ---------- الإعلانات ---------- */
   const openNoteCreate = () => {
-    setNoteForm({ title: '', body: '', type: 'إرشاد', audience: 'الجميع', targetGrade: grade, section: 'الجميع', published: true });
+    setNoteForm({ title: '', body: '', type: 'إرشاد', audience: 'الجميع', targetGrade: grade, section: 'الجميع', published: true, school: '' });
     setNoteModal(true);
   };
   const saveNote = async (e: FormEvent) => {
@@ -7226,7 +7225,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
     try {
       const noteGrade = noteForm.targetGrade || 'الجميع';
       const noteSplit = noteGrade !== 'الجميع' && splitMap[noteGrade] === true;
-      await jsonFetch('/api/teacher/curriculum/announcements', { method: 'POST', body: { ...noteForm, grade: noteGrade, section: noteSplit ? (noteForm.section || 'الجميع') : 'الجميع', school: schoolTarget } });
+      await jsonFetch('/api/teacher/curriculum/announcements', { method: 'POST', body: { ...noteForm, grade: noteGrade, section: noteSplit ? (noteForm.section || 'الجميع') : 'الجميع', school: noteForm.school || '' } });
       setNoteModal(false);
       loadNotes();
       flash('تم نشر الإعلان بنجاح!');
@@ -7515,6 +7514,9 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                           <span className="rounded-full bg-accent/25 px-2.5 py-0.5 text-[11px] font-extrabold text-accent-foreground">{hw.submissionsCount} تسليمات</span>
                         ) : null}
                         {hw.section && hw.section !== 'الجميع' ? <span className="rounded-full bg-[#6a1b9a]/15 px-2.5 py-0.5 text-[11px] font-bold text-[#6a1b9a]">{hw.section === 'طالب' ? 'الطلاب فقط' : 'الطالبات فقط'}</span> : null}
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-extrabold ${hw.school ? 'bg-[#17413f]/12 text-[#17413f]' : 'bg-muted text-muted-foreground'}`} title={hw.school ? 'هذا الواجب لطلاب هذه المدرسة فقط' : 'يظهر لكل مدارس هذا الصف'}>
+                          <Landmark size={11} /> {hw.school || 'كل المدارس'}
+                        </span>
                         {!hw.published ? <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-bold text-muted-foreground">مسودة</span> : null}
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">{hw.unit || 'عام'} {hw.dueDate ? `· حتى ${hw.dueDate}` : ''} · {hw.points} نقاط{Array.isArray(hw.images) && hw.images.length ? ` · ${hw.images.length}📷` : ''}</p>
@@ -8706,7 +8708,6 @@ function TeacherSummariesPage() {
   const splitMap = useSplitMap();
   const gradeSplit = splitMap[grade] === true;
   const [sectionFilter, setSectionFilter] = useState('الجميع');
-  const [schoolTarget, setSchoolTarget] = useState('');
   const shownItems = items.filter((s) => sectionFilter === 'الجميع' || (s.section || 'الجميع') === sectionFilter);
 
   const load = async () => {
@@ -8720,18 +8721,18 @@ function TeacherSummariesPage() {
   const flash = (t: string) => { setMsg(t); setTimeout(() => setMsg(''), 3000); };
 
   const openCreate = () => {
-    setForm({ title: '', summaryType: 'ملخص', unitTitle: '', description: '', content: '', coverUrl: '', fileUrl: '', sortOrder: items.length + 1, published: true, section: 'الجميع' });
+    setForm({ title: '', summaryType: 'ملخص', unitTitle: '', description: '', content: '', coverUrl: '', fileUrl: '', sortOrder: items.length + 1, published: true, section: 'الجميع', school: '' });
     setModal({ mode: 'create' });
   };
   const openEdit = (item: any) => {
-    setForm({ title: item.title, summaryType: item.summaryType, unitTitle: item.unitTitle, description: item.description, content: item.content, coverUrl: item.coverUrl, fileUrl: item.fileUrl, sortOrder: item.sortOrder, published: item.published, section: item.section || 'الجميع' });
+    setForm({ title: item.title, summaryType: item.summaryType, unitTitle: item.unitTitle, description: item.description, content: item.content, coverUrl: item.coverUrl, fileUrl: item.fileUrl, sortOrder: item.sortOrder, published: item.published, section: item.section || 'الجميع', school: item.school || '' });
     setModal({ mode: 'edit', item });
   };
   const save = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
-      const payload = { ...form, grade, term, section: gradeSplit ? (form.section || 'الجميع') : 'الجميع', school: schoolTarget };
+      const payload = { ...form, grade, term, section: gradeSplit ? (form.section || 'الجميع') : 'الجميع', school: form.school || '' };
       if (modal?.mode === 'create') await jsonFetch('/api/teacher/curriculum/summaries', { method: 'POST', body: payload });
       else if (modal?.mode === 'edit') await jsonFetch(`/api/teacher/curriculum/summaries/${modal.item.id}`, { method: 'PATCH', body: payload });
       setModal(null);
@@ -9210,7 +9211,6 @@ function TeacherNotebooksPage() {
   const splitMapNb = useSplitMap();
   const gradeSplitNb = splitMapNb[grade] === true;
   const [sectionFilter, setSectionFilter] = useState('الجميع');
-  const [schoolTarget, setSchoolTarget] = useState('');
   const shownTasks = tasks.filter((t) => sectionFilter === 'الجميع' || (t.section || 'الجميع') === sectionFilter);
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [taskCourses, setTaskCourses] = useState<any[]>([]);
@@ -9241,12 +9241,12 @@ function TeacherNotebooksPage() {
   const flash = (t: string) => { setMsg(t); setTimeout(() => setMsg(''), 3000); };
 
   const openCreate = () => {
-    setForm({ title: '', description: '', unitTitle: '', courseId: '', lessonId: '', requirements: [], dueDate: '', points: 10, published: true, section: 'الجميع' });
+    setForm({ title: '', description: '', unitTitle: '', courseId: '', lessonId: '', requirements: [], dueDate: '', points: 10, published: true, section: 'الجميع', school: '' });
     setNewReq({ label: '', kind: 'كتابة', place: '' });
     setModal({ mode: 'create' });
   };
   const openEdit = (item: any) => {
-    setForm({ title: item.title, description: item.description, unitTitle: item.unitTitle, courseId: item.courseId || '', lessonId: item.lessonId || '', requirements: Array.isArray(item.requirements) ? [...item.requirements] : [], dueDate: item.dueDate, points: item.points, published: item.published, section: item.section || 'الجميع' });
+    setForm({ title: item.title, description: item.description, unitTitle: item.unitTitle, courseId: item.courseId || '', lessonId: item.lessonId || '', requirements: Array.isArray(item.requirements) ? [...item.requirements] : [], dueDate: item.dueDate, points: item.points, published: item.published, section: item.section || 'الجميع', school: item.school || '' });
     setNewReq({ label: '', kind: 'كتابة', place: '' });
     setModal({ mode: 'edit', item });
   };
@@ -9259,7 +9259,7 @@ function TeacherNotebooksPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const payload = { ...form, grade, term, section: gradeSplitNb ? (form.section || 'الجميع') : 'الجميع', school: schoolTarget };
+      const payload = { ...form, grade, term, section: gradeSplitNb ? (form.section || 'الجميع') : 'الجميع', school: form.school || '' };
       if (modal?.mode === 'create') await jsonFetch('/api/teacher/curriculum/notebooks', { method: 'POST', body: payload });
       else if (modal?.mode === 'edit') await jsonFetch(`/api/teacher/curriculum/notebooks/${modal.item.id}`, { method: 'PATCH', body: payload });
       setModal(null);
@@ -9370,6 +9370,9 @@ function TeacherNotebooksPage() {
                 {task.unitTitle ? <span className="inline-flex items-center gap-1 rounded-lg bg-secondary px-2.5 py-1 text-[11px] font-bold text-primary"><Library size={12} /> {task.unitTitle}</span> : null}
                 {task.lessonTitle ? <span className="inline-flex items-center gap-1 rounded-lg bg-[#6a1b9a]/10 px-2.5 py-1 text-[11px] font-bold text-[#6a1b9a]"><BookCopy size={12} /> {task.lessonTitle}</span> : null}
                 {task.requirements?.length ? <span className="inline-flex items-center gap-1 rounded-lg bg-accent/20 px-2.5 py-1 text-[11px] font-extrabold text-accent-foreground">🎯 {task.requirements.length} بنود مطلوبة</span> : null}
+                <span className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-extrabold ${task.school ? 'bg-[#17413f]/12 text-[#17413f]' : 'bg-muted text-muted-foreground'}`} title={task.school ? 'هذه المهمة لطلاب هذه المدرسة فقط' : 'تظهر لكل مدارس هذا الصف'}>
+                  <Landmark size={12} /> {task.school || 'كل المدارس'}
+                </span>
               </div>
               <p className="mt-2.5 line-clamp-2 text-sm leading-6 text-muted-foreground">{task.description}</p>
               <div className="mt-4 flex flex-wrap items-center gap-2">
