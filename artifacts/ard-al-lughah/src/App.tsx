@@ -12335,9 +12335,7 @@ function TeacherFoundationPage() {
                         >
                           {l.coverUrl
                             ? <img src={l.coverUrl} alt="" className="h-full w-full object-cover" />
-                            : previewLoading && preview?.id === l.id
-                              ? <RefreshCw size={18} className="animate-spin text-primary" />
-                              : <KIcon size={20} style={{ color: meta.tone }} />}
+                            : <KIcon size={20} style={{ color: meta.tone }} />}
                         </button>
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-1.5">
