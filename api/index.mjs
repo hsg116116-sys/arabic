@@ -38026,6 +38026,81 @@ router7.post("/teacher/foundation/units/reorder", requireAdmin, async (req, res)
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0639\u0627\u062F\u0629 \u062A\u0631\u062A\u064A\u0628 \u0627\u0644\u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u0641\u0631\u0639\u064A\u0629 \u2014 " + V10_HINT });
   }
 });
+router7.get("/teacher/foundation/members", requireAdmin, async (_req, res) => {
+  try {
+    const [{ data: sections }, { data: students }, { data: members }] = await Promise.all([
+      supabaseQuery("foundation_sections?order=sort_order.asc&limit=200"),
+      supabaseQuery("profiles?role=eq.student&order=full_name.asc&limit=5000"),
+      supabaseQuery("foundation_members?select=section_id,user_id&limit=20000")
+    ]);
+    const byUser = {};
+    for (const m of members || []) (byUser[m.user_id] ||= []).push(m.section_id);
+    res.json({
+      sections: (sections || []).map((s) => ({
+        id: s.id,
+        title: s.title || "\u0642\u0633\u0645 \u0628\u0644\u0627 \u0627\u0633\u0645",
+        subtitle: s.subtitle || "",
+        color: s.color || "#17413f",
+        icon: s.icon || "sparkles",
+        sortOrder: s.sort_order ?? 1,
+        isLocked: !!s.is_locked,
+        isVisible: s.is_visible !== false
+      })),
+      students: (students || []).map((s) => ({
+        id: s.id,
+        name: s.full_name || "\u0628\u0644\u0627 \u0627\u0633\u0645",
+        grade: s.grade || "",
+        section: s.section || "",
+        gender: s.gender || "",
+        school: s.school || "",
+        status: s.status || "",
+        avatarUrl: s.avatar_url || "",
+        sectionIds: byUser[s.id] || []
+      }))
+    });
+  } catch (err) {
+    logger.error({ err }, "GET foundation members matrix failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u0645\u064A\u0644 \u0627\u0644\u0637\u0644\u0627\u0628 \u2014 " + V7_HINT });
+  }
+});
+router7.put("/teacher/foundation/members", requireAdmin, async (req, res) => {
+  try {
+    const userId = String(req.body?.userId || "").trim();
+    const raw = Array.isArray(req.body?.sectionIds) ? req.body.sectionIds : [];
+    if (!userId) {
+      res.status(400).json({ error: "\u0627\u0644\u0637\u0627\u0644\u0628 \u0645\u0637\u0644\u0648\u0628" });
+      return;
+    }
+    const sectionIds = [...new Set(raw.map((x) => String(x || "")).filter(Boolean))].slice(0, 200);
+    const { data: current } = await supabaseQuery(
+      `foundation_members?user_id=eq.${enc3(userId)}&select=id,section_id&limit=500`
+    );
+    const currentIds = new Set((current || []).map((m) => m.section_id));
+    const toRemove = (current || []).filter((m) => !sectionIds.includes(m.section_id)).map((m) => m.id);
+    const toAdd = sectionIds.filter((id) => !currentIds.has(id));
+    if (toRemove.length) {
+      const { error: delErr } = await supabaseQuery(
+        `foundation_members?id=in.(${toRemove.map(enc3).join(",")})`,
+        { method: "DELETE" }
+      );
+      if (delErr) throw new Error(String(delErr));
+    }
+    if (toAdd.length) {
+      const { error: addErr } = await supabaseQuery("foundation_members", {
+        method: "POST",
+        // بنسخة واحدة لكل مستوى: لا تكرار، وإلا رفض Postgres الدفعة كلها
+        headers: { Prefer: "resolution=ignore-duplicates" },
+        body: toAdd.map((section_id) => ({ section_id, user_id: userId }))
+      });
+      if (addErr) throw new Error(String(addErr));
+    }
+    invalidateFoundationAccess(null, userId);
+    res.json({ success: true, userId, sectionIds });
+  } catch (err) {
+    logger.error({ err }, "PUT foundation member levels failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0645\u0633\u062A\u0648\u064A\u0627\u062A \u0627\u0644\u0637\u0627\u0644\u0628 \u2014 " + V7_HINT });
+  }
+});
 router7.get("/teacher/foundation/sections/:id/members", requireAdmin, async (req, res) => {
   try {
     const sectionId = String(req.params.id);

@@ -929,6 +929,93 @@ router.post("/teacher/foundation/units/reorder", requireAdmin, async (req, res) 
 
 // ── الأعضاء ─────────────────────────────────────────────────────────────────
 
+/** كل الطلاب × كل المستويات في طلب واحد.
+ *  لوحة الأستاذ تحتاج أن ترى مصفوفة (طالب × مستوى) كاملة، لا مستوىً واحداً في
+ *  كل مرة — وإلا احتاجت خمسة عشر طلباً لتعديل عشرة طلاب. */
+router.get("/teacher/foundation/members", requireAdmin, async (_req, res) => {
+  try {
+    const [{ data: sections }, { data: students }, { data: members }] = await Promise.all([
+      supabaseQuery<any[]>("foundation_sections?order=sort_order.asc&limit=200"),
+      supabaseQuery<any[]>("profiles?role=eq.student&order=full_name.asc&limit=5000"),
+      supabaseQuery<any[]>("foundation_members?select=section_id,user_id&limit=20000"),
+    ]);
+
+    const byUser: Record<string, string[]> = {};
+    for (const m of members || []) (byUser[m.user_id] ||= []).push(m.section_id);
+
+    res.json({
+      sections: (sections || []).map((s: any) => ({
+        id: s.id,
+        title: s.title || "قسم بلا اسم",
+        subtitle: s.subtitle || "",
+        color: s.color || "#17413f",
+        icon: s.icon || "sparkles",
+        sortOrder: s.sort_order ?? 1,
+        isLocked: !!s.is_locked,
+        isVisible: s.is_visible !== false,
+      })),
+      students: (students || []).map((s: any) => ({
+        id: s.id,
+        name: s.full_name || "بلا اسم",
+        grade: s.grade || "",
+        section: s.section || "",
+        gender: s.gender || "",
+        school: s.school || "",
+        status: s.status || "",
+        avatarUrl: s.avatar_url || "",
+        sectionIds: byUser[s.id] || [],
+      })),
+    });
+  } catch (err: any) {
+    logger.error({ err }, "GET foundation members matrix failed");
+    res.status(500).json({ error: "تعذر تحميل الطلاب — " + V7_HINT });
+  }
+});
+
+/** ضبط مستويات طالب واحد — يستبدل عضويته في كل المستويات دفعة واحدة */
+router.put("/teacher/foundation/members", requireAdmin, async (req, res) => {
+  try {
+    const userId = String(req.body?.userId || "").trim();
+    const raw = Array.isArray(req.body?.sectionIds) ? req.body.sectionIds : [];
+    if (!userId) {
+      res.status(400).json({ error: "الطالب مطلوب" });
+      return;
+    }
+    const sectionIds = [...new Set(raw.map((x: any) => String(x || "")).filter(Boolean))].slice(0, 200);
+
+    // 1) احذف ما لم يبقَ
+    const { data: current } = await supabaseQuery<any[]>(
+      `foundation_members?user_id=eq.${enc(userId)}&select=id,section_id&limit=500`,
+    );
+    const currentIds = new Set((current || []).map((m: any) => m.section_id));
+    const toRemove = (current || []).filter((m: any) => !sectionIds.includes(m.section_id)).map((m: any) => m.id);
+    const toAdd = sectionIds.filter((id) => !currentIds.has(id));
+
+    if (toRemove.length) {
+      const { error: delErr } = await supabaseQuery(
+        `foundation_members?id=in.(${toRemove.map(enc).join(",")})`,
+        { method: "DELETE" },
+      );
+      if (delErr) throw new Error(String(delErr));
+    }
+    if (toAdd.length) {
+      const { error: addErr } = await supabaseQuery("foundation_members", {
+        method: "POST",
+        // بنسخة واحدة لكل مستوى: لا تكرار، وإلا رفض Postgres الدفعة كلها
+        headers: { Prefer: "resolution=ignore-duplicates" },
+        body: toAdd.map((section_id: string) => ({ section_id, user_id: userId })),
+      });
+      if (addErr) throw new Error(String(addErr));
+    }
+
+    invalidateFoundationAccess(null, userId);
+    res.json({ success: true, userId, sectionIds });
+  } catch (err: any) {
+    logger.error({ err }, "PUT foundation member levels failed");
+    res.status(500).json({ error: "تعذر حفظ مستويات الطالب — " + V7_HINT });
+  }
+});
+
 /** قائمة الطلاب كاملة للاختيار بالاسم (مع حالة انتمائهم لهذا القسم) */
 router.get("/teacher/foundation/sections/:id/members", requireAdmin, async (req, res) => {
   try {

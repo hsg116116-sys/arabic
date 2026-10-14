@@ -10563,62 +10563,62 @@ function TeacherFoundationPage() {
 
       {bootLoading ? <StateNotice type="loading" /> : (
         <div className="space-y-6">
-          {/* ═══ "من يرى التأسيس" — بطاقة مستقلة بزرّها الخاص، لا قائمة ═══ */}
-          <section className="overflow-hidden rounded-[2rem] border border-[#6a1b9a]/30 bg-card shadow-md">
-            <div className="flex flex-col gap-3 bg-gradient-to-l from-[#6a1b9a] to-[#8a508f] p-5 text-white sm:flex-row sm:items-center sm:p-6">
-              <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-white/20 shadow-lg backdrop-blur-sm"><ShieldCheck size={28} /></span>
-              <div className="min-w-0 flex-1">
-                <h2 className="font-display text-xl font-extrabold sm:text-2xl">من يرى التأسيس؟</h2>
-                <p className="mt-1 text-sm leading-6 text-white/85">
-                  تختار الطلاب بالاسم — والاختيار واحد يسري على <strong>كل الدروس</strong>، ليس لكل درس.
-                </p>
-              </div>
-              {current ? (
+          {/* ═══ شريط المستويات — زر «من يرى التأسيس؟» يفتح النافذة ═══ */}
+          {sections.length ? (
+            <section className="overflow-hidden rounded-[2rem] border border-border bg-card shadow-sm">
+              <div className="flex flex-col gap-3 bg-gradient-to-l from-primary to-[#2a7a72] p-5 text-white sm:flex-row sm:items-center sm:p-6">
+                <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-white/20 shadow-lg backdrop-blur-sm"><Layers size={28} /></span>
+                <div className="min-w-0 flex-1">
+                  <h2 className="font-display text-xl font-extrabold sm:text-2xl">المستويات</h2>
+                  <p className="mt-1 text-sm leading-6 text-white/85">
+                    اختر المستوى لترى مواضيعه العشرة وتحرّر دروسه — ورتّب المستويات بالأسهم.
+                  </p>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setShowMembers((v) => !v)}
-                  className="inline-flex min-h-[56px] shrink-0 items-center justify-center gap-2.5 rounded-2xl bg-white px-6 text-base font-extrabold text-[#4a1d63] shadow-lg transition-all active:scale-[.97]"
+                  onClick={() => setShowMembers(true)}
+                  className="inline-flex min-h-[56px] shrink-0 items-center justify-center gap-2.5 rounded-2xl bg-white px-6 text-base font-extrabold text-[#16383c] shadow-lg transition-all hover:-translate-y-0.5 active:scale-[.97]"
                   data-testid="button-toggle-foundation-members"
                 >
                   <UsersRound size={20} />
-                  {showMembers ? 'إخفاء الاختيار' : `اختيار الطلاب لـ «${current.title}»`}
+                  من يرى التأسيس؟
                 </button>
-              ) : null}
-            </div>
+              </div>
 
-            {/* اختيار المستوى — أزرار كبيرة مع أسهم الترتيب */}
-            {sections.length > 1 ? (
-              <div className="flex flex-wrap items-center gap-2 border-b border-border bg-secondary/40 p-4">
-                <span className="self-center text-xs font-extrabold text-muted-foreground">المستوى:</span>
+              <div className="flex flex-wrap items-center gap-2 p-4">
                 {sections.map((s: any, si: number) => (
                   <span key={s.id} className="flex items-center">
                     <button
                       type="button"
                       onClick={() => setActiveSection(s.id)}
                       data-testid={`button-pick-section-${s.id}`}
-                      className={`min-h-[48px] rounded-2xl px-5 text-sm font-extrabold transition-colors ${activeSection === s.id ? 'bg-[#6a1b9a] text-white shadow-md' : 'border-2 border-border bg-card text-muted-foreground active:bg-secondary'}`}
+                      className={`inline-flex min-h-[56px] items-center gap-2.5 rounded-2xl px-5 text-sm font-extrabold transition-all active:scale-[.97] ${
+                        activeSection === s.id
+                          ? 'text-white shadow-lg'
+                          : 'border-2 border-border bg-card text-muted-foreground hover:border-primary/35'
+                      }`}
+                      style={activeSection === s.id ? { background: `linear-gradient(135deg, ${s.color}, ${s.color}bb)` } : undefined}
                     >
-                      {s.subtitle ? `${s.subtitle} — ` : ''}{s.title}
-                      <span className="mr-1.5 tabular-nums opacity-75">({s.memberCount})</span>
+                      <span className="h-8 w-1.5 shrink-0 rounded-full" style={{ background: s.color }} />
+                      <span className="text-right leading-tight">
+                        <span className="block text-[11px] opacity-85">{s.subtitle || `م${si + 1}`}</span>
+                        <span className="block">{s.title}</span>
+                      </span>
+                      <span className="rounded-lg bg-black/10 px-2 py-0.5 text-[10px] font-extrabold tabular-nums opacity-80">{s.lessonsCount}</span>
                     </button>
                     <span className="ms-1 flex flex-col">
-                      <button type="button" onClick={() => moveSection(s, 'up')} disabled={si === 0} className="grid h-4 w-6 place-items-center text-muted-foreground disabled:opacity-20" aria-label="تقديم المستوى"><ArrowUp size={12} /></button>
-                      <button type="button" onClick={() => moveSection(s, 'down')} disabled={si === sections.length - 1} className="grid h-4 w-6 place-items-center text-muted-foreground disabled:opacity-20" aria-label="تأخير المستوى"><ArrowDown size={12} /></button>
+                      <button type="button" onClick={() => moveSection(s, 'up')} disabled={si === 0} className="grid h-5 w-7 place-items-center rounded text-muted-foreground disabled:opacity-20" aria-label="تقديم المستوى"><ArrowUp size={13} /></button>
+                      <button type="button" onClick={() => moveSection(s, 'down')} disabled={si === sections.length - 1} className="grid h-5 w-7 place-items-center rounded text-muted-foreground disabled:opacity-20" aria-label="تأخير المستوى"><ArrowDown size={13} /></button>
                     </span>
                   </span>
                 ))}
               </div>
-            ) : null}
+            </section>
+          ) : null}
 
-            {showMembers && current
-              ? <FoundationMembersPanel sectionId={current.id} sectionTitle={current.title} flash={flash} onChanged={() => reload()} />
-              : !current
-                ? <div className="px-5 py-12 text-center text-sm text-muted-foreground">أنشئ فاصلاً أولاً لتختار من يراه.</div>
-                : null}
-          </section>
-
-          {/* ═══ الدروس: داخل القسم الفرعي المختار أو كل المستوى ═══ */}
+          {/* ═══ المواضيع: العشرة دروس التي يراها الطالب تحت المستوى ═══ */}
           <section>
+
             <div className="mb-4 flex flex-wrap items-center gap-3">
               <h2 className="flex items-center gap-2 font-display text-lg font-extrabold text-primary">
                 <NotebookPen size={20} />
@@ -10698,6 +10698,9 @@ function TeacherFoundationPage() {
           </section>
         </div>
       )}
+
+      {/* نافذة «من يرى التأسيس؟» — الزر الوحيد يفتحها، والحفظ فوري */}
+      <FoundationMembersModal open={showMembers} onClose={() => setShowMembers(false)} flash={flash} />
 
       {sectionModal ? (
         <Modal title={sectionModal.mode === 'create' ? 'فاصل جديد في التدفّق' : 'تعديل الفاصل'} eyebrow="فاصل تنظيمي فقط — الطالب لا يفتحه" onClose={() => setSectionModal(null)} maxWidth="max-w-3xl">
@@ -10783,174 +10786,265 @@ function TeacherFoundationPage() {
     </Shell>
   );
 }
-function FoundationMembersPanel({ sectionId, sectionTitle, flash, onChanged }: { sectionId: string; sectionTitle?: string; flash: (t: string, tone?: 'ok' | 'err') => void; onChanged?: () => void }) {
+/* ═══════════════════════════════════════════════════════════════════════
+   نافذة «من يرى التأسيس؟»
+   ───────────────────────────────────────────────────────────────────────
+   مصفوفة (طالب × مستوى): تحت كل طالب زر «كل المستويات» ثم زر لكل مستوى.
+   الضغط يبدّل مستويات الطالب حالاً ويحفظ فوراً — بلا زر حفظ إضافي، فيرى
+   الأستاذ أثره قبل أن يطوي نافذة.
+   ═══════════════════════════════════════════════════════════════════════ */
+function FoundationMembersModal({ open, onClose, flash }: {
+  open: boolean;
+  onClose: () => void;
+  flash: (t: string, tone?: 'ok' | 'err') => void;
+}) {
+  const [sections, setSections] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [q, setQ] = useState('');
   const [gradeFilter, setGradeFilter] = useState('الكل');
-  const [schoolFilter, setSchoolFilter] = useState('الكل');
-  const cat = useCatalog();
+  const [busyUser, setBusyUser] = useState('');
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      const d = await jsonFetch(`/api/teacher/foundation/sections/${sectionId}/members`);
+      const d = await jsonFetch('/api/teacher/foundation/members');
+      setSections(Array.isArray(d?.sections) ? d.sections : []);
       setStudents(Array.isArray(d?.students) ? d.students : []);
-      setSelected(new Set(Array.isArray(d?.memberIds) ? d.memberIds : []));
-      setDirty(false);
     } catch (err: any) {
+      setSections([]);
       setStudents([]);
-      flash(err?.message || 'تعذر تحميل قائمة الطلاب', 'err');
+      flash(err?.message || 'تعذر تحميل الطلاب', 'err');
     } finally { setLoading(false); }
-  };
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [sectionId]);
+  }, [flash]);
 
-  const grades = useMemo(() => ['الكل', ...Array.from(new Set(students.map((s) => s.grade).filter(Boolean)))], [students]);
-  const schools = useMemo(() => ['الكل', ...Array.from(new Set(students.map((s) => s.school).filter(Boolean)))], [students]);
+  useEffect(() => { if (open) { void load(); } }, [open, load]);
+
+  const grades = useMemo(
+    () => ['الكل', ...Array.from(new Set(students.map((s) => s.grade).filter(Boolean)))],
+    [students],
+  );
+
   const shown = useMemo(() => {
     const needle = foundationFold(q);
     return students.filter((s) => {
       if (gradeFilter !== 'الكل' && s.grade !== gradeFilter) return false;
-      if (schoolFilter !== 'الكل' && (s.school || '') !== schoolFilter) return false;
       if (!needle) return true;
-      return foundationFold(s.name).includes(needle) || foundationFold(s.grade).includes(needle) || foundationFold(s.school).includes(needle);
+      return foundationFold(s.name).includes(needle)
+        || foundationFold(s.grade).includes(needle)
+        || foundationFold(s.school || '').includes(needle);
     });
-  }, [students, q, gradeFilter, schoolFilter]);
+  }, [students, q, gradeFilter]);
 
-  const toggle = (id: string) => {
-    setDirty(true);
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-  const save = async () => {
-    setSaving(true);
+  /** حفظ فوري: نحدّث الشاشة أولاً ثم نرسل — فلا ينتظر الأستاذ ثانية */
+  const apply = async (student: any, nextIds: string[]) => {
+    const before = students;
+    setBusyUser(student.id);
+    setStudents((prev) => prev.map((s) => (s.id === student.id ? { ...s, sectionIds: nextIds } : s)));
     try {
-      await jsonFetch(`/api/teacher/foundation/sections/${sectionId}/members`, { method: 'PUT', body: { memberIds: [...selected] } });
-      setDirty(false);
-      flash(`تم حفظ ${selected.size} طالب — يظهر لهم التأسيس فوراً`);
-      onChanged?.();
-    } catch (err: any) { flash(err?.message || 'تعذر حفظ الأعضاء', 'err'); }
-    finally { setSaving(false); }
+      await jsonFetch('/api/teacher/foundation/members', { method: 'PUT', body: { userId: student.id, sectionIds: nextIds } });
+    } catch (err: any) {
+      setStudents(before);
+      flash(`${student.name}: ${err?.message || 'تعذر الحفظ'}`, 'err');
+    } finally {
+      setBusyUser('');
+    }
   };
-  const selectAllShown = () => { setDirty(true); setSelected((prev) => { const next = new Set(prev); shown.forEach((s) => next.add(s.id)); return next; }); };
-  const clearShown = () => { setDirty(true); setSelected((prev) => { const next = new Set(prev); shown.forEach((s) => next.delete(s.id)); return next; }); };
+
+  const toggleLevel = (student: any, sectionId: string) => {
+    const has = student.sectionIds.includes(sectionId);
+    const next = has
+      ? student.sectionIds.filter((id: string) => id !== sectionId)
+      : [...student.sectionIds, sectionId];
+    void apply(student, next);
+  };
+  const toggleAll = (student: any) => {
+    const allOn = sections.length > 0 && sections.every((s) => student.sectionIds.includes(s.id));
+    void apply(student, allOn ? [] : sections.map((s) => s.id));
+  };
+
+  /** أدوات جماعية — على الطلاب الظاهرين فقط فلا تفتحFoundation لمن لا تراه */
+  const bulk = (mode: 'all' | 'none') => {
+    const ids = shown.map((s) => s.id);
+    if (!ids.length) return;
+    const target = mode === 'all' ? sections.map((s) => s.id) : [];
+    void (async () => {
+      setBusyUser('__bulk__');
+      setStudents((prev) => prev.map((s) => (ids.includes(s.id) ? { ...s, sectionIds: [...target] } : s)));
+      const results = await Promise.allSettled(
+        ids.map((id) => jsonFetch('/api/teacher/foundation/members', { method: 'PUT', body: { userId: id, sectionIds: target } })),
+      );
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      setBusyUser('');
+      if (failed) {
+        await load();
+        flash(`تعذّر الحفظ لـ ${failed} طالب`, 'err');
+      } else {
+        flash(mode === 'all' ? `فُتح التأسيس لـ ${ids.length} طالب` : `أُغلق التأسيس لـ ${ids.length} طالب`);
+      }
+    })();
+  };
+
+  if (!open) return null;
 
   return (
-    <section>
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <h2 className="flex items-center gap-2 font-display text-lg font-extrabold text-primary"><UsersRound size={20} /> من يرى «{sectionTitle || 'التأسيس'}»؟</h2>
-        <span className="rounded-xl bg-[#6a1b9a]/10 px-3 py-1.5 text-xs font-extrabold tabular-nums text-[#6a1b9a]">{selected.size} محدد</span>
-      </div>
-
-      <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
-        <div className="space-y-3 border-b border-border bg-gradient-to-l from-secondary/70 to-card p-4">
-          <div className="relative">
-            <Search size={19} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="ابحث باسم الطالب أو الصف..."
-              className={`${touchCls} pr-12`}
-              data-testid="input-foundation-member-search"
-            />
-            {q ? <button type="button" onClick={() => setQ('')} className="absolute left-3 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-xl text-muted-foreground active:bg-secondary" aria-label="مسح"><X size={18} /></button> : null}
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {grades.map((g) => (
-              <button
-                key={g}
-                type="button"
-                onClick={() => setGradeFilter(g)}
-                className={`min-h-[44px] rounded-xl px-4 text-xs font-extrabold transition-colors ${gradeFilter === g ? 'bg-primary text-primary-foreground shadow-sm' : 'border-2 border-border bg-card text-muted-foreground active:bg-secondary'}`}
-              >
-                {g}
-              </button>
-            ))}
-            {schools.length > 2 ? (
-              <>
-                <span className="mx-1 h-6 w-px self-center bg-border" />
-                <span className="flex items-center gap-1.5 text-xs font-extrabold text-[#6a1b9a]">
-                  <Landmark size={13} /> المدرسة:
-                </span>
-                {schools.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setSchoolFilter(s)}
-                    className={`min-h-[44px] rounded-xl px-4 text-xs font-extrabold transition-colors ${schoolFilter === s ? 'bg-[#6a1b9a] text-white shadow-sm' : 'border-2 border-border bg-card text-muted-foreground active:bg-secondary'}`}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </>
-            ) : null}
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={selectAllShown} className={`${touchBtnSoft} min-h-[44px] px-4 text-xs`}><Check size={15} /> تحديد المعروض ({shown.length})</button>
-            <button type="button" onClick={clearShown} className={`${touchBtnGhost} min-h-[44px] px-4 text-xs`}><X size={15} /> إلغاء المعروض</button>
-          </div>
+    <Modal
+      title="من يرى التأسيس؟"
+      eyebrow="لكل طالب تختار مستوياته — أو تفتح له الكل بضغطة واحدة"
+      onClose={onClose}
+      maxWidth="max-w-5xl"
+    >
+      <div className="space-y-4 pb-2">
+        {/* ── البحث ── */}
+        <div className="relative">
+          <Search size={19} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="ابحث باسم الطالب أو صفه أو مدرسته..."
+            className={`${touchCls} pr-12`}
+            data-testid="input-foundation-member-search"
+          />
+          {q ? (
+            <button type="button" onClick={() => setQ('')} className="absolute left-3 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-xl text-muted-foreground active:bg-secondary" aria-label="مسح البحث">
+              <X size={18} />
+            </button>
+          ) : null}
         </div>
 
-        <div className="max-h-[560px] overflow-y-auto overscroll-contain p-2">
-          {loading ? (
-            <p className="flex items-center justify-center gap-2.5 py-10 text-sm font-bold text-primary"><RefreshCw size={18} className="animate-spin" /> جارٍ تحميل الطلاب...</p>
-          ) : !shown.length ? (
-            <p className="px-4 py-10 text-center text-sm text-muted-foreground">لا يوجد طالب مطابق — جرّب اسماً آخر أو صفاً آخر.</p>
-          ) : (
-            <ul className="space-y-1.5">
-              {shown.map((s) => {
-                const on = selected.has(s.id);
-                return (
-                  <li key={s.id}>
+        {/* ── الفلاتر + الأدوات الجماعية ── */}
+        <div className="flex flex-wrap items-center gap-2">
+          {grades.map((g) => (
+            <button
+              key={g}
+              type="button"
+              onClick={() => setGradeFilter(g)}
+              data-testid={`button-member-grade-${g}`}
+              className={`min-h-[44px] rounded-xl px-4 text-xs font-extrabold transition-colors ${gradeFilter === g ? 'bg-primary text-primary-foreground shadow-sm' : 'border-2 border-border bg-card text-muted-foreground active:bg-secondary'}`}
+            >
+              {g}
+            </button>
+          ))}
+          <span className="ms-auto flex flex-wrap gap-2">
+            <button type="button" onClick={() => bulk('all')} disabled={busyUser === '__bulk__' || !shown.length} className={`${touchBtnSoft} px-4 py-2.5 text-xs`} data-testid="button-open-all">
+              <Sprout size={15} /> فتح للكل
+            </button>
+            <button type="button" onClick={() => bulk('none')} disabled={busyUser === '__bulk__' || !shown.length} className={`${touchBtnGhost} px-4 py-2.5 text-xs`} data-testid="button-close-all">
+              <Lock size={15} /> إغلاق للكل
+            </button>
+          </span>
+        </div>
+
+        {loading ? <StateNotice type="loading" /> : !students.length ? (
+          <div className="rounded-3xl border border-dashed border-border bg-card px-6 py-14 text-center">
+            <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-secondary text-primary"><UsersRound size={30} /></span>
+            <p className="font-display text-lg font-bold text-primary">لا يوجد طلاب بعد</p>
+            <p className="mt-2 text-sm text-muted-foreground">كل حساب يسجّل نفسه يظهر هنا تلقائياً.</p>
+          </div>
+        ) : !shown.length ? (
+          <div className="rounded-3xl border border-dashed border-border bg-card px-6 py-12 text-center">
+            <p className="font-semibold text-primary">لا نتائج</p>
+            <p className="mt-1 text-sm text-muted-foreground">جرّب اسماً آخر أو غيّر الصف.</p>
+          </div>
+        ) : (
+          /* ── صف لكل طالب ── */
+          <div className="space-y-2.5">
+            {shown.map((s) => {
+              const allOn = sections.length > 0 && sections.every((x) => s.sectionIds.includes(x.id));
+              const noneOn = s.sectionIds.length === 0;
+              const busy = busyUser === s.id;
+              const openNames = sections.filter((x) => s.sectionIds.includes(x.id)).map((x) => x.subtitle || x.title);
+              return (
+                <div
+                  key={s.id}
+                  data-testid={`member-row-${s.id}`}
+                  className={`overflow-hidden rounded-3xl border bg-card transition-all ${noneOn ? 'border-border opacity-75' : 'border-[#6a1b9a]/35'} ${busy ? 'opacity-60' : ''}`}
+                >
+                  <div className="flex flex-wrap items-center gap-3 p-3 sm:gap-4 sm:p-4">
+                    <div className="flex min-w-[190px] flex-1 items-center gap-3">
+                      <Avatar name={s.name} src={s.avatarUrl} />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-extrabold text-primary">{s.name}</p>
+                        <p className="mt-0.5 truncate text-[11px] font-semibold text-muted-foreground">
+                          {[s.grade, s.section, s.school].filter(Boolean).join(' · ') || 'بلا بيانات'}
+                        </p>
+                      </div>
+                    </div>
+
                     <button
                       type="button"
-                      onClick={() => toggle(s.id)}
-                      className={`flex min-h-[60px] w-full items-center gap-3 rounded-2xl border-2 p-3 text-right transition-colors ${on ? 'border-primary bg-primary/8' : 'border-transparent bg-background active:bg-secondary/50'}`}
-                      data-testid={`member-${s.id}`}
+                      onClick={() => toggleAll(s)}
+                      aria-pressed={allOn}
+                      data-testid={`button-toggle-all-${s.id}`}
+                      className={`inline-flex min-h-[52px] shrink-0 items-center gap-2 rounded-2xl px-5 text-sm font-extrabold transition-all active:scale-[.97] ${
+                        allOn
+                          ? 'bg-gradient-to-l from-[#6a1b9a] to-[#8a508f] text-white shadow-lg shadow-[#6a1b9a]/30'
+                          : 'border-2 border-border bg-card text-muted-foreground'
+                      }`}
                     >
-                      <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl ${on ? 'bg-primary text-primary-foreground' : 'border-2 border-border bg-card text-transparent'}`}>
-                        <Check size={17} />
-                      </span>
-                      {s.avatarUrl
-                        ? <img src={s.avatarUrl} alt="" className="h-11 w-11 shrink-0 rounded-xl object-cover" />
-                        : <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl text-sm font-extrabold ${on ? 'bg-primary text-primary-foreground' : 'bg-secondary text-primary'}`}>{(s.name || '؟').slice(0, 1)}</span>}
-                      <span className="min-w-0 flex-1">
-                        <span className={`block truncate text-[15px] font-extrabold ${on ? 'text-primary' : 'text-muted-foreground'}`}>{s.name}</span>
-                        <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] font-bold text-muted-foreground">
-                          <span className="rounded-md bg-secondary px-1.5 py-0.5">{s.grade}</span>
-                          {s.section ? <span className="rounded-md bg-secondary px-1.5 py-0.5">قسم {s.section}</span> : null}
-                          {s.gender ? <span className="rounded-md bg-secondary px-1.5 py-0.5">{s.gender}</span> : null}
-                        </span>
-                      </span>
+                      {allOn ? <Check size={17} /> : <Sprout size={17} />}
+                      كل المستويات
                     </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
 
-        <div className="sticky bottom-0 border-t border-border bg-card/95 p-3 backdrop-blur">
-          <button type="button" onClick={save} disabled={saving || loading} className={`${touchBtnPrimary} w-full ${dirty ? 'ring-4 ring-accent/40' : ''}`} data-testid="button-save-foundation-members">
-            <Save size={18} /> {saving ? 'جارٍ الحفظ...' : dirty ? `حفظ التغييرات — ${selected.size} طالباً` : `محفوظ — ${selected.size} طالباً`}
-          </button>
-          <p className="mt-2 text-center text-[11px] leading-5 text-muted-foreground">
-            لا يرى الطالب القسم إلا إذا ظهر اسمه هنا — والحفظ يُفعّل الدخول فوراً.
-          </p>
-        </div>
+                    <div className="flex flex-wrap gap-2">
+                      {sections.map((sec, i) => {
+                        const on = s.sectionIds.includes(sec.id);
+                        return (
+                          <button
+                            key={sec.id}
+                            type="button"
+                            onClick={() => toggleLevel(s, sec.id)}
+                            aria-pressed={on}
+                            data-testid={`button-toggle-${s.id}-${sec.id}`}
+                            title={sec.title}
+                            className={`inline-flex min-h-[52px] min-w-[78px] flex-col items-center justify-center rounded-2xl px-3 text-center transition-all active:scale-[.97] ${
+                              on ? 'text-white shadow-md' : 'border-2 border-border bg-card text-muted-foreground'
+                            }`}
+                            style={on ? { background: `linear-gradient(135deg, ${sec.color}, ${sec.color}bb)` } : undefined}
+                          >
+                            <span className="text-[10px] font-extrabold leading-none opacity-85">
+                              {sec.subtitle || `م${i + 1}`}
+                            </span>
+                            <span className="mt-1 text-[11px] font-extrabold leading-tight">
+                              {on ? 'مفتوح' : 'مغلق'}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* سطر النتيجة — يقول بالحرف ما الذي يرى الطالب */}
+                  <div className="flex items-center gap-2 border-t border-border bg-secondary/40 px-4 py-2 text-[11px] font-bold">
+                    {busy ? (
+                      <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                        <RefreshCw size={12} className="animate-spin" /> جارٍ الحفظ...
+                      </span>
+                    ) : noneOn ? (
+                      <span className="text-muted-foreground">لا يرى التأسيس — مخفي عنه بالكامل</span>
+                    ) : allOn ? (
+                      <span className="inline-flex items-center gap-1.5 text-[#6a1b9a]">
+                        <CheckCircle2 size={13} /> يرى كل المستويات ({s.sectionIds.length})
+                      </span>
+                    ) : (
+                      <span className="truncate text-muted-foreground">
+                        يرى {s.sectionIds.length} من {sections.length} · {openNames.join('، ')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <p className="pt-1 text-center text-[11px] font-bold text-muted-foreground">
+          {shown.length} طالب · {sections.length} مستوى — التغيير يُحفظ فور الضغط بلا زر حفظ.
+        </p>
       </div>
-    </section>
+    </Modal>
   );
 }
-
 /* ══════════════════ نموذج الدرس (لمس) ══════════════════ */
 function FoundationLessonForm({ form, setForm, saving, error, submitLabel, onSubmit, onCancel }: {
   form: any;
