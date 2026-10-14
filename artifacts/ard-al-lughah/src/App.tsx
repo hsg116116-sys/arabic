@@ -2267,9 +2267,8 @@ function AuthCallback() {
           if (cancelled) return;
           resetAuthGate();
           if (result.needsSetup) { setLocation('/auth/complete'); return; }
-          const back = takeReturnUrl();
-          setLocation(back && back.startsWith('/student') ? back : '/student');
-          setLocation(back && back.startsWith('/student') ? back : '/student');
+          // التوجيه حسب الدور من السيرفر: الأدمن → /teacher مباشرة، والطالب → رابطه المحفوظ أو صفحته
+          redirectAfterAuth(setLocation);
         }, 800);
       } catch (err: any) {
         if (!cancelled) {
