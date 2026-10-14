@@ -73,6 +73,8 @@ type ReportCtx = {
   lessonsBySection: Record<string, string[]>;
   memberByUser: Record<string, Set<string>>;
   doneByUser: Record<string, Set<string>>;
+  /** آخر نشاط لكل طالب (أحدث تسليم/محاولة/إنجاز) — للترتيب "الأحدث دخولاً" */
+  lastByUser: Record<string, string>;
   splitMap: Record<string, boolean>;
 };
 
@@ -91,17 +93,25 @@ async function loadReportCtx(): Promise<ReportCtx> {
     splitMap,
   ] = await Promise.all([
     supabaseQuery<any[]>("assessments?order=available_date.asc&limit=500"),
-    supabaseQuery<any[]>("assessment_attempts?select=user_id,assessment_id,score&limit=20000"),
+    supabaseQuery<any[]>("assessment_attempts?select=user_id,assessment_id,score,completed_at&limit=20000"),
     supabaseQuery<any[]>("assignments?order=due_date.asc&limit=500"),
-    supabaseQuery<any[]>("assignment_submissions?select=user_id,assignment_id,score&limit=20000"),
+    supabaseQuery<any[]>("assignment_submissions?select=user_id,assignment_id,score,submitted_at&limit=20000"),
     supabaseQuery<any[]>("notebook_tasks?order=due_date.asc&limit=500"),
-    supabaseQuery<any[]>("notebook_submissions?select=user_id,task_id,score&limit=20000"),
+    supabaseQuery<any[]>("notebook_submissions?select=user_id,task_id,score,submitted_at&limit=20000"),
     supabaseQuery<any[]>("foundation_sections?is_visible=eq.true&order=sort_order.asc&limit=200"),
     supabaseQuery<any[]>("foundation_lessons?is_visible=eq.true&select=id,section_id&limit=3000"),
     supabaseQuery<any[]>("foundation_members?select=section_id,user_id&limit=20000"),
-    supabaseQuery<any[]>("foundation_progress?select=user_id,lesson_id&limit=20000"),
+    supabaseQuery<any[]>("foundation_progress?select=user_id,lesson_id,completed_at&limit=20000"),
     getSplitMap(),
   ]);
+
+  const touchLast = (map: Record<string, string>, userId: unknown, at: unknown) => {
+    const u = String(userId || "");
+    const t = String(at || "");
+    if (!u || !t) return;
+    if (!map[u] || t > map[u]) map[u] = t;
+  };
+  const lastByUser: ReportCtx["lastByUser"] = {};
 
   const attemptsByUser: ReportCtx["attemptsByUser"] = {};
   for (const a of attempts || []) {
@@ -111,23 +121,27 @@ async function loadReportCtx(): Promise<ReportCtx> {
     if (prev === undefined || cur > prev) {
       (attemptsByUser[a.user_id] ||= {})[a.assessment_id] = cur;
     }
+    touchLast(lastByUser, a.user_id, a.completed_at);
   }
   const hwByUser: ReportCtx["hwByUser"] = {};
   for (const s of hwSubs || []) {
     if (!s?.user_id) continue;
     (hwByUser[s.user_id] ||= {})[s.assignment_id] =
       typeof s.score === "number" ? num(s.score) : null;
+    touchLast(lastByUser, s.user_id, s.submitted_at);
   }
   const nbByUser: ReportCtx["nbByUser"] = {};
   for (const s of nbSubs || []) {
     if (!s?.user_id) continue;
     (nbByUser[s.user_id] ||= {})[s.task_id] =
       typeof s.score === "number" ? num(s.score) : null;
+    touchLast(lastByUser, s.user_id, s.submitted_at);
   }
   const doneByUser: ReportCtx["doneByUser"] = {};
   for (const p of fProgress || []) {
     if (!p.user_id) continue;
     (doneByUser[p.user_id] ||= new Set()).add(String(p.lesson_id));
+    touchLast(lastByUser, p.user_id, p.completed_at);
   }
   const memberByUser: ReportCtx["memberByUser"] = {};
   for (const m of fMembers || []) {
@@ -148,6 +162,7 @@ async function loadReportCtx(): Promise<ReportCtx> {
     lessonsBySection,
     memberByUser,
     doneByUser,
+    lastByUser,
     splitMap,
   };
 }
@@ -211,6 +226,7 @@ function computeStudentRow(p: any, ctx: ReportCtx) {
     missing,
     overall,
     level: levelOf(overall),
+    lastActive: ctx.lastByUser[p.id] || "",
   };
 }
 

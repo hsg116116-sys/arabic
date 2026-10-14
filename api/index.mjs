@@ -38978,17 +38978,24 @@ async function loadReportCtx() {
     splitMap
   ] = await Promise.all([
     supabaseQuery("assessments?order=available_date.asc&limit=500"),
-    supabaseQuery("assessment_attempts?select=user_id,assessment_id,score&limit=20000"),
+    supabaseQuery("assessment_attempts?select=user_id,assessment_id,score,completed_at&limit=20000"),
     supabaseQuery("assignments?order=due_date.asc&limit=500"),
-    supabaseQuery("assignment_submissions?select=user_id,assignment_id,score&limit=20000"),
+    supabaseQuery("assignment_submissions?select=user_id,assignment_id,score,submitted_at&limit=20000"),
     supabaseQuery("notebook_tasks?order=due_date.asc&limit=500"),
-    supabaseQuery("notebook_submissions?select=user_id,task_id,score&limit=20000"),
+    supabaseQuery("notebook_submissions?select=user_id,task_id,score,submitted_at&limit=20000"),
     supabaseQuery("foundation_sections?is_visible=eq.true&order=sort_order.asc&limit=200"),
     supabaseQuery("foundation_lessons?is_visible=eq.true&select=id,section_id&limit=3000"),
     supabaseQuery("foundation_members?select=section_id,user_id&limit=20000"),
-    supabaseQuery("foundation_progress?select=user_id,lesson_id&limit=20000"),
+    supabaseQuery("foundation_progress?select=user_id,lesson_id,completed_at&limit=20000"),
     getSplitMap()
   ]);
+  const touchLast = (map, userId, at) => {
+    const u = String(userId || "");
+    const t = String(at || "");
+    if (!u || !t) return;
+    if (!map[u] || t > map[u]) map[u] = t;
+  };
+  const lastByUser = {};
   const attemptsByUser = {};
   for (const a of attempts || []) {
     if (!a.user_id) continue;
@@ -38997,21 +39004,25 @@ async function loadReportCtx() {
     if (prev === void 0 || cur > prev) {
       (attemptsByUser[a.user_id] ||= {})[a.assessment_id] = cur;
     }
+    touchLast(lastByUser, a.user_id, a.completed_at);
   }
   const hwByUser = {};
   for (const s of hwSubs || []) {
     if (!s?.user_id) continue;
     (hwByUser[s.user_id] ||= {})[s.assignment_id] = typeof s.score === "number" ? num(s.score) : null;
+    touchLast(lastByUser, s.user_id, s.submitted_at);
   }
   const nbByUser = {};
   for (const s of nbSubs || []) {
     if (!s?.user_id) continue;
     (nbByUser[s.user_id] ||= {})[s.task_id] = typeof s.score === "number" ? num(s.score) : null;
+    touchLast(lastByUser, s.user_id, s.submitted_at);
   }
   const doneByUser = {};
   for (const p of fProgress || []) {
     if (!p.user_id) continue;
     (doneByUser[p.user_id] ||= /* @__PURE__ */ new Set()).add(String(p.lesson_id));
+    touchLast(lastByUser, p.user_id, p.completed_at);
   }
   const memberByUser = {};
   for (const m of fMembers || []) {
@@ -39031,6 +39042,7 @@ async function loadReportCtx() {
     lessonsBySection,
     memberByUser,
     doneByUser,
+    lastByUser,
     splitMap
   };
 }
@@ -39079,7 +39091,8 @@ function computeStudentRow(p, ctx) {
     foundation: { inFoundation: mySections.length > 0, levels: mySections.length, done: fDone, total: fTotal, percent: pctOf(fDone, fTotal) },
     missing,
     overall,
-    level: levelOf(overall)
+    level: levelOf(overall),
+    lastActive: ctx.lastByUser[p.id] || ""
   };
 }
 function cohortCompare(rows) {

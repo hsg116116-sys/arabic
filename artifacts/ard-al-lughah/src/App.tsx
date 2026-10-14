@@ -5180,6 +5180,120 @@ function reportTone(pct: number | null): string {
   return 'bg-destructive/10 text-destructive';
 }
 
+/* ═══════════════ تصدير ملف الطالب إلى Excel ═══════════════ */
+function exportStudentFileExcel(file: any) {
+  const s = file.student || {};
+  const d = (v: any) => String(v || '').slice(0, 10);
+  const st = (done: boolean, score: any, extra = '') =>
+    done ? (score === null || score === undefined ? `مُسلَّم — بانتظار التصحيح${extra}` : `${score}${extra}`) : 'لم يُسلَّم';
+
+  const sheets: SheetSpec[] = [
+    {
+      name: 'الملف',
+      widths: [24, 44],
+      rows: [
+        ['الاسم', s.name || ''],
+        ['المدرسة', s.school || ''],
+        ['الصف', s.grade || ''],
+        ['الشعبة', s.section || ''],
+        ['الجنس', s.gender || ''],
+        ['الهاتف', s.phone || ''],
+        ['البريد', s.email || ''],
+        ['المجموع', file.overall?.percent === null || file.overall?.percent === undefined ? 'بلا علامات' : `${file.overall.percent}%`],
+        ['التقدير', file.overall?.level || ''],
+        ['الاختبارات', file.exams?.avg === null ? 'بلا علامات' : `${file.exams.avg}% (${file.exams.taken}/${file.exams.total})`],
+        ['الواجبات', `${file.homework?.done}/${file.homework?.total} — ${file.homework?.earned}/${file.homework?.possible}`],
+        ['الدفتر', `${file.notebook?.done}/${file.notebook?.total} — ${file.notebook?.earned}/${file.notebook?.possible}`],
+        ['التأسيس', file.foundation?.inFoundation ? `${file.foundation.done}/${file.foundation.total}` : 'غير مشارك'],
+        ['النواقص', file.missing?.count ?? 0],
+      ],
+    },
+    {
+      name: 'الاختبارات',
+      widths: [34, 14, 12, 14, 12],
+      rows: [
+        ['الاختبار', 'التاريخ', 'الأسئلة', 'الأفضل %', 'المحاولات'],
+        ...(file.exams?.items || []).map((e: any) => [
+          e.title || '',
+          d(e.date),
+          e.questions ?? '',
+          e.best === null || e.best === undefined ? 'لم يتقدم' : e.best,
+          (e.attempts || []).length,
+        ]),
+      ],
+    },
+    {
+      name: 'الواجبات',
+      widths: [34, 12, 12, 16, 14, 30],
+      rows: [
+        ['الواجب', 'القصوى', 'العلامة', 'الحالة', 'تاريخ التسليم', 'ملاحظة الأستاذ'],
+        ...(file.homework?.items || []).map((h: any) => [
+          h.title || '',
+          h.points ?? '',
+          h.score === null || h.score === undefined ? (h.status === 'done' ? 'بانتظار التصحيح' : 'لم يُسلَّم') : h.score,
+          h.status === 'done' ? (h.subStatus || 'مُسلَّم') : 'ناقص',
+          d(h.submittedAt),
+          h.feedback || '',
+        ]),
+      ],
+    },
+    {
+      name: 'الدفتر',
+      widths: [34, 12, 12, 16, 14, 30],
+      rows: [
+        ['المهمة', 'القصوى', 'العلامة', 'الحالة', 'تاريخ التسليم', 'ملاحظة الأستاذ'],
+        ...(file.notebook?.items || []).map((t: any) => [
+          t.title || '',
+          t.points ?? '',
+          t.score === null || t.score === undefined ? (t.status === 'done' ? 'بانتظار التصحيح' : 'لم يُسلَّم') : t.score,
+          t.status === 'done' ? (t.subStatus || 'مُسلَّم') : 'ناقص',
+          d(t.submittedAt),
+          t.feedback || '',
+        ]),
+      ],
+    },
+    {
+      name: 'التأسيس',
+      widths: [30, 16, 14, 12],
+      rows: [
+        ['المستوى', 'المنجز', 'الكلي', 'النسبة %'],
+        ...(file.foundation?.levels || []).map((l: any) => [l.title || '', l.done ?? '', l.total ?? '', l.percent ?? '']),
+      ],
+    },
+    {
+      name: 'النواقص',
+      widths: [16, 52],
+      rows: [
+        ['النوع', 'العنوان'],
+        ...(file.missing?.exams || []).map((t: string) => ['اختبار', t]),
+        ...(file.missing?.homework || []).map((t: string) => ['واجب', t]),
+        ...(file.missing?.notebook || []).map((t: string) => ['مهمة دفتر', t]),
+      ],
+    },
+  ];
+
+  if (file.compare && file.compare.count > 1) {
+    const c = file.compare;
+    sheets.push({
+      name: 'المقارنة',
+      widths: [16, 16, 20],
+      rows: [
+        ['القسم', 'الطالب %', `متوسط ${c.count} زملاء %`],
+        ['المجموع', file.overall?.percent ?? '—', c.overall ?? '—'],
+        ['الاختبارات', file.exams?.avg ?? '—', c.exams ?? '—'],
+        ['الواجبات', file.homework?.percent ?? '—', c.homework ?? '—'],
+        ['الدفتر', file.notebook?.percent ?? '—', c.notebook ?? '—'],
+        ['التأسيس', file.foundation?.percent ?? '—', c.foundation ?? '—'],
+      ],
+    });
+  }
+
+  downloadWorkbook(reportFileName(`كشف ${s.name || 'طالب'}`), sheets, {
+    title: `كشف علامات — ${s.name || ''}`,
+    subject: `${s.school || ''} · ${s.grade || ''}`,
+  });
+}
+
 function TeacherReportPage() {
   useCatalog();
   const [school, setSchool] = useState('');
@@ -5224,7 +5338,7 @@ function TeacherReportPage() {
       .catch((e: Error) => setFileErr(e?.message || 'تعذر فتح ملف الطالب'))
       .finally(() => setFileLoading(false));
   };
-  const [sortBy, setSortBy] = useState<'name' | 'overall' | 'missing'>('name');
+  const [sortBy, setSortBy] = useState<'active' | 'name' | 'overall' | 'missing'>('active');
 
   const students: any[] = Array.isArray(overview?.students) ? overview.students : [];
   const schools: string[] = Array.isArray(overview?.schools) && overview.schools.length ? overview.schools : [];
@@ -5236,6 +5350,14 @@ function TeacherReportPage() {
       list.sort((a, b) => (typeof b.overall === 'number' ? b.overall : -1) - (typeof a.overall === 'number' ? a.overall : -1));
     } else if (sortBy === 'missing') {
       list.sort((a, b) => (Number(b.missing) || 0) - (Number(a.missing) || 0));
+    } else if (sortBy === 'active') {
+      // الأحدث نشاطاً أولاً — ومن بلا نشاط في الآخر ثم أبجدياً
+      list.sort((a, b) => {
+        const ta = String(a.lastActive || '');
+        const tb = String(b.lastActive || '');
+        if (tb !== ta) return tb > ta ? 1 : -1;
+        return String(a.name || '').localeCompare(String(b.name || ''), 'ar');
+      });
     }
     return list;
   }, [students, q, sortBy]);
@@ -5286,6 +5408,7 @@ function TeacherReportPage() {
           </div>
           <div className="flex shrink-0 gap-1.5 rounded-2xl border border-border bg-card p-1.5" data-testid="report-sort">
             {([
+              { id: 'active', label: 'الأحدث نشاطاً' },
               { id: 'name', label: 'بالاسم' },
               { id: 'overall', label: 'الأعلى علامة' },
               { id: 'missing', label: 'الأكثر نواقص' },
@@ -5367,19 +5490,42 @@ function TeacherReportPage() {
       )}
 
       {/* ── ملف الطالب الكامل ── */}
+      {/* ── ملف الطالب: نافذة مستقلة فيها كل شيء ── */}
       {selectedId ? (
-        <div className="mt-8" data-testid="report-student-file">
-          {fileLoading ? <StateNotice type="loading" /> : fileErr || !file ? (
-            <StateNotice type="error" onRetry={() => openFile(selectedId)} />
-          ) : (
-            <ReportStudentFile
-              file={file}
-              onClose={() => { setSelectedId(''); setFile(null); }}
-              onView={(kind, itemId, title) => setViewing({ kind, itemId, title })}
-              onReload={() => { loadOverview(); openFile(selectedId); }}
-            />
-          )}
-        </div>
+        <Modal
+          title={file?.student?.name || 'ملف الطالب'}
+          eyebrow="كشف العلامات الكامل — واجباته ودفتره وامتحاناته وعلاماته"
+          onClose={() => { setSelectedId(''); setFile(null); }}
+          maxWidth="max-w-5xl"
+        >
+          <div data-testid="report-student-file">
+            {fileLoading ? <StateNotice type="loading" /> : fileErr || !file ? (
+              <StateNotice type="error" onRetry={() => openFile(selectedId)} />
+            ) : (
+              <>
+                <div className="mb-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => exportStudentFileExcel(file)}
+                    className="inline-flex min-h-[52px] items-center gap-2 rounded-2xl bg-[#1d6f42] px-5 text-sm font-extrabold text-white shadow-md transition-all hover:-translate-y-0.5 active:scale-[.98]"
+                    data-testid="button-export-file-excel"
+                  >
+                    <Download size={17} /> تصدير ملف Excel
+                  </button>
+                  <span className="self-center text-[11px] font-bold text-muted-foreground">
+                    7 أوراق: الملف · الاختبارات · الواجبات · الدفتر · التأسيس · النواقص · المقارنة
+                  </span>
+                </div>
+                <ReportStudentFile
+                  file={file}
+                  onClose={() => { setSelectedId(''); setFile(null); }}
+                  onView={(kind, itemId, title) => setViewing({ kind, itemId, title })}
+                  onReload={() => { loadOverview(); openFile(selectedId); }}
+                />
+              </>
+            )}
+          </div>
+        </Modal>
       ) : null}
 
       {viewing && file ? (
