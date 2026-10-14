@@ -39,6 +39,7 @@ import {
   CircleAlert,
   BookCopy,
   Camera,
+  Copy,
   ClipboardCheck,
   Clock3,
   Download,
@@ -11321,6 +11322,53 @@ function FoundationHtmlView({ content, fileUrl, title }: { content?: string; fil
 }
 
 /* ══════════════ محتوى الدرس كما يراه الطالب (نفسه في معاينة الأستاذ) ══════════════ */
+/* ═══════════════════════════════════════════════════════════════════════
+   عرض عنصر واحد من عناصر الدرس (طالب ومعاينة المعلم) — نفس الشكل هنا وهناك.
+   ═══════════════════════════════════════════════════════════════════════ */
+function FoundationBlockView({ block, lesson, compact = false, onOpenImages }: {
+  block: LessonBlock;
+  lesson: any;
+  compact?: boolean;
+  onOpenImages?: (images: string[], index: number) => void;
+}) {
+  if (block.type === 'text' && String(block.text || '').trim()) {
+    return (
+      <div className="rounded-3xl border border-border bg-card p-5 shadow-sm sm:p-7">
+        <div className="whitespace-pre-line font-serif text-[17px] font-medium leading-[2.1] text-primary">{String(block.text).trim()}</div>
+      </div>
+    );
+  }
+  if (block.type === 'images' && (block.images || []).filter(Boolean).length) {
+    const images = (block.images || []).filter(Boolean);
+    return (
+      <div className="rounded-3xl border border-border p-5 shadow-sm">
+        <div className={`grid gap-3 ${compact ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3'}`}>
+          {images.map((src, idx) => (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => onOpenImages?.(images, idx)}
+              className="group relative aspect-[4/3] overflow-hidden rounded-2xl border border-border bg-secondary active:scale-[.98]"
+            >
+              <img src={src} alt={`صورة ${idx + 1}`} loading="lazy" className="h-full w-full object-cover transition-transform duration-300 group-active:scale-105" />
+              <span className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-xl bg-black/55 px-2.5 py-1 text-[10px] font-extrabold text-white backdrop-blur-sm">
+                <Maximize2 size={12} /> تكبير
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (block.type === 'video' && String(block.url || '').trim()) {
+    return <FoundationVideoPlayer url={String(block.url).trim()} caption={block.caption} />;
+  }
+  if (block.type === 'html' && (String(block.html || '').trim() || String(block.fileUrl || '').trim())) {
+    return <FoundationHtmlView content={String(block.html || '')} fileUrl={String(block.fileUrl || '')} title={lesson?.title} />;
+  }
+  return null;
+}
+
 function FoundationLessonBody({ lesson, compact = false }: { lesson: any; compact?: boolean }) {
   const [box, setBox] = useState<{ images: string[]; index: number } | null>(null);
   if (!lesson) return null;
@@ -11329,6 +11377,43 @@ function FoundationLessonBody({ lesson, compact = false }: { lesson: any; compac
   const video = String(lesson.videoUrl || '').trim();
   const html = String(lesson.htmlContent || '').trim();
   const htmlFile = String(lesson.htmlFileUrl || '').trim();
+  const blocks = parseLessonBlocks(lesson.bodyText);
+
+  // درس بالعناصر: يُعرض كل عنصر بترتيبه — نص، صور، فيديو، HTML/موقع
+  if (blocks) {
+    const hasVisible = blocks.some((b) =>
+      (b.type === 'text' && String(b.text || '').trim()) ||
+      (b.type === 'images' && (b.images || []).some(Boolean)) ||
+      (b.type === 'video' && String(b.url || '').trim()) ||
+      (b.type === 'html' && (String(b.html || '').trim() || String(b.fileUrl || '').trim())),
+    );
+    return (
+      <div className="space-y-6">
+        {lesson.coverUrl ? (
+          <div className="overflow-hidden rounded-3xl border border-border shadow-md">
+            <img src={lesson.coverUrl} alt={lesson.title} className="max-h-[46vh] w-full object-cover" data-testid="img-foundation-cover" />
+          </div>
+        ) : null}
+
+        {lesson.description ? (
+          <p className="rounded-3xl border-r-4 border-accent bg-secondary/50 p-5 text-[15px] font-semibold leading-8 text-primary">{lesson.description}</p>
+        ) : null}
+
+        {blocks.map((b, i) => (
+          <FoundationBlockView key={b.id || i} block={b} lesson={lesson} compact={compact} onOpenImages={(images, index) => setBox({ images, index })} />
+        ))}
+
+        {!hasVisible ? (
+          <p className="rounded-3xl border border-dashed border-border bg-card px-6 py-10 text-center text-sm text-muted-foreground">
+            هذا الدرس لم يُملأ بعد — أنتظر الأستاذ.
+          </p>
+        ) : null}
+
+        {box ? <FoundationLightbox images={box.images} start={box.index} onClose={() => setBox(null)} /> : null}
+      </div>
+    );
+  }
+
 
   return (
     <div className="space-y-6">
@@ -11414,6 +11499,516 @@ function Toast({ msg }: { msg: { text: string; tone: 'ok' | 'err' } | null }) {
    ليس أقساماً منفصلة ولا كرتات: كل ما تضيفه ينزل في قائمة واحدة بالترتيب
    الذي تريده تماماً — نص تحت نص، صورة تحت صورة، فيديو تحتهم.
    ═══════════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════
+   كتل الدرس: عناصر متعددة مرتبة داخل الدرس الواحد.
+   ───────────────────────────────────────────────────────────────────────
+   التخزين في body_text نفسه كمغلف JSON — بلا أعمدة جديدة:
+     {"v":1,"blocks":[{"id":"b1","type":"text","text":"..."}, ...]}
+   الدرس القديم (نص عادي لا يبدأ بـ {) يُقرأ كما كان. والمعاينة والقوائم
+   تفهم المغلف تلقائياً.
+   ═══════════════════════════════════════════════════════════════════════ */
+type LessonBlock = {
+  id: string;
+  type: 'text' | 'images' | 'video' | 'html';
+  text?: string;
+  images?: string[];
+  url?: string;
+  caption?: string;
+  html?: string;
+  fileUrl?: string;
+};
+
+function parseLessonBlocks(bodyText: unknown): LessonBlock[] | null {
+  try {
+    const raw = String(bodyText ?? '');
+    if (!raw || raw[0] !== '{') return null;
+    const o = JSON.parse(raw);
+    if (!o || o.v !== 1 || !Array.isArray(o.blocks)) return null;
+    const out = (o.blocks as any[]).filter((b) => b && typeof b.type === 'string');
+    return out.length ? (out as LessonBlock[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+function lessonBlocksEnvelope(blocks: LessonBlock[]): string {
+  return JSON.stringify({ v: 1, blocks });
+}
+
+function newBlockId(): string {
+  return 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+/** درس قديم أحادي المحتوى → كتل (بنفس ترتيب عرضه القديم) */
+function legacyLessonToBlocks(l: any): LessonBlock[] {
+  const blocks: LessonBlock[] = [];
+  if (!parseLessonBlocks(l?.bodyText)) {
+    const text = String(l?.bodyText || '').trim();
+    if (text) blocks.push({ id: newBlockId(), type: 'text', text });
+  }
+  const images = Array.isArray(l?.images) ? (l.images as string[]).filter(Boolean) : [];
+  if (images.length) blocks.push({ id: newBlockId(), type: 'images', images });
+  if (String(l?.videoUrl || '').trim()) {
+    blocks.push({ id: newBlockId(), type: 'video', url: String(l.videoUrl).trim(), caption: String(l?.videoCaption || '') });
+  }
+  if (String(l?.htmlContent || '').trim() || String(l?.htmlFileUrl || '').trim()) {
+    blocks.push({ id: newBlockId(), type: 'html', html: String(l?.htmlContent || ''), fileUrl: String(l?.htmlFileUrl || '') });
+  }
+  return blocks;
+}
+
+const LESSON_BLOCK_TYPES = [
+  { id: 'text', label: 'نص', hint: 'فقرة شرح', Icon: FileText, tone: '#17413f' },
+  { id: 'images', label: 'صور', hint: 'معرض صور', Icon: ImagePlus, tone: '#a85d3d' },
+  { id: 'video', label: 'فيديو', hint: 'رفع أو رابط', Icon: Video, tone: '#0d47a1' },
+  { id: 'html', label: 'HTML / موقع', hint: 'كود أو ملف أو حزمة', Icon: FileCode2, tone: '#6a1b9a' },
+] as const;
+
+/* ═══════════════════════════════════════════════════════════════════════
+   صفحة الدرس (المعلم): يفتح الدرس لحاله، ويضيف فيه عناصر متعددة
+   (نص، صور، فيديو، HTML/موقع مضغوط) ويرتبها ويعدلها — ثم يحفظ مرة واحدة.
+   تحت المحرر معاينة حية كما سيراها الطالب تماماً.
+   ═══════════════════════════════════════════════════════════════════════ */
+function TeacherFoundationLessonPage() {
+  const [, setLocation] = useLocation();
+  const { lessonId = '' } = useParams();
+  const [lesson, setLesson] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [isVisible, setIsVisible] = useState(true);
+  const [isLocked, setIsLocked] = useState(false);
+  const [blocks, setBlocks] = useState<LessonBlock[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [uploadingImg, setUploadingImg] = useState(false);
+  const [readingHtml, setReadingHtml] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setErr('');
+    try {
+      const full = await jsonFetch(`/api/teacher/foundation/lessons/${lessonId}`);
+      setLesson(full);
+      setTitle(String(full.title || ''));
+      setDescription(String(full.description || ''));
+      setIsVisible(full.isVisible !== false);
+      setIsLocked(!!full.isLocked);
+      setBlocks(parseLessonBlocks(full.bodyText) || legacyLessonToBlocks(full));
+      setDirty(false);
+    } catch (e: any) {
+      setErr(e?.message || 'تعذر فتح الدرس');
+      setLesson(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [lessonId]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const touch = () => setDirty(true);
+  const patchBlock = (id: string, patch: Partial<LessonBlock>) => {
+    setBlocks((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+    touch();
+  };
+  const moveBlock = (id: string, dir: 1 | -1) => {
+    setBlocks((prev) => {
+      const i = prev.findIndex((b) => b.id === id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+    touch();
+  };
+  const removeBlock = (id: string) => {
+    if (!window.confirm('حذف هذا العنصر من الدرس؟')) return;
+    setBlocks((prev) => prev.filter((b) => b.id !== id));
+    touch();
+  };
+  const duplicateBlock = (id: string) => {
+    setBlocks((prev) => {
+      const i = prev.findIndex((b) => b.id === id);
+      if (i < 0) return prev;
+      const copy = { ...prev[i], id: newBlockId(), images: prev[i].images ? [...prev[i].images!] : undefined };
+      const next = [...prev];
+      next.splice(i + 1, 0, copy);
+      return next;
+    });
+    touch();
+  };
+  const addBlock = (type: LessonBlock['type']) => {
+    const base: LessonBlock = { id: newBlockId(), type };
+    if (type === 'images') base.images = [];
+    setBlocks((prev) => [...prev, base]);
+    setShowAdd(false);
+    touch();
+  };
+
+  const addImagesToBlock = async (id: string, files: FileList | null) => {
+    const list = Array.from(files || []).filter((f) => f.type.startsWith('image/')).slice(0, 10);
+    if (!list.length) return;
+    setUploadingImg(true);
+    try {
+      for (const f of list) {
+        const r = await uploadFileToCloud(f, '/ard-al-lughah/lessons');
+        if (r?.url) setBlocks((prev) => prev.map((b) => (b.id === id ? { ...b, images: [...(b.images || []), r.url] } : b)));
+      }
+      touch();
+    } finally {
+      setUploadingImg(false);
+    }
+  };
+
+  const readHtmlIntoBlock = async (id: string, file?: File | null) => {
+    if (!file) return;
+    setReadingHtml(true);
+    try {
+      const text = await readTextFile(file);
+      patchBlock(id, { html: text, fileUrl: '' });
+    } finally {
+      setReadingHtml(false);
+    }
+  };
+
+  const save = async () => {
+    const t = title.trim();
+    if (!t) { setErr('اكتب عنوان الدرس أولاً.'); return; }
+    setSaving(true);
+    setErr('');
+    try {
+      const types = [...new Set(blocks.map((b) => b.type))];
+      await jsonFetch(`/api/teacher/foundation/lessons/${lessonId}`, {
+        method: 'PATCH',
+        body: {
+          title: t,
+          description: description.trim(),
+          bodyText: lessonBlocksEnvelope(blocks),
+          kind: types.length === 1 ? types[0] : types.length ? 'mixed' : 'text',
+          isVisible,
+          isLocked,
+        },
+      });
+      setDirty(false);
+      await load();
+    } catch (e: any) {
+      setErr(e?.message || 'تعذر حفظ الدرس');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const draftLesson = lesson
+    ? { ...lesson, title: title || lesson.title, bodyText: lessonBlocksEnvelope(blocks) }
+    : null;
+
+  return (
+    <Shell mode="teacher">
+      {/* مسار + حفظ */}
+      <div className="mb-4 flex flex-wrap items-center gap-2.5">
+        <button type="button" onClick={() => setLocation('/teacher/foundation')} className="inline-flex min-h-[48px] items-center gap-2 rounded-2xl border border-border bg-card px-4 text-sm font-extrabold text-muted-foreground transition-colors hover:text-primary" data-testid="button-back-foundation">
+          <ArrowRight size={16} /> التأسيس
+        </button>
+        <span className="text-sm font-bold text-muted-foreground">صفحة الدرس — أضف عناصره ورتبها ثم احفظ</span>
+        <span className="ms-auto flex flex-wrap items-center gap-2">
+          {dirty ? (
+            <span className="rounded-full bg-amber-500/15 px-3 py-1.5 text-[11px] font-extrabold text-amber-800">تغييرات غير محفوظة</span>
+          ) : null}
+          <button type="button" onClick={save} disabled={saving || loading} className={`${touchBtnPrimary} px-6`} data-testid="button-save-lesson-page">
+            {saving ? <><RefreshCw size={17} className="animate-spin" /> جارٍ الحفظ...</> : <><Save size={17} /> حفظ الدرس</>}
+          </button>
+        </span>
+      </div>
+
+      {loading ? <StateNotice type="loading" /> : err && !lesson ? (
+        <StateNotice type="error" onRetry={() => load()} />
+      ) : (
+        <>
+          {err ? (
+            <p className="mb-4 flex items-start gap-2 rounded-2xl bg-destructive/10 px-4 py-3 text-sm font-extrabold text-destructive">
+              <CircleAlert size={17} className="mt-0.5 shrink-0" /> {err}
+            </p>
+          ) : null}
+
+          {/* عنوان الدرس + ظهور/قفل */}
+          <div className="rounded-[2rem] border border-border bg-card p-5 shadow-sm">
+            <label className="block">
+              <span className="mb-2 block text-sm font-extrabold text-primary">عنوان الدرس</span>
+              <input
+                value={title}
+                onChange={(e) => { setTitle(e.target.value); touch(); }}
+                placeholder="مثال: أقسام الكلمة"
+                className={`${touchCls} font-display text-lg font-extrabold`}
+                data-testid="input-lesson-page-title"
+              />
+            </label>
+            <label className="mt-3 block">
+              <span className="mb-2 block text-sm font-extrabold text-primary">وصف قصير (اختياري)</span>
+              <input
+                value={description}
+                onChange={(e) => { setDescription(e.target.value); touch(); }}
+                placeholder="سطر يظهر تحت العنوان عند الطالب"
+                className={touchCls}
+              />
+            </label>
+            <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
+              <button type="button" onClick={() => { setIsVisible((v) => !v); touch(); }} className={`flex min-h-[56px] items-center gap-2.5 rounded-2xl border-2 p-3.5 text-right ${isVisible ? 'border-primary bg-primary/8' : 'border-border bg-background'}`}>
+                <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl ${isVisible ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                  {isVisible ? <Check size={16} /> : <EyeOff size={15} />}
+                </span>
+                <span className="text-sm font-extrabold text-primary">{isVisible ? 'ظاهر للطلاب' : 'مخفي عن الكل'}</span>
+              </button>
+              <button type="button" onClick={() => { setIsLocked((v) => !v); touch(); }} className={`flex min-h-[56px] items-center gap-2.5 rounded-2xl border-2 p-3.5 text-right ${isLocked ? 'border-[#b7791f] bg-[#b7791f]/10' : 'border-border bg-background'}`}>
+                <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl ${isLocked ? 'bg-[#b7791f] text-white' : 'bg-muted text-muted-foreground'}`}>
+                  {isLocked ? <Lock size={15} /> : <LockOpen size={15} />}
+                </span>
+                <span className="text-sm font-extrabold text-primary">{isLocked ? 'مقفل مؤقتاً' : 'مفتوح'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* العناصر */}
+          <div className="mb-3 mt-7 flex flex-wrap items-center gap-3">
+            <h2 className="flex items-center gap-2 font-display text-lg font-extrabold text-primary">
+              <Layers size={20} /> عناصر الدرس
+            </h2>
+            <span className="rounded-xl bg-secondary px-3 py-1.5 text-xs font-extrabold tabular-nums text-primary" data-testid="lesson-block-count">
+              {blocks.length}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowAdd((v) => !v)}
+              className={`${touchBtnAccent} mr-auto px-5 text-sm`}
+              data-testid="button-add-lesson-block"
+            >
+              <Plus size={18} /> ➕ إضافة عنصر في الدرس
+            </button>
+          </div>
+
+          {showAdd ? (
+            <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4" data-testid="add-block-menu">
+              {LESSON_BLOCK_TYPES.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => addBlock(t.id)}
+                  data-testid={`button-add-block-${t.id}`}
+                  className="flex min-h-[76px] flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-border bg-card p-3 transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md active:scale-[.98]"
+                >
+                  <span className="grid h-10 w-10 place-items-center rounded-xl text-white shadow-sm" style={{ background: t.tone }}>
+                    <t.Icon size={19} />
+                  </span>
+                  <span className="text-sm font-extrabold text-primary">{t.label}</span>
+                  <span className="text-[10px] font-bold text-muted-foreground">{t.hint}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {!blocks.length ? (
+            <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-14 text-center">
+              <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-secondary text-primary"><Layers size={30} /></span>
+              <p className="font-display text-xl font-bold text-primary">الدرس فارغ — أضف أول عنصر</p>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-muted-foreground">
+                نصاً للشرح، صوراً، فيديو، أو صفحة HTML/موقعاً مضغوطاً — رتبها كما تريد وستظهر للطالب بنفس الترتيب.
+              </p>
+              <button type="button" onClick={() => setShowAdd(true)} className={`${touchBtnPrimary} mt-6 px-6`}>
+                <Plus size={18} /> إضافة عنصر
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {blocks.map((b, i) => (
+                <LessonBlockCard
+                  key={b.id}
+                  block={b}
+                  index={i}
+                  total={blocks.length}
+                  onPatch={(p) => patchBlock(b.id, p)}
+                  onMove={(d) => moveBlock(b.id, d)}
+                  onRemove={() => removeBlock(b.id)}
+                  onDuplicate={() => duplicateBlock(b.id)}
+                  onAddImages={(files) => addImagesToBlock(b.id, files)}
+                  onReadHtml={(f) => readHtmlIntoBlock(b.id, f)}
+                  uploadingImg={uploadingImg}
+                  readingHtml={readingHtml}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* معاينة حية كما سيراها الطالب */}
+          {draftLesson ? (
+            <div className="mt-8">
+              <h2 className="mb-3 flex items-center gap-2 font-display text-lg font-extrabold text-primary">
+                <Eye size={20} /> معاينة حية — كما سيراها الطالب
+              </h2>
+              <div className="rounded-[2rem] border border-border bg-background p-4 sm:p-6">
+                <FoundationLessonBody lesson={{ ...draftLesson, id: `${draftLesson.id}-preview` }} />
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
+    </Shell>
+  );
+}
+
+/** بطاقة عنصر واحد داخل صفحة الدرس: محرره + ترتيبه */
+function LessonBlockCard({ block, index, total, onPatch, onMove, onRemove, onDuplicate, onAddImages, onReadHtml, uploadingImg, readingHtml }: {
+  block: LessonBlock;
+  index: number;
+  total: number;
+  onPatch: (p: Partial<LessonBlock>) => void;
+  onMove: (d: 1 | -1) => void;
+  onRemove: () => void;
+  onDuplicate: () => void;
+  onAddImages: (files: FileList | null) => void;
+  onReadHtml: (f?: File | null) => void;
+  uploadingImg: boolean;
+  readingHtml: boolean;
+}) {
+  const meta = LESSON_BLOCK_TYPES.find((t) => t.id === block.type) || LESSON_BLOCK_TYPES[0];
+  const images = block.images || [];
+  return (
+    <section className="overflow-hidden rounded-[2rem] border border-border bg-card shadow-sm" data-testid={`lesson-block-${block.id}`}>
+      <div className="flex flex-wrap items-center gap-2 border-b border-border bg-secondary/40 px-4 py-3">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-xs font-extrabold tabular-nums text-white" style={{ background: meta.tone }}>
+          {index + 1}
+        </span>
+        <span className="inline-flex items-center gap-1.5 text-sm font-extrabold text-primary">
+          <meta.Icon size={16} style={{ color: meta.tone }} /> عنصر {meta.label}
+        </span>
+        <span className="ms-auto flex items-center gap-1">
+          <button type="button" onClick={() => onMove(-1)} disabled={index === 0} className="grid h-10 w-10 place-items-center rounded-xl text-muted-foreground hover:bg-secondary active:bg-secondary disabled:opacity-25" aria-label="تقديم العنصر" data-testid={`button-block-up-${block.id}`}>
+            <ArrowUp size={17} />
+          </button>
+          <button type="button" onClick={() => onMove(1)} disabled={index === total - 1} className="grid h-10 w-10 place-items-center rounded-xl text-muted-foreground hover:bg-secondary active:bg-secondary disabled:opacity-25" aria-label="تأخير العنصر" data-testid={`button-block-down-${block.id}`}>
+            <ArrowDown size={17} />
+          </button>
+          <button type="button" onClick={onDuplicate} className="grid h-10 w-10 place-items-center rounded-xl text-muted-foreground hover:bg-secondary" aria-label="تكرار العنصر" title="تكرار">
+            <Copy size={16} />
+          </button>
+          <button type="button" onClick={onRemove} className="grid h-10 w-10 place-items-center rounded-xl text-destructive hover:bg-destructive/10" aria-label="حذف العنصر" data-testid={`button-block-del-${block.id}`}>
+            <Trash2 size={16} />
+          </button>
+        </span>
+      </div>
+
+      <div className="p-4">
+        {block.type === 'text' ? (
+          <textarea
+            value={block.text || ''}
+            onChange={(e) => onPatch({ text: e.target.value })}
+            rows={6}
+            placeholder="اكتب فقرة الشرح هنا..."
+            className={`${touchCls} resize-y font-serif text-[17px] leading-9`}
+            data-testid={`input-block-text-${block.id}`}
+          />
+        ) : null}
+
+        {block.type === 'images' ? (
+          <div>
+            {images.length ? (
+              <div className="mb-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                {images.map((src, i) => (
+                  <div key={`${src}-${i}`} className="group relative overflow-hidden rounded-xl border border-border">
+                    <img src={src} alt={`صورة ${i + 1}`} loading="lazy" className="h-24 w-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => onPatch({ images: images.filter((_, x) => x !== i) })}
+                      className="absolute left-1 top-1 grid h-8 w-8 place-items-center rounded-lg bg-black/60 text-white active:bg-destructive"
+                      aria-label={`حذف الصورة ${i + 1}`}
+                    >
+                      <X size={14} />
+                    </button>
+                    <span className="absolute bottom-1 right-1 grid h-6 min-w-6 place-items-center rounded-md bg-black/60 px-1 text-[10px] font-extrabold tabular-nums text-white">{i + 1}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mb-3 rounded-xl bg-secondary/50 px-4 py-4 text-center text-xs text-muted-foreground">لا صور بعد — ارفع من جهازك</p>
+            )}
+            <label className={`inline-flex min-h-[52px] cursor-pointer items-center gap-2 rounded-2xl bg-secondary px-5 text-sm font-extrabold text-primary transition-colors hover:bg-accent/40 ${uploadingImg ? 'pointer-events-none opacity-60' : ''}`}>
+              {uploadingImg ? <RefreshCw size={16} className="animate-spin" /> : <ImagePlus size={16} />}
+              {uploadingImg ? 'جارٍ الرفع...' : 'رفع صور من الجهاز'}
+              <input
+                type="file" accept="image/*" multiple className="hidden"
+                onChange={(e) => { onAddImages(e.target.files); e.target.value = ''; }}
+              />
+            </label>
+          </div>
+        ) : null}
+
+        {block.type === 'video' ? (
+          <div className="space-y-3">
+            <FoundationVideoUploader
+              value={block.url || ''}
+              onUploaded={(url) => onPatch({ url })}
+            />
+            <Field2 label="أو الصق رابطاً" hint="يوتيوب أو Vimeo أو mp4 مباشر">
+              <input
+                value={block.url || ''}
+                onChange={(e) => onPatch({ url: e.target.value })}
+                dir="ltr" placeholder="https://..."
+                className={`${touchCls} font-mono text-sm`}
+                data-testid={`input-block-video-${block.id}`}
+              />
+            </Field2>
+            <Field2 label="تعليق تحت الفيديو (اختياري)">
+              <input
+                value={block.caption || ''}
+                onChange={(e) => onPatch({ caption: e.target.value })}
+                placeholder="سطر يظهر تحت الفيديو"
+                className={touchCls}
+              />
+            </Field2>
+            {block.url ? <FoundationVideoPlayer url={block.url} caption={block.caption} /> : null}
+          </div>
+        ) : null}
+
+        {block.type === 'html' ? (
+          <div className="space-y-3">
+            <Field2 label="كود HTML مباشر (اختياري)" hint="الصقه هنا إن كان عندك">
+              <textarea
+                value={block.html || ''}
+                onChange={(e) => onPatch({ html: e.target.value, fileUrl: '' })}
+                rows={5} dir="ltr" spellCheck={false}
+                placeholder="<html>...</html>"
+                className={`${touchCls} resize-y font-mono text-xs leading-6`}
+                data-testid={`input-block-html-${block.id}`}
+              />
+            </Field2>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className={`inline-flex min-h-[52px] cursor-pointer items-center gap-2 rounded-2xl bg-secondary px-5 text-sm font-extrabold text-primary hover:bg-accent/40 ${readingHtml ? 'pointer-events-none opacity-60' : ''}`}>
+                {readingHtml ? <RefreshCw size={16} className="animate-spin" /> : <Upload size={16} />}
+                {readingHtml ? 'جارٍ القراءة...' : 'قراءة ملف HTML من الجهاز'}
+                <input
+                  type="file" accept=".html,.htm,text/html" className="hidden"
+                  onChange={(e) => { onReadHtml(e.target.files?.[0]); e.target.value = ''; }}
+                />
+              </label>
+            </div>
+            <FoundationBundleUploader
+              value={block.fileUrl || ''}
+              onUploaded={(url) => onPatch({ fileUrl: url, html: '' })}
+            />
+            {(block.html || block.fileUrl) ? (
+              <div>
+                <p className="mb-2 text-xs font-extrabold text-primary">معاينة الصفحة</p>
+                <HtmlPreviewFrame content={block.html} fileUrl={block.fileUrl} />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 function TeacherFoundationPage() {
   // الصفوف والمدارس تأتي من قاعدة البيانات — يشترك هنا ليعيد الرسم فور تغيّرها
   useCatalog();
@@ -11428,13 +12023,14 @@ function TeacherFoundationPage() {
   const [savingSection, setSavingSection] = useState(false);
   const [formError, setFormError] = useState('');
 
-  const [lessonModal, setLessonModal] = useState<null | { mode: 'create'; sectionId: string } | { mode: 'edit'; lesson: any }>(null);
-  const [lessonForm, setLessonForm] = useState<any>({});
-  const [savingLesson, setSavingLesson] = useState(false);
-  const [lessonError, setLessonError] = useState('');
-  const [preview, setPreview] = useState<any | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
+  const [, setLocation] = useLocation();
 
+  // درس جديد: عنوان فقط هنا، والمحتوى (عناصره) داخل صفحته
+  const [creatingLesson, setCreatingLesson] = useState(false);
+  const [createTitle, setCreateTitle] = useState('');
+  const [createForSection, setCreateForSection] = useState('');
+  const [savingCreate, setSavingCreate] = useState(false);
+  const [createError, setCreateError] = useState('');
   const flash = (text: string, tone: 'ok' | 'err' = 'ok') => {
     setToast({ text, tone });
     window.setTimeout(() => setToast((prev) => (prev?.text === text ? null : prev)), tone === 'err' ? 6000 : 3000);
@@ -11531,72 +12127,56 @@ function TeacherFoundationPage() {
     catch (err: any) { flash(err?.message || 'تعذر الحذف', 'err'); }
   };
 
-  /* ── الدروس ── */
+  /* ── الدروس: كل درس له صفحة مستقلة — الدخول من عنوانه أو قلمه ── */
+  const openLessonPage = (l: any) => {
+    if (!l?.id) return;
+    setLocation(`/teacher/foundation/lesson/${l.id}`);
+  };
+
+  /* ── درس جديد: العنوان فقط هنا، ثم تُفتح صفحته لإضافة عناصره ── */
   const openLessonCreate = (sectionId?: string) => {
-    // لا نهاية ميتة: إن لم يوجد فاصل ننشئ واحداً فوراً بدل رسالة "أنشئ فاصلاً"
+    // لا نهاية ميتة: إن لم يوجد قسم ننشئ واحداً فوراً بدل رسالة "أنشئ قسماً"
     const target = sectionId || activeSection || sections[0]?.id || '';
     if (!target) {
       setSectionForm({ title: 'التأسيس', color: FOUNDATION_COLORS[0], isLocked: false, isVisible: true });
       setFormError('');
       setSectionModal({ mode: 'create' });
-      flash('أنشئ فاصلاً أولاً — بعد حفظه ستنتقل مباشرة لإضافة الدروس', 'err');
+      flash('أنشئ قسماً أولاً — بعد حفظه ستنتقل مباشرة لإضافة الدروس', 'err');
       return;
     }
-    setLessonForm({ title: '', description: '', kind: 'text', bodyText: '', coverUrl: '', images: [], videoUrl: '', videoCaption: '', htmlContent: '', htmlFileUrl: '', isLocked: false, isVisible: true });
-    setLessonError('');
-    setLessonModal({ mode: 'create', sectionId: target });
-  };
-  const openLessonEdit = (l: any) => {
-    setLessonError('');
-    jsonFetch(`/api/foundation/lessons/${l.id}`)
-      .then((full: any) => {
-        setLessonForm({ title: full.title, description: full.description, kind: full.kind, bodyText: full.bodyText || '', coverUrl: full.coverUrl || '', images: full.images || [], videoUrl: full.videoUrl || '', videoCaption: full.videoCaption || '', htmlContent: full.htmlContent || '', htmlFileUrl: full.htmlFileUrl || '', isLocked: full.isLocked, isVisible: full.isVisible });
-        setLessonModal({ mode: 'edit', lesson: { ...l, ...full } });
-      })
-      .catch((e: any) => flash(e?.message || 'تعذر فتح الدرس', 'err'));
-  };
-  const saveLesson = async (e: FormEvent) => {
-    e.preventDefault();
-    const title = String(lessonForm.title || '').trim();
-    if (!title) { setLessonError('اكتب عنوان الدرس أولاً.'); return; }
-    setSavingLesson(true);
-    setLessonError('');
-    try {
-      if (lessonModal?.mode === 'create') {
-        await jsonFetch('/api/teacher/foundation/lessons', { method: 'POST', body: { ...lessonForm, title, sectionId: lessonModal.sectionId } });
-        flash(`تمت إضافة «${title}»`);
-      } else if (lessonModal?.mode === 'edit') {
-        await jsonFetch(`/api/teacher/foundation/lessons/${lessonModal.lesson.id}`, { method: 'PATCH', body: { ...lessonForm, title } });
-        flash('تم حفظ الدرس');
-      }
-      setLessonModal(null);
-      await reload();
-    } catch (err: any) {
-      const m = err?.message || 'تعذر حفظ الدرس';
-      setLessonError(m);
-      flash(m, 'err');
-    } finally { setSavingLesson(false); }
+    setCreateTitle('');
+    setCreateError('');
+    setCreateForSection(target);
+    setCreatingLesson(true);
   };
 
-  const quickLesson = async (l: any, patch: any) => {
-    try { await jsonFetch(`/api/teacher/foundation/lessons/${l.id}`, { method: 'PATCH', body: patch }); await reload(); flash('تم التحديث'); }
-    catch (err: any) { flash(err?.message || 'تعذر التعديل', 'err'); }
-  };
-  const move = async (l: any, dir: 'up' | 'down') => {
-    try { await jsonFetch('/api/teacher/foundation/lessons/reorder', { method: 'POST', body: { id: l.id, dir } }); await reload(); }
-    catch (err: any) { flash(err?.message || 'تعذرت إعادة الترتيب', 'err'); }
-  };
-  const removeLesson = async (l: any) => {
-    if (!window.confirm(`حذف «${l.title}» من التدفّق؟`)) return;
-    try { await jsonFetch(`/api/teacher/foundation/lessons/${l.id}`, { method: 'DELETE' }); await reload(); flash('تم الحذف'); }
-    catch (err: any) { flash(err?.message || 'تعذر الحذف', 'err'); }
-  };
-  const openPreview = async (l: any) => {
-    setPreviewLoading(true);
-    setPreview({ ...l, __loading: true });
-    try { setPreview(await jsonFetch(`/api/foundation/lessons/${l.id}`)); }
-    catch (err: any) { flash(err?.message || 'تعذر فتح المعاينة', 'err'); setPreview(null); }
-    finally { setPreviewLoading(false); }
+  const submitLessonCreate = async (e: FormEvent) => {
+    e.preventDefault();
+    const title = createTitle.trim();
+    if (!title) { setCreateError('اكتب عنوان الدرس أولاً.'); return; }
+    setSavingCreate(true);
+    setCreateError('');
+    try {
+      const created = await jsonFetch('/api/teacher/foundation/lessons', {
+        method: 'POST',
+        body: { title, sectionId: createForSection },
+      });
+      const newId = created?.lesson?.id;
+      setCreatingLesson(false);
+      await reload();
+      if (newId) {
+        flash(`تم إنشاء «${title}» — أضف عناصره الآن`);
+        setLocation(`/teacher/foundation/lesson/${newId}`);
+      } else {
+        flash(`تم إنشاء «${title}»`);
+      }
+    } catch (err: any) {
+      const m = err?.message || 'تعذر إنشاء الدرس';
+      setCreateError(m);
+      flash(m, 'err');
+    } finally {
+      setSavingCreate(false);
+    }
   };
 
   return (
@@ -11748,7 +12328,7 @@ function TeacherFoundationPage() {
                         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-xs font-extrabold text-white" style={{ background: meta.tone }}>{idx + 1}</span>
                         <button
                           type="button"
-                          onClick={() => openPreview(l)}
+                          onClick={() => openLessonPage(l)}
                           className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl border border-border active:scale-95"
                           style={{ background: l.coverUrl ? undefined : `${meta.tone}18` }}
                           aria-label="معاينة"
@@ -11766,7 +12346,7 @@ function TeacherFoundationPage() {
                             {l.isLocked ? <span className="rounded-lg bg-[#b7791f]/15 px-2 py-0.5 text-[10px] font-extrabold text-[#b7791f]">مقفل</span> : null}
                             {!l.isVisible ? <span className="rounded-lg bg-muted px-2 py-0.5 text-[10px] font-extrabold text-muted-foreground">مخفي</span> : null}
                           </div>
-                          <button type="button" onClick={() => openLessonEdit(l)} className="mt-1 block max-w-full truncate text-right text-[15px] font-extrabold text-primary underline-offset-4 hover:underline" title="ادخل للدرس وعدل محتواه">{l.title}</button>
+                          <button type="button" onClick={() => openLessonPage(l)} className="mt-1 block max-w-full truncate text-right text-[15px] font-extrabold text-primary underline-offset-4 hover:underline" title="ادخل للدرس وعدل محتواه">{l.title}</button>
                           {l.textPreview ? <p className="mt-0.5 line-clamp-1 text-[11px] leading-5 text-muted-foreground">{l.textPreview}</p> : null}
                         </div>
                         <div className="flex shrink-0 flex-col items-center gap-0.5">
@@ -11774,8 +12354,8 @@ function TeacherFoundationPage() {
                           <button type="button" onClick={() => move(l, 'down')} disabled={idx === visibleLessons.length - 1} className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground active:bg-secondary disabled:opacity-25" aria-label="تأخير"><ArrowDown size={15} /></button>
                         </div>
                         <div className="grid shrink-0 grid-cols-2 gap-1">
-                          <button type="button" onClick={() => openPreview(l)} className="grid h-11 w-11 place-items-center rounded-xl bg-secondary text-primary active:bg-accent/40" aria-label="معاينة"><Eye size={16} /></button>
-                          <button type="button" onClick={() => openLessonEdit(l)} className="grid h-11 w-11 place-items-center rounded-xl bg-secondary text-primary active:bg-accent/40" aria-label="تعديل" data-testid={`button-edit-lesson-${l.id}`}><Pencil size={16} /></button>
+                          <button type="button" onClick={() => openLessonPage(l)} className="grid h-11 w-11 place-items-center rounded-xl bg-secondary text-primary active:bg-accent/40" aria-label="معاينة"><Eye size={16} /></button>
+                          <button type="button" onClick={() => openLessonPage(l)} className="grid h-11 w-11 place-items-center rounded-xl bg-secondary text-primary active:bg-accent/40" aria-label="تعديل" data-testid={`button-edit-lesson-${l.id}`}><Pencil size={16} /></button>
                           <button type="button" onClick={() => quickLesson(l, { isLocked: !l.isLocked })} className="grid h-11 w-11 place-items-center rounded-xl bg-secondary text-muted-foreground active:bg-accent/40" aria-label="قفل">{l.isLocked ? <LockOpen size={16} /> : <Lock size={16} />}</button>
                           <button type="button" onClick={() => removeLesson(l)} className="grid h-11 w-11 place-items-center rounded-xl bg-secondary text-destructive active:bg-destructive/10" aria-label="حذف"><Trash2 size={16} /></button>
                         </div>
@@ -11846,32 +12426,34 @@ function TeacherFoundationPage() {
         </Modal>
       ) : null}
 
-      {lessonModal ? (
-        <Modal
-          title={lessonModal.mode === 'create' ? 'درس جديد' : 'تعديل الدرس'}
-          eyebrow={lessonModal.mode === 'edit' ? (sections.find((s: any) => s.id === lessonModal.lesson.sectionId)?.title || '') : (current?.title || '')}
-          onClose={() => setLessonModal(null)}
-          maxWidth="max-w-4xl"
-        >
-          <FoundationLessonForm
-            form={lessonForm}
-            setForm={setLessonForm}
-            saving={savingLesson}
-            error={lessonError}
-            submitLabel={lessonModal.mode === 'create' ? 'أضف إلى التدفّق' : 'حفظ التعديلات'}
-            onSubmit={saveLesson}
-            onCancel={() => setLessonModal(null)}
-          />
-        </Modal>
-      ) : null}
-
-      {preview ? (
-        <Modal title={preview.title || 'معاينة الدرس'} eyebrow="هكذا يراه الطالب داخل الصفحة" onClose={() => setPreview(null)} maxWidth="max-w-4xl">
-          {preview.__loading ? (
-            <p className="flex items-center justify-center gap-3 py-14 text-sm font-bold text-primary"><RefreshCw size={20} className="animate-spin" /> جارٍ تحميل المعاينة...</p>
-          ) : (
-            <div className="pb-4"><FoundationLessonBody lesson={preview} /></div>
-          )}
+      {creatingLesson ? (
+        <Modal title="درس جديد" eyebrow="العنوان فقط هنا — والمحتوى داخل صفحته" onClose={() => setCreatingLesson(false)} maxWidth="max-w-xl">
+          <form onSubmit={submitLessonCreate} className="space-y-4 pb-2">
+            <label className="block">
+              <span className="mb-2 block text-sm font-extrabold text-primary">عنوان الدرس *</span>
+              <input
+                value={createTitle}
+                onChange={(e) => setCreateTitle(e.target.value)}
+                autoFocus
+                placeholder="مثال: أقسام الكلمة"
+                className={touchCls}
+                data-testid="input-new-lesson-title"
+              />
+            </label>
+            {createError ? (
+              <p className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm font-extrabold text-destructive">{createError}</p>
+            ) : (
+              <p className="rounded-2xl bg-secondary/60 px-4 py-3 text-xs font-semibold leading-6 text-muted-foreground">
+                بعد الإنشاء تُفتح صفحة الدرس مباشرة لتضيف فيها عناصره (نص، صور، فيديو، HTML/موقع) وترتبها.
+              </p>
+            )}
+            <div className="flex gap-3">
+              <button type="submit" disabled={savingCreate} className={`${touchBtnPrimary} flex-1`} data-testid="button-create-lesson">
+                {savingCreate ? <><RefreshCw size={17} className="animate-spin" /> جارٍ الإنشاء...</> : <><Plus size={17} /> أنشئ وادخل للدرس</>}
+              </button>
+              <button type="button" onClick={() => setCreatingLesson(false)} className={touchBtnSoft}>إلغاء</button>
+            </div>
+          </form>
         </Modal>
       ) : null}
     </Shell>
@@ -12396,241 +12978,7 @@ function FoundationBundleUploader({ value, onUploaded }: {
   );
 }
 
-function FoundationLessonForm({ form, setForm, saving, error, submitLabel, onSubmit, onCancel }: {
-  form: any;
-  setForm: (updater: any) => void;
-  saving: boolean;
-  error?: string;
-  submitLabel: string;
-  onSubmit: (e: FormEvent) => void;
-  onCancel: () => void;
-}) {
-  const kind = String(form.kind || 'text');
-  const meta = FOUNDATION_KINDS[kind] || FOUNDATION_KINDS.text;
-  const [images, setImages] = useState<string[]>(Array.isArray(form.images) ? form.images : []);
-  const [uploading, setUploading] = useState(false);
-  const [htmlTab, setHtmlTab] = useState<'paste' | 'file'>(form.htmlContent ? 'paste' : 'file');
-  const [htmlUploading, setHtmlUploading] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const multiRef = useRef<HTMLInputElement>(null);
 
-  // نزامن الصور مع النموذج دون إعادة كتابة الحقول الأخرى
-  const pushImages = (next: string[]) => { setImages(next); setForm({ ...form, images: next }); };
-
-  const addImages = async (files: FileList | null) => {
-    const list = Array.from(files || []).filter((f) => f.type.startsWith('image/')).slice(0, 10);
-    if (!list.length) return;
-    setUploading(true);
-    const added: string[] = [];
-    for (const f of list) {
-      try { const r = await uploadFileToCloud(f, '/ard-al-lughah/lessons'); if (r?.url) added.push(r.url); }
-      catch { /* نُكمل الباقي ونُبلّغ بالنتيجة */ }
-    }
-    if (added.length) pushImages([...images, ...added]);
-    setUploading(false);
-  };
-
-  const uploadHtml = async (file?: File | null) => {
-    if (!file) return;
-    setHtmlUploading(true);
-    try {
-      const text = await readTextFile(file);
-      // نقرأ الملف نصاً ونلصقه مباشرة — يخفيه عن أي خدمة خارجية ويفتح فوراً
-      setForm({ ...form, htmlContent: text, htmlFileUrl: '' });
-      setHtmlTab('paste');
-    } catch { /* تجاهل — سيبقى الحقل كما هو */ }
-    setHtmlUploading(false);
-  };
-
-  const wants = (k: string) => kind === 'mixed' || kind === k;
-
-  return (
-    <form onSubmit={onSubmit} className="space-y-5 pb-4">
-      {/* معاينة حيّة */}
-      <div className="relative overflow-hidden rounded-3xl p-5 shadow-lg" style={{ background: `linear-gradient(135deg, ${meta.tone}, ${meta.tone}bb)` }}>
-        <div className="pointer-events-none absolute -left-6 -top-8 select-none font-display text-[5.5rem] leading-none text-white/15">{meta.label.slice(0, 1)}</div>
-        <div className="relative flex items-center gap-4">
-          <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-white/25 text-white shadow-xl backdrop-blur-sm"><meta.Icon size={26} /></span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate font-display text-lg font-extrabold text-white">{form.title || 'عنوان الدرس...'}</p>
-            <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] font-bold text-white/90">
-              <span className="rounded-lg bg-black/25 px-2 py-0.5">{meta.label}</span>
-              {images.length ? <span className="rounded-lg bg-black/25 px-2 py-0.5">{images.length} صورة</span> : null}
-              {form.videoUrl ? <span className="rounded-lg bg-black/25 px-2 py-0.5">فيديو</span> : null}
-              {(form.htmlContent || form.htmlFileUrl) ? <span className="rounded-lg bg-black/25 px-2 py-0.5">HTML</span> : null}
-            </p>
-          </div>
-        </div>
-        <span className="absolute left-4 top-4 rounded-full bg-black/40 px-3 py-1 text-[10px] font-bold text-white backdrop-blur-md">معاينة حية</span>
-      </div>
-
-      {error ? (
-        <p className="flex items-start gap-2.5 rounded-2xl border-2 border-destructive/40 bg-destructive/10 px-4 py-3.5 text-sm font-extrabold leading-6 text-destructive" data-testid="foundation-lesson-error">
-          <CircleAlert size={19} className="mt-0.5 shrink-0" /> {error}
-        </p>
-      ) : null}
-
-      {/* نوع الدرس — شبكة أزرار كبيرة */}
-      <div>
-        <p className="mb-2 block text-sm font-semibold">نوع الدرس <span className="font-normal text-muted-foreground">(يحدد ما يظهر للطالب)</span></p>
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-          {FOUNDATION_KIND_ORDER.map((k) => {
-            const m = FOUNDATION_KINDS[k];
-            const on = kind === k;
-            const KI = m.Icon;
-            return (
-              <button
-                key={k}
-                type="button"
-                onClick={() => setForm({ ...form, kind: k })}
-                className={`flex min-h-[74px] items-center gap-3 rounded-2xl border-2 p-3 text-right transition-all active:scale-[.97] ${on ? 'border-transparent text-white shadow-md' : 'border-border bg-card'}`}
-                style={on ? { background: m.tone } : undefined}
-                data-testid={`kind-${k}`}
-              >
-                <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${on ? 'bg-white/25' : 'bg-secondary'}`}><KI size={19} style={on ? undefined : { color: m.tone }} /></span>
-                <span className="min-w-0">
-                  <span className={`block text-sm font-extrabold ${on ? 'text-white' : 'text-primary'}`}>{m.label}</span>
-                  <span className={`block text-[10px] ${on ? 'text-white/80' : 'text-muted-foreground'}`}>{m.hint}</span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <Field2 label="عنوان الدرس *"><input value={form.title || ''} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="مثال: حروف المد — من الفتح إلى الياء" className={touchCls} data-testid="input-foundation-lesson-title" /></Field2>
-      <Field2 label="وصف قصير" hint="سطر أو سطران يظهر أعلى الدرس عند الطالب"><textarea value={form.description || ''} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2} placeholder="نتعلم اليوم..." className={`${touchCls} resize-none leading-7`} /></Field2>
-
-      {/* النص */}
-      {wants('text') ? (
-        <Field2 label="نصّ الدرس" hint="اكتب الشرح كاملاً — يظهر بخط واضح وسطر مريح للقراءة">
-          <textarea value={form.bodyText || ''} onChange={(e) => setForm({ ...form, bodyText: e.target.value })} rows={9} placeholder="اكتب شرح الدرس هنا..." className={`${touchCls} resize-y font-serif leading-9`} data-testid="input-foundation-lesson-text" />
-        </Field2>
-      ) : null}
-
-      {/* الصور */}
-      {wants('image') ? (
-        <div className="rounded-3xl border-2 border-dashed border-accent/50 bg-accent/8 p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <p className="flex items-center gap-2 text-sm font-extrabold text-primary"><ImagePlus size={17} /> صور الدرس ({images.length})</p>
-            <button type="button" onClick={() => multiRef.current?.click()} disabled={uploading} className={`${touchBtnSoft} min-h-[44px] px-4 text-xs`} data-testid="button-foundation-add-images">
-              {uploading ? <RefreshCw size={15} className="animate-spin" /> : <Upload size={15} />} {uploading ? 'جارٍ الرفع...' : 'أضف صوراً'}
-            </button>
-            <input ref={multiRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => { addImages(e.target.files); e.target.value = ''; }} />
-          </div>
-          {images.length ? (
-            <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4">
-              {images.map((src, i) => (
-                <div key={src + i} className="group relative aspect-square overflow-hidden rounded-2xl border border-border bg-secondary">
-                  <img src={src} alt="" className="h-full w-full object-cover" />
-                  <button type="button" onClick={() => pushImages(images.filter((_, j) => j !== i))} className="absolute left-1.5 top-1.5 grid h-9 w-9 place-items-center rounded-xl bg-black/60 text-white active:bg-destructive" aria-label="حذف الصورة"><X size={16} /></button>
-                  {i === 0 ? <span className="absolute bottom-1.5 right-1.5 rounded-lg bg-primary px-2 py-0.5 text-[9px] font-extrabold text-primary-foreground">الغلاف</span> : null}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="rounded-2xl bg-background/70 px-4 py-6 text-center text-sm text-muted-foreground">لا صور بعد — اضغط «أضف صوراً» لرفعها من جهازك.</p>
-          )}
-          {images.length ? (
-            <p className="mt-2 text-[11px] leading-5 text-muted-foreground">أول صورة في الصف الأول هي غلاف الدرس. اضغط أي صورة لتراها بحجمها.</p>
-          ) : null}
-          <div className="mt-3">
-            <ImageUrlField label="أو غلاف برابط مباشر" value={form.coverUrl || ''} onChange={(v) => setForm({ ...form, coverUrl: v })} testId="input-foundation-lesson-cover" folder="/ard-al-lughah/covers" />
-          </div>
-        </div>
-      ) : null}
-
-      {/* الفيديو */}
-      {wants('video') ? (
-        <div className="rounded-3xl border-2 border-dashed border-[#0d47a1]/40 bg-[#0d47a1]/6 p-4">
-          <p className="mb-3 flex items-center gap-2 text-sm font-extrabold text-primary"><Video size={17} /> فيديو الدرس</p>
-          <FoundationVideoUploader
-            value={form.videoUrl || ''}
-            onUploaded={(url) => setForm({ ...form, videoUrl: url })}
-          />
-          <div className="mt-3">
-          <Field2 label="رابط الفيديو" hint="يوتيوب (عادي أو مختصر) أو Vimeo أو رابط ملف mp4 مباشر">
-            <input value={form.videoUrl || ''} onChange={(e) => setForm({ ...form, videoUrl: e.target.value })} dir="ltr" placeholder="https://www.youtube.com/watch?v=..." className={`${touchCls} font-mono text-sm`} data-testid="input-foundation-video" />
-          </Field2>
-          </div>
-          <div className="mt-3">
-            <Field2 label="وصف تحت الفيديو" hint="سطر يشرح للطالب ماذا يتعلم من المقطع">
-              <input value={form.videoCaption || ''} onChange={(e) => setForm({ ...form, videoCaption: e.target.value })} placeholder="شرح قاعدة المد..." className={touchCls} />
-            </Field2>
-          </div>
-          {form.videoUrl ? (
-            <div className="mt-3"><FoundationVideoPlayer url={form.videoUrl} caption={form.videoCaption} /></div>
-          ) : null}
-        </div>
-      ) : null}
-
-      {/* HTML */}
-      {wants('html') ? (
-        <div className="rounded-3xl border-2 border-dashed border-[#6a1b9a]/40 bg-[#6a1b9a]/6 p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <p className="flex items-center gap-2 text-sm font-extrabold text-primary"><FileCode2 size={17} /> محتوى HTML تفاعلي</p>
-            <span className="flex overflow-hidden rounded-xl border-2 border-border">
-              <button type="button" onClick={() => setHtmlTab('paste')} className={`min-h-[44px] px-4 text-xs font-extrabold ${htmlTab === 'paste' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>لصق الكود</button>
-              <button type="button" onClick={() => setHtmlTab('file')} className={`min-h-[44px] px-4 text-xs font-extrabold ${htmlTab === 'file' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>رفع ملف</button>
-            </span>
-          </div>
-
-          {htmlTab === 'paste' ? (
-            <textarea
-              value={form.htmlContent || ''}
-              onChange={(e) => setForm({ ...form, htmlContent: e.target.value })}
-              rows={9}
-              dir="ltr"
-              spellCheck={false}
-              placeholder="<html>…</html> الصق الكود كاملاً"
-              className={`${touchCls} resize-y font-mono text-xs leading-6`}
-              data-testid="input-foundation-html"
-            />
-          ) : (
-            <div className="space-y-2">
-              <button type="button" onClick={() => fileRef.current?.click()} disabled={htmlUploading} className={`${touchBtnSoft} w-full`}>
-                {htmlUploading ? <RefreshCw size={18} className="animate-spin" /> : <Upload size={18} />} {htmlUploading ? 'جارٍ القراءة...' : 'اختر ملف HTML من جهازك'}
-              </button>
-              <input ref={fileRef} type="file" accept=".html,.htm,text/html" className="hidden" onChange={(e) => { uploadHtml(e.target.files?.[0]); e.target.value = ''; }} />
-              <Field2 label="أو رابط ملف HTML">
-                <input value={form.htmlFileUrl || ''} onChange={(e) => setForm({ ...form, htmlFileUrl: e.target.value })} dir="ltr" placeholder="https://.../lesson.html" className={`${touchCls} font-mono text-sm`} />
-              </Field2>
-            </div>
-          )}
-          <FoundationBundleUploader
-            value={form.htmlFileUrl || ''}
-            onUploaded={(url) => setForm({ ...form, htmlFileUrl: url, htmlContent: '' })}
-          />
-
-
-          {(form.htmlContent || form.htmlFileUrl) ? (
-            <div className="mt-4">
-              <p className="mb-2 text-xs font-extrabold text-primary">👁 معاينة قبل النشر</p>
-              <HtmlPreviewFrame content={form.htmlContent} fileUrl={form.htmlFileUrl} />
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      {/* التحكم */}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <button type="button" onClick={() => setForm({ ...form, isVisible: !form.isVisible })} className={`flex min-h-[60px] items-center gap-3 rounded-2xl border-2 p-4 text-right transition-colors ${form.isVisible !== false ? 'border-primary bg-primary/8' : 'border-border bg-card'}`}>
-          <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg ${form.isVisible !== false ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>{form.isVisible !== false ? <Check size={16} /> : null}</span>
-          <span><span className="block text-sm font-extrabold text-primary">ظاهر للطالب</span><span className="block text-[11px] text-muted-foreground">أطفئه ليجهّز الدرس دون نشر</span></span>
-        </button>
-        <button type="button" onClick={() => setForm({ ...form, isLocked: !form.isLocked })} className={`flex min-h-[60px] items-center gap-3 rounded-2xl border-2 p-4 text-right transition-colors ${form.isLocked ? 'border-[#b7791f] bg-[#b7791f]/10' : 'border-border bg-card'}`}>
-          <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg ${form.isLocked ? 'bg-[#b7791f] text-white' : 'bg-muted text-muted-foreground'}`}>{form.isLocked ? <Lock size={15} /> : null}</span>
-          <span><span className="block text-sm font-extrabold text-primary">مقفل</span><span className="block text-[11px] text-muted-foreground">يظهر عنوانه ولا يفتح حتى تفتحه</span></span>
-        </button>
-      </div>
-
-      <div className="sticky bottom-0 -mx-4 flex gap-3 border-t border-border bg-card/95 px-4 pb-2 pt-4 backdrop-blur sm:-mx-7 sm:px-7">
-        <button type="submit" disabled={saving} className={`${touchBtnPrimary} flex-1`}><Save size={18} /> {saving ? 'جارٍ الحفظ...' : submitLabel}</button>
-        <button type="button" onClick={onCancel} className={touchBtnSoft}>إلغاء</button>
-      </div>
-    </form>
-  );
-}
 
 /* ═══════════════════════════════════════════════════════════════════════
    واجهة الطالب — التأسيس بثلاثة مستويات
@@ -13151,6 +13499,7 @@ function Router() {
         <Route path="/teacher/students" component={StudentsPage} />
         <Route path="/teacher/students/grade/:grade" component={GradeStudentsRoute} />
         <Route path="/teacher/foundation" component={TeacherFoundationPage} />
+        <Route path="/teacher/foundation/lesson/:lessonId" component={TeacherFoundationLessonPage} />
         <Route path="/teacher/content" component={CurriculumManagerPage} />
         <Route path="/teacher/exams" component={TeacherExamsPage} />
         <Route path="/teacher/assignments" component={TeacherAssignmentsPage} />

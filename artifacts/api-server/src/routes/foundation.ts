@@ -188,6 +188,37 @@ export async function hasUnitsTable(): Promise<boolean> {
   return unitsTableReady;
 }
 
+// ---------------------------------------------------------------------------
+// كتل الدرس: الدرس الواحد يحمل عناصر متعددة مرتبة (نص، صور، فيديو، HTML).
+// تُخزَّن كمغلف JSON في body_text نفسه — بلا أعمدة جديدة وبلا ترحيل:
+//   {"v":1,"blocks":[{"id":"b1","type":"text","text":"..."}, ...]}
+// الدرس القديم (نص عادي) يُقرأ كما كان تماماً — التوافق الكامل مضمون.
+// ---------------------------------------------------------------------------
+
+/** يستخرج الكتل من الدرس، أو null إن كان درساً قديماً أحادي المحتوى */
+function lessonBlocksOf(l: any): Array<{ id?: string; type: string; [k: string]: any }> | null {
+  try {
+    const raw = l?.body_text;
+    if (!raw || typeof raw !== "string" || raw[0] !== "{") return null;
+    const o = JSON.parse(raw);
+    if (!o || o.v !== 1 || !Array.isArray(o.blocks)) return null;
+    const blocks = o.blocks.filter((b: any) => b && typeof b.type === "string");
+    return blocks.length ? blocks : null;
+  } catch {
+    return null;
+  }
+}
+
+/** معاينة نصية للقوائم: أول كتلة نصية، وإلا النص القديم كما كان */
+function lessonTextPreview(l: any): string {
+  const blocks = lessonBlocksOf(l);
+  if (blocks) {
+    const first = blocks.find((b) => b.type === "text" && String(b.text || "").trim());
+    return String(first?.text || "").slice(0, 140);
+  }
+  return String(l.body_text || "").slice(0, 140);
+}
+
 function lessonToJson(l: any, opts: { full?: boolean; done?: boolean } = {}) {
   const images = jsonList(l.images);
   const base = {
@@ -201,6 +232,8 @@ function lessonToJson(l: any, opts: { full?: boolean; done?: boolean } = {}) {
     isLocked: !!l.is_locked,
     isVisible: l.is_visible !== false,
     done: !!opts.done,
+    // عدد العناصر داخل الدرس (0 = درس قديم أحادي) — لشارة "N عناصر" بلوحة المعلم
+    blockCount: lessonBlocksOf(l)?.length || 0,
   };
   if (!opts.full) {
     // بطاقة مختصرة للقائمة — بدون المحتوى الثقيل
@@ -210,7 +243,7 @@ function lessonToJson(l: any, opts: { full?: boolean; done?: boolean } = {}) {
       imageCount: images.length,
       hasVideo: !!l.video_url,
       hasHtml: !!l.html_content || !!l.html_file_url,
-      textPreview: String(l.body_text || "").slice(0, 140),
+      textPreview: lessonTextPreview(l),
     };
   }
   return {
@@ -1137,6 +1170,24 @@ router.get("/teacher/foundation/sections/:id/lessons", requireAdmin, async (req,
   } catch (err: any) {
     logger.error({ err }, "GET teacher foundation lessons failed");
     res.status(500).json({ error: "تعذر تحميل الدروس — " + V7_HINT });
+  }
+});
+
+/** درس واحد كامل للمعلم — بلا فلتر رؤية (يحرر المخفي أيضاً) */
+router.get("/teacher/foundation/lessons/:id", requireAdmin, async (req, res) => {
+  try {
+    const { data: rows } = await supabaseQuery<any[]>(
+      `foundation_lessons?id=eq.${enc(req.params.id)}&limit=1`,
+    );
+    const lesson = rows?.[0];
+    if (!lesson) {
+      res.status(404).json({ error: "الدرس غير موجود." });
+      return;
+    }
+    res.json(lessonToJson(lesson, { full: true }));
+  } catch (err: any) {
+    logger.error({ err }, "GET teacher foundation lesson failed");
+    res.status(500).json({ error: "تعذر تحميل الدرس — " + V7_HINT });
   }
 });
 

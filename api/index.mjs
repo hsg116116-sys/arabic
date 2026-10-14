@@ -37543,6 +37543,26 @@ async function hasUnitsTable() {
   if (!unitsTableReady) logger.warn({ hint: V10_HINT }, "foundation_units not ready \u2014 running flat");
   return unitsTableReady;
 }
+function lessonBlocksOf(l) {
+  try {
+    const raw = l?.body_text;
+    if (!raw || typeof raw !== "string" || raw[0] !== "{") return null;
+    const o = JSON.parse(raw);
+    if (!o || o.v !== 1 || !Array.isArray(o.blocks)) return null;
+    const blocks = o.blocks.filter((b) => b && typeof b.type === "string");
+    return blocks.length ? blocks : null;
+  } catch {
+    return null;
+  }
+}
+function lessonTextPreview(l) {
+  const blocks = lessonBlocksOf(l);
+  if (blocks) {
+    const first = blocks.find((b) => b.type === "text" && String(b.text || "").trim());
+    return String(first?.text || "").slice(0, 140);
+  }
+  return String(l.body_text || "").slice(0, 140);
+}
 function lessonToJson2(l, opts = {}) {
   const images = jsonList(l.images);
   const base = {
@@ -37555,7 +37575,9 @@ function lessonToJson2(l, opts = {}) {
     position: l.position ?? 1,
     isLocked: !!l.is_locked,
     isVisible: l.is_visible !== false,
-    done: !!opts.done
+    done: !!opts.done,
+    // عدد العناصر داخل الدرس (0 = درس قديم أحادي) — لشارة "N عناصر" بلوحة المعلم
+    blockCount: lessonBlocksOf(l)?.length || 0
   };
   if (!opts.full) {
     return {
@@ -37564,7 +37586,7 @@ function lessonToJson2(l, opts = {}) {
       imageCount: images.length,
       hasVideo: !!l.video_url,
       hasHtml: !!l.html_content || !!l.html_file_url,
-      textPreview: String(l.body_text || "").slice(0, 140)
+      textPreview: lessonTextPreview(l)
     };
   }
   return {
@@ -38357,6 +38379,22 @@ router7.get("/teacher/foundation/sections/:id/lessons", requireAdmin, async (req
   } catch (err) {
     logger.error({ err }, "GET teacher foundation lessons failed");
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u0645\u064A\u0644 \u0627\u0644\u062F\u0631\u0648\u0633 \u2014 " + V7_HINT });
+  }
+});
+router7.get("/teacher/foundation/lessons/:id", requireAdmin, async (req, res) => {
+  try {
+    const { data: rows } = await supabaseQuery(
+      `foundation_lessons?id=eq.${enc3(req.params.id)}&limit=1`
+    );
+    const lesson = rows?.[0];
+    if (!lesson) {
+      res.status(404).json({ error: "\u0627\u0644\u062F\u0631\u0633 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F." });
+      return;
+    }
+    res.json(lessonToJson2(lesson, { full: true }));
+  } catch (err) {
+    logger.error({ err }, "GET teacher foundation lesson failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u0645\u064A\u0644 \u0627\u0644\u062F\u0631\u0633 \u2014 " + V7_HINT });
   }
 });
 router7.post("/teacher/foundation/lessons", requireAdmin, async (req, res) => {
