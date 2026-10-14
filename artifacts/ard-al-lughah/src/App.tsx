@@ -10368,12 +10368,19 @@ function TeacherFoundationPage() {
   const [savingSection, setSavingSection] = useState(false);
   const [formError, setFormError] = useState('');
 
-  const [lessonModal, setLessonModal] = useState<null | { mode: 'create'; sectionId: string } | { mode: 'edit'; lesson: any }>(null);
+  const [lessonModal, setLessonModal] = useState<null | { mode: 'create'; sectionId: string; unitId?: string } | { mode: 'edit'; lesson: any }>(null);
   const [lessonForm, setLessonForm] = useState<any>({});
   const [savingLesson, setSavingLesson] = useState(false);
   const [lessonError, setLessonError] = useState('');
   const [preview, setPreview] = useState<any | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+
+  // ── القسم الفرعي المختار داخل المستوى النشط ──
+  const [activeUnit, setActiveUnit] = useState<string>('');
+  const [unitModal, setUnitModal] = useState<null | { mode: 'create' } | { mode: 'edit'; unit: any }>(null);
+  const [unitForm, setUnitForm] = useState<any>({});
+  const [savingUnit, setSavingUnit] = useState(false);
+  const [unitError, setUnitError] = useState('');
 
   const flash = (text: string, tone: 'ok' | 'err' = 'ok') => {
     setToast({ text, tone });
@@ -10400,7 +10407,77 @@ function TeacherFoundationPage() {
   useEffect(() => { reload(false); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   const totalLessons = sections.reduce((a, s) => a + (s.lessonsCount || 0), 0);
+  const totalUnits = sections.reduce((a, s) => a + ((s.units || []).length || 0), 0);
   const current = sections.find((s) => s.id === activeSection) || null;
+  const currentUnits: any[] = current ? (Array.isArray(current.units) ? current.units : []) : [];
+  const currentUnit = currentUnits.find((u) => u.id === activeUnit) || null;
+  // بلا قسم فرعي مختار نعرض كل دروس المستوى — لا يختفي درس عن الأستاذ
+  const visibleLessons: any[] = currentUnit
+    ? (Array.isArray(currentUnit.lessons) ? currentUnit.lessons : [])
+    : (current?.lessons || []).flatMap((l: any) => [l]);
+
+  // تبديل المستوى يُصفّر القسم الفرعي المختار — وإلا بقي مختاراً من مستوىٍ آخر
+  useEffect(() => {
+    setActiveUnit((prev) => (currentUnits.some((u) => u.id === prev) ? prev : ''));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSection]);
+
+  const moveSection = async (s: any, dir: 'up' | 'down') => {
+    try { await jsonFetch('/api/teacher/foundation/sections/reorder', { method: 'POST', body: { id: s.id, dir } }); await reload(); }
+    catch (err: any) { flash(err?.message || 'تعذرت إعادة ترتيب الأقسام', 'err'); }
+  };
+  const moveUnit = async (u: any, dir: 'up' | 'down') => {
+    try { await jsonFetch('/api/teacher/foundation/units/reorder', { method: 'POST', body: { id: u.id, dir } }); await reload(); }
+    catch (err: any) { flash(err?.message || 'تعذرت إعادة ترتيب الأقسام الفرعية', 'err'); }
+  };
+
+  /* ── الأقسام الفرعية ── */
+  const openUnitCreate = () => {
+    if (!current) { flash('اختر مستوىً أولاً ثم أنشئ أقسامه الفرعية', 'err'); return; }
+    setUnitForm({
+      title: '', description: '', icon: 'book-open', color: '',
+      isLocked: false, isVisible: true,
+    });
+    setUnitError('');
+    setUnitModal({ mode: 'create' });
+  };
+  const openUnitEdit = (u: any) => {
+    setUnitForm({ title: u.title, description: u.description, icon: u.icon, color: u.color || '', isLocked: u.isLocked, isVisible: u.isVisible });
+    setUnitError('');
+    setUnitModal({ mode: 'edit', unit: u });
+  };
+  const saveUnit = async (e: FormEvent) => {
+    e.preventDefault();
+    const title = String(unitForm.title || '').trim();
+    if (!title) { setUnitError('اكتب عنوان القسم الفرعي أولاً.'); return; }
+    setSavingUnit(true);
+    setUnitError('');
+    try {
+      if (unitModal?.mode === 'create') {
+        const r = await jsonFetch('/api/teacher/foundation/units', { method: 'POST', body: { ...unitForm, title, sectionId: current.id } });
+        if (r?.unit?.id) setActiveUnit(r.unit.id);
+        flash(`تم إنشاء «${title}»`);
+      } else if (unitModal?.mode === 'edit') {
+        await jsonFetch(`/api/teacher/foundation/units/${unitModal.unit.id}`, { method: 'PATCH', body: { ...unitForm, title } });
+        flash('تم حفظ القسم الفرعي');
+      }
+      setUnitModal(null);
+      await reload();
+    } catch (err: any) {
+      const m = err?.message || 'تعذر حفظ القسم الفرعي';
+      setUnitError(m);
+      flash(m, 'err');
+    } finally { setSavingUnit(false); }
+  };
+  const quickUnit = async (u: any, patch: any) => {
+    try { await jsonFetch(`/api/teacher/foundation/units/${u.id}`, { method: 'PATCH', body: patch }); await reload(); flash('تم التحديث'); }
+    catch (err: any) { flash(err?.message || 'تعذر التعديل', 'err'); }
+  };
+  const removeUnit = async (u: any) => {
+    if (!window.confirm(`حذف القسم الفرعي «${u.title}»؟ دروسه (${u.lessonsCount || 0}) تبقى وتنتقل إلى القسم الأول.`)) return;
+    try { await jsonFetch(`/api/teacher/foundation/units/${u.id}`, { method: 'DELETE' }); setActiveUnit(''); await reload(); flash('تم الحذف'); }
+    catch (err: any) { flash(err?.message || 'تعذر الحذف', 'err'); }
+  };
 
   /* ── الفواصل: عناوين تنظيمية فقط، لا صفحات للطالب ── */
   const openSectionCreate = () => {
@@ -10460,7 +10537,7 @@ function TeacherFoundationPage() {
   };
 
   /* ── الدروس ── */
-  const openLessonCreate = (sectionId?: string) => {
+  const openLessonCreate = (sectionId?: string, unitId?: string) => {
     // لا نهاية ميتة: إن لم يوجد فاصل ننشئ واحداً فوراً بدل رسالة "أنشئ فاصلاً"
     const target = sectionId || activeSection || sections[0]?.id || '';
     if (!target) {
@@ -10470,15 +10547,17 @@ function TeacherFoundationPage() {
       flash('أنشئ فاصلاً أولاً — بعد حفظه ستنتقل مباشرة لإضافة الدروس', 'err');
       return;
     }
-    setLessonForm({ title: '', description: '', kind: 'text', bodyText: '', coverUrl: '', images: [], videoUrl: '', videoCaption: '', htmlContent: '', htmlFileUrl: '', isLocked: false, isVisible: true });
+    setLessonForm({ title: '', description: '', kind: 'text', bodyText: '', coverUrl: '', images: [], videoUrl: '', videoCaption: '', htmlContent: '', htmlFileUrl: '', isLocked: false, isVisible: true, unitId: unitId || activeUnit || '' });
     setLessonError('');
-    setLessonModal({ mode: 'create', sectionId: target });
+    setLessonModal({ mode: 'create', sectionId: target, unitId: unitId || activeUnit || undefined });
   };
   const openLessonEdit = (l: any) => {
     setLessonError('');
     jsonFetch(`/api/foundation/lessons/${l.id}`)
       .then((full: any) => {
-        setLessonForm({ title: full.title, description: full.description, kind: full.kind, bodyText: full.bodyText || '', coverUrl: full.coverUrl || '', images: full.images || [], videoUrl: full.videoUrl || '', videoCaption: full.videoCaption || '', htmlContent: full.htmlContent || '', htmlFileUrl: full.htmlFileUrl || '', isLocked: full.isLocked, isVisible: full.isVisible });
+        // الوحدة تُرجَع مكمّلة بـ __flat__ عند الدرس بلا قسم — نفرّغها للقائمة
+        const rawUnit = String(full.unitId || '');
+        setLessonForm({ title: full.title, description: full.description, kind: full.kind, bodyText: full.bodyText || '', coverUrl: full.coverUrl || '', images: full.images || [], videoUrl: full.videoUrl || '', videoCaption: full.videoCaption || '', htmlContent: full.htmlContent || '', htmlFileUrl: full.htmlFileUrl || '', isLocked: full.isLocked, isVisible: full.isVisible, unitId: rawUnit.startsWith('__flat__') ? '' : rawUnit });
         setLessonModal({ mode: 'edit', lesson: { ...l, ...full } });
       })
       .catch((e: any) => flash(e?.message || 'تعذر فتح الدرس', 'err'));
@@ -10491,8 +10570,8 @@ function TeacherFoundationPage() {
     setLessonError('');
     try {
       if (lessonModal?.mode === 'create') {
-        await jsonFetch('/api/teacher/foundation/lessons', { method: 'POST', body: { ...lessonForm, title, sectionId: lessonModal.sectionId } });
-        flash(`تمت إضافة «${title}» إلى التدفّق`);
+        await jsonFetch('/api/teacher/foundation/lessons', { method: 'POST', body: { ...lessonForm, title, sectionId: lessonModal.sectionId, unitId: lessonModal.unitId } });
+        flash(`تمت إضافة «${title}»`);
       } else if (lessonModal?.mode === 'edit') {
         await jsonFetch(`/api/teacher/foundation/lessons/${lessonModal.lesson.id}`, { method: 'PATCH', body: { ...lessonForm, title } });
         flash('تم حفظ الدرس');
@@ -10530,20 +10609,20 @@ function TeacherFoundationPage() {
   return (
     <Shell mode="teacher">
       <SectionHero
-        eyebrow="تدفّق واحد — نص تحت نص"
+        eyebrow="ثلاثة مستويات: القسم ثم القسم الفرعي ثم الدرس"
         title="إعداد التأسيس"
-        body="كل ما تكتبه هنا ينزل للطالب في صفحة واحدة متصلة يقرأها من أولها لآخرها. أضف الدروس ورتّبها بالأسهم، والفواصل تكتفي بتنظيم	المقاطع — الطالب لا يفتح أي قسم."
+        body="الطالب يفتح المستوى فيرى مربعات أقسامه، ويفتح القسم فيرى دروسه، ويفتح الدرس فيقرأه في صفحة مستقلة. أنت تتحكّم بالترتيب في كل مستوى، وتحرّر كل درس بما تريد — نصاً أو صوراً أو فيديو أو HTML."
         action={
           <div className="flex flex-wrap gap-2.5">
-            <button type="button" onClick={openSectionCreate} className={touchBtnSoft} data-testid="button-add-foundation-divider"><Layers size={18} /> فاصل جديد</button>
+            <button type="button" onClick={openSectionCreate} className={touchBtnSoft} data-testid="button-add-foundation-section"><Layers size={18} /> مستوى جديد</button>
             <button type="button" onClick={() => openLessonCreate()} className={touchBtnAccent} data-testid="button-add-foundation-lesson"><Plus size={20} /> أضف درساً</button>
           </div>
         }
         stats={[
-          { value: sections.length, label: 'فواصل' },
-          { value: totalLessons, label: 'درس في التدفّق' },
+          { value: sections.length, label: 'مستوى' },
+          { value: totalUnits, label: 'قسم فرعي' },
+          { value: totalLessons, label: 'درس' },
           { value: sections.reduce((a, s) => a + (s.memberCount || 0), 0), label: 'طالب مسجَّل' },
-          { value: sections.filter((s) => s.isVisible).length, label: 'ظاهر للطالب' },
         ]}
       />
 
@@ -10574,21 +10653,50 @@ function TeacherFoundationPage() {
               ) : null}
             </div>
 
-            {/* اختيار الفاصل — أزرار كبيرة فقط إن كان هناك أكثر من فاصل */}
+            {/* اختيار المستوى — أزرار كبيرة مع أسهم الترتيب */}
             {sections.length > 1 ? (
-              <div className="flex flex-wrap gap-2 border-b border-border bg-secondary/40 p-4">
-                <span className="self-center text-xs font-extrabold text-muted-foreground">الفاصل:</span>
-                {sections.map((s: any) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => setActiveSection(s.id)}
-                    className={`min-h-[48px] rounded-2xl px-5 text-sm font-extrabold transition-colors ${activeSection === s.id ? 'bg-[#6a1b9a] text-white shadow-md' : 'border-2 border-border bg-card text-muted-foreground active:bg-secondary'}`}
-                  >
-                    {s.title}
-                    <span className="mr-1.5 tabular-nums opacity-75">({s.memberCount})</span>
-                  </button>
+              <div className="flex flex-wrap items-center gap-2 border-b border-border bg-secondary/40 p-4">
+                <span className="self-center text-xs font-extrabold text-muted-foreground">المستوى:</span>
+                {sections.map((s: any, si: number) => (
+                  <span key={s.id} className="flex items-center">
+                    <button
+                      type="button"
+                      onClick={() => setActiveSection(s.id)}
+                      data-testid={`button-pick-section-${s.id}`}
+                      className={`min-h-[48px] rounded-2xl px-5 text-sm font-extrabold transition-colors ${activeSection === s.id ? 'bg-[#6a1b9a] text-white shadow-md' : 'border-2 border-border bg-card text-muted-foreground active:bg-secondary'}`}
+                    >
+                      {s.subtitle ? `${s.subtitle} — ` : ''}{s.title}
+                      <span className="mr-1.5 tabular-nums opacity-75">({s.memberCount})</span>
+                    </button>
+                    <span className="ms-1 flex flex-col">
+                      <button type="button" onClick={() => moveSection(s, 'up')} disabled={si === 0} className="grid h-4 w-6 place-items-center text-muted-foreground disabled:opacity-20" aria-label="تقديم المستوى"><ArrowUp size={12} /></button>
+                      <button type="button" onClick={() => moveSection(s, 'down')} disabled={si === sections.length - 1} className="grid h-4 w-6 place-items-center text-muted-foreground disabled:opacity-20" aria-label="تأخير المستوى"><ArrowDown size={12} /></button>
+                    </span>
+                  </span>
                 ))}
+              </div>
+            ) : null}
+
+            {/* شريط breadcrumb داخل المستوى — يحكي للطالب-visible أين أنا */}
+            {current ? (
+              <div className="flex flex-wrap items-center gap-1.5 border-b border-border bg-card px-4 py-3 text-sm font-bold">
+                <span className="text-muted-foreground">المسار:</span>
+                <span className="rounded-lg bg-secondary px-2.5 py-1 text-primary">{current.subtitle || current.title}</span>
+                <ChevronLeft size={14} className="text-muted-foreground/50" />
+                {currentUnit ? (
+                  <>
+                    <span className="rounded-lg bg-accent/30 px-2.5 py-1 text-accent-foreground">{currentUnit.title}</span>
+                    <ChevronLeft size={14} className="text-muted-foreground/50" />
+                    <span className="text-muted-foreground">{visibleLessons.length} درس</span>
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">كل الأقسام الفرعية · {current.lessonsCount} درس</span>
+                )}
+                {currentUnit ? (
+                  <button type="button" onClick={() => setActiveUnit('')} className="ms-auto rounded-lg px-2.5 py-1 text-xs font-extrabold text-primary hover:bg-secondary" data-testid="button-clear-active-unit">
+                    عرض كل دروس المستوى
+                  </button>
+                ) : null}
               </div>
             ) : null}
 
@@ -10599,109 +10707,260 @@ function TeacherFoundationPage() {
                 : null}
           </section>
 
-          {/* ═══ التدفّق: كل الدروس مع بعض ═══ */}
+          {/* ═══ الأقسام الفرعية: مربعات داخل المستوى ═══ */}
+          {current ? (
+            <section className="rounded-[2rem] border border-border bg-card shadow-sm">
+              <div className="flex flex-wrap items-center gap-3 border-b border-border bg-gradient-to-l from-[#17413f] to-[#2a7a72] p-4 text-white sm:p-5">
+                <Layers size={20} />
+                <div className="min-w-0 flex-1">
+                  <h2 className="font-display text-lg font-extrabold">أقسام «{current.subtitle || current.title}»</h2>
+                  <p className="mt-0.5 text-xs font-bold text-white/75">
+                    {currentUnits.length} قسم فرعي · {current.lessonsCount} درس — رتّبها بالأسهم، والدروس تنزل تحتها
+                  </p>
+                </div>
+                <button type="button" onClick={openUnitCreate} className="inline-flex min-h-[48px] items-center gap-2 rounded-2xl bg-accent px-5 text-sm font-extrabold text-[#3a2c07] shadow-lg active:scale-[.97]" data-testid="button-add-foundation-unit">
+                  <Plus size={18} /> قسم فرعي جديد
+                </button>
+              </div>
+
+              {!currentUnits.length ? (
+                <div className="px-5 py-12 text-center">
+                  <p className="text-sm font-semibold text-muted-foreground">
+                    لا أقسام فرعية بعد — أنشئ واحداً لتضع دروسه فيه.
+                  </p>
+                  <button type="button" onClick={openUnitCreate} className={`${touchBtnSoft} mt-4 px-5 text-sm`}>
+                    <Plus size={17} /> أنشئ أول قسم فرعي
+                  </button>
+                </div>
+              ) : (
+                <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {currentUnits.map((u: any, ui: number) => {
+                    const UIcon = (UNIT_ICONS as any)[u.icon] || BookOpen;
+                    const uColor = u.color || current.color;
+                    const picked = activeUnit === u.id;
+                    return (
+                      <div
+                        key={u.id}
+                        className={`group relative overflow-hidden rounded-3xl border p-4 transition-all ${picked ? 'border-accent ring-4 ring-accent/20' : 'border-border hover:border-primary/35'}`}
+                        style={{ background: picked ? `${uColor}12` : undefined }}
+                        data-testid={`unit-card-${u.id}`}
+                      >
+                        {u.isVirtual ? (
+                          <span className="absolute left-3 top-3 rounded-full bg-muted px-2 py-0.5 text-[9px] font-extrabold text-muted-foreground">تلقائي</span>
+                        ) : null}
+
+                        <div className="flex items-start gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setActiveUnit(picked ? '' : u.id)}
+                            className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-white shadow-md"
+                            style={{ background: `linear-gradient(135deg, ${uColor}, ${uColor}99)` }}
+                            aria-label="اختيار القسم الفرعي"
+                          >
+                            <UIcon size={19} />
+                          </button>
+                          <button type="button" onClick={() => setActiveUnit(picked ? '' : u.id)} className="min-w-0 flex-1 text-right">
+                            <p className="truncate font-display text-[15px] font-extrabold text-primary">{u.title}</p>
+                            <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] font-bold text-muted-foreground">
+                              <span className="rounded-md bg-secondary px-2 py-0.5 tabular-nums">{u.lessonsCount} درس</span>
+                              {!u.isVisible ? <span className="rounded-md bg-muted px-2 py-0.5">مخفي</span> : null}
+                              {u.isLocked ? <span className="rounded-md bg-[#b7791f]/15 px-2 py-0.5 text-[#b7791f]">مقفل</span> : null}
+                            </p>
+                          </button>
+                        </div>
+
+                        {!u.isVirtual ? (
+                          <div className="mt-3 flex flex-wrap items-center gap-1 border-t border-border pt-3">
+                            <span className="flex flex-col">
+                              <button type="button" onClick={() => moveUnit(u, 'up')} disabled={ui === 0} className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground active:bg-secondary disabled:opacity-25" aria-label="تقديم"><ArrowUp size={14} /></button>
+                              <button type="button" onClick={() => moveUnit(u, 'down')} disabled={ui === currentUnits.length - 1} className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground active:bg-secondary disabled:opacity-25" aria-label="تأخير"><ArrowDown size={14} /></button>
+                            </span>
+                            <button type="button" onClick={() => openLessonCreate(current.id, u.id)} className="grid h-9 w-9 place-items-center rounded-xl bg-accent/25 text-accent-foreground active:bg-accent/50" aria-label="أضف درساً"><Plus size={16} /></button>
+                            <button type="button" onClick={() => quickUnit(u, { isVisible: !u.isVisible })} className="grid h-9 w-9 place-items-center rounded-xl bg-secondary text-muted-foreground active:bg-accent/40" aria-label="إظهار/إخفاء">{u.isVisible ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+                            <button type="button" onClick={() => quickUnit(u, { isLocked: !u.isLocked })} className="grid h-9 w-9 place-items-center rounded-xl bg-secondary text-muted-foreground active:bg-accent/40" aria-label="قفل">{u.isLocked ? <LockOpen size={16} /> : <Lock size={16} />}</button>
+                            <button type="button" onClick={() => openUnitEdit(u)} className="grid h-9 w-9 place-items-center rounded-xl bg-secondary text-primary active:bg-accent/40" aria-label="تعديل"><Pencil size={16} /></button>
+                            <button type="button" onClick={() => removeUnit(u)} className="grid h-9 w-9 place-items-center rounded-xl bg-secondary text-destructive active:bg-destructive/10" aria-label="حذف"><Trash2 size={16} /></button>
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          ) : null}
+
+          {/* ═══ الدروس: داخل القسم الفرعي المختار أو كل المستوى ═══ */}
           <section>
             <div className="mb-4 flex flex-wrap items-center gap-3">
-              <h2 className="flex items-center gap-2 font-display text-lg font-extrabold text-primary"><NotebookPen size={20} /> تدفّق التأسيس</h2>
-              <span className="rounded-xl bg-secondary px-3 py-1.5 text-xs font-extrabold tabular-nums text-primary">{totalLessons}</span>
-              <button type="button" onClick={() => openLessonCreate(activeSection)} className={`${touchBtnAccent} mr-auto px-5 text-sm`}><Plus size={18} /> أضف درساً</button>
+              <h2 className="flex items-center gap-2 font-display text-lg font-extrabold text-primary">
+                <NotebookPen size={20} />
+                {currentUnit ? `دروس «${currentUnit.title}»` : current ? `دروس «${current.subtitle || current.title}»` : 'الدروس'}
+              </h2>
+              <span className="rounded-xl bg-secondary px-3 py-1.5 text-xs font-extrabold tabular-nums text-primary">{visibleLessons.length}</span>
+              <button type="button" onClick={() => openLessonCreate(activeSection, activeUnit || undefined)} className={`${touchBtnAccent} mr-auto px-5 text-sm`} data-testid="button-add-lesson-here">
+                <Plus size={18} /> أضف درساً
+              </button>
             </div>
 
             {!sections.length ? (
               <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-16 text-center">
                 <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-gradient-to-br from-primary to-[#2a7a72] text-primary-foreground shadow-lg"><NotebookPen size={30} /></span>
-                <p className="font-display text-xl font-bold text-primary">ابدأ أول فاصل</p>
-                <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-muted-foreground">الفاصل مجرد عنوان طويل في الصفحة — يشرح للطالب أين هو. أنشئ واحداً ثم ابدأ  الدروس تحته.</p>
-                <button type="button" onClick={openSectionCreate} className={`${touchBtnPrimary} mt-6`}><Plus size={20} /> أنشئ فاصلاً</button>
+                <p className="font-display text-xl font-bold text-primary">ابدأ أول مستوى</p>
+                <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-muted-foreground">المستوى هو الصفحة الأولى التي يراها الطالب. أنشئ واحداً ثم قسّمه إلى أقسام فرعية وضع فيها الدروس.</p>
+                <button type="button" onClick={openSectionCreate} className={`${touchBtnPrimary} mt-6`}><Plus size={20} /> أنشئ مستوىً</button>
+              </div>
+            ) : !visibleLessons.length ? (
+              <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-16 text-center">
+                <p className="font-display text-xl font-bold text-primary">
+                  {currentUnit ? `قسم «${currentUnit.title}» بلا دروس` : 'لا دروس في هذا المستوى بعد'}
+                </p>
+                <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-muted-foreground">
+                  الدرس يحوي نصاً وصوراً وفيديو وHTML — اكتب ما تريد فيه وستظهر للطالب كما هي.
+                </p>
+                <button type="button" onClick={() => openLessonCreate(activeSection, activeUnit || undefined)} className={`${touchBtnSoft} mt-6 px-6 text-sm`}>
+                  <Plus size={18} /> أضف أول درس
+                </button>
               </div>
             ) : (
-              <div className="space-y-5">
-                {sections.map((s: any) => (
-                  <div key={s.id} className="overflow-hidden rounded-[2rem] border border-border bg-card shadow-sm">
-                    {/* ترويسة الفاصل — خيط لوني + أدوات */}
-                    <div className="flex items-center gap-3 px-4 py-4 sm:px-5" style={{ background: `linear-gradient(to left, ${s.color}14, transparent)` }}>
-                      <span className="h-11 w-2 shrink-0 rounded-full shadow" style={{ background: s.color }} />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-display text-base font-extrabold text-primary">{s.title}</p>
-                        <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] font-bold text-muted-foreground">
-                          <span className="rounded-md bg-secondary px-2 py-0.5">{s.lessonsCount} درس</span>
-                          <span className="rounded-md bg-[#6a1b9a]/10 px-2 py-0.5 text-[#6a1b9a]">{s.memberCount} طالب</span>
-                          {!s.isVisible ? <span className="rounded-md bg-muted px-2 py-0.5">مخفي</span> : null}
-                          {s.isLocked ? <span className="rounded-md bg-[#b7791f]/15 px-2 py-0.5 text-[#b7791f]">مقفل</span> : null}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1">
-                        <button type="button" onClick={() => quickSection(s, { isVisible: !s.isVisible })} className="grid h-11 w-11 place-items-center rounded-xl text-muted-foreground active:bg-secondary" aria-label="إظهار/إخفاء">{s.isVisible ? <EyeOff size={17} /> : <Eye size={17} />}</button>
-                        <button type="button" onClick={() => quickSection(s, { isLocked: !s.isLocked })} className="grid h-11 w-11 place-items-center rounded-xl text-muted-foreground active:bg-secondary" aria-label="قفل/فتح">{s.isLocked ? <LockOpen size={17} /> : <Lock size={17} />}</button>
-                        <button type="button" onClick={() => openSectionEdit(s)} className="grid h-11 w-11 place-items-center rounded-xl text-muted-foreground active:bg-secondary" aria-label="تعديل الفاصل"><Pencil size={17} /></button>
-                        <button type="button" onClick={() => removeSection(s)} className="grid h-11 w-11 place-items-center rounded-xl text-destructive active:bg-destructive/10" aria-label="حذف الفاصل"><Trash2 size={17} /></button>
-                      </div>
-                    </div>
-
-                    {/* الدروس — صفوف متتابعة */}
-                    {s.lessons?.length ? (
-                      <ol className="divide-y divide-border">
-                        {s.lessons.map((l: any, idx: number) => {
-                          const meta = FOUNDATION_KINDS[l.kind] || FOUNDATION_KINDS.text;
-                          const KIcon = meta.Icon;
-                          return (
-                            <li key={l.id} className={`flex items-center gap-3 px-3 py-3 transition-colors active:bg-secondary/40 sm:gap-4 sm:px-5 ${l.isVisible ? '' : 'opacity-55'}`}>
-                              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-xs font-extrabold text-white" style={{ background: meta.tone }}>{idx + 1}</span>
-                              <button
-                                type="button"
-                                onClick={() => openPreview(l)}
-                                className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl border border-border active:scale-95"
-                                style={{ background: l.coverUrl ? undefined : `${meta.tone}18` }}
-                                aria-label="معاينة"
-                              >
-                                {l.coverUrl
-                                  ? <img src={l.coverUrl} alt="" className="h-full w-full object-cover" />
-                                  : previewLoading && preview?.id === l.id
-                                    ? <RefreshCw size={18} className="animate-spin text-primary" />
-                                    : <KIcon size={20} style={{ color: meta.tone }} />}
-                              </button>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  <span className="rounded-lg px-2 py-0.5 text-[10px] font-extrabold text-white" style={{ background: meta.tone }}>{meta.label}</span>
-                                  {l.isLocked ? <span className="rounded-lg bg-[#b7791f]/15 px-2 py-0.5 text-[10px] font-extrabold text-[#b7791f]">مقفل</span> : null}
-                                  {!l.isVisible ? <span className="rounded-lg bg-muted px-2 py-0.5 text-[10px] font-extrabold text-muted-foreground">مخفي</span> : null}
-                                </div>
-                                <p className="mt-1 truncate text-[15px] font-extrabold text-primary">{l.title}</p>
-                                {l.textPreview ? <p className="mt-0.5 line-clamp-1 text-[11px] leading-5 text-muted-foreground">{l.textPreview}</p> : null}
-                              </div>
-                              <div className="flex shrink-0 flex-col items-center gap-0.5">
-                                <button type="button" onClick={() => move(l, 'up')} disabled={idx === 0} className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground active:bg-secondary disabled:opacity-25" aria-label="تقديم"><ArrowUp size={15} /></button>
-                                <button type="button" onClick={() => move(l, 'down')} disabled={idx === s.lessons.length - 1} className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground active:bg-secondary disabled:opacity-25" aria-label="تأخير"><ArrowDown size={15} /></button>
-                              </div>
-                              <div className="grid shrink-0 grid-cols-2 gap-1">
-                                <button type="button" onClick={() => openPreview(l)} className="grid h-11 w-11 place-items-center rounded-xl bg-secondary text-primary active:bg-accent/40" aria-label="معاينة"><Eye size={16} /></button>
-                                <button type="button" onClick={() => openLessonEdit(l)} className="grid h-11 w-11 place-items-center rounded-xl bg-secondary text-primary active:bg-accent/40" aria-label="تعديل"><Pencil size={16} /></button>
-                                <button type="button" onClick={() => quickLesson(l, { isLocked: !l.isLocked })} className="grid h-11 w-11 place-items-center rounded-xl bg-secondary text-muted-foreground active:bg-accent/40" aria-label="قفل">{l.isLocked ? <LockOpen size={16} /> : <Lock size={16} />}</button>
-                                <button type="button" onClick={() => removeLesson(l)} className="grid h-11 w-11 place-items-center rounded-xl bg-secondary text-destructive active:bg-destructive/10" aria-label="حذف"><Trash2 size={16} /></button>
-                              </div>
-                            </li>
-                          );
-                        })}
-                      </ol>
-                    ) : (
-                      <div className="px-5 py-8 text-center">
-                        <p className="text-sm text-muted-foreground">لا دروس في هذا الفاصل بعد.</p>
-                        <button type="button" onClick={() => openLessonCreate(s.id)} className={`${touchBtnSoft} mt-4 px-5 text-sm`}><Plus size={17} /> أضف أول درس</button>
-                      </div>
-                    )}
-
-                    <div className="border-t border-border bg-secondary/30 p-3">
-                      <button type="button" onClick={() => openLessonCreate(s.id)} className={`${touchBtnSoft} w-full`} data-testid={`button-add-lesson-to-${s.id}`}>
-                        <Plus size={18} /> أضف درساً إلى «{s.title}»
-                      </button>
-                    </div>
-                  </div>
-                ))}
+              <div className="overflow-hidden rounded-[2rem] border border-border bg-card shadow-sm">
+                <ol className="divide-y divide-border">
+                  {visibleLessons.map((l: any, idx: number) => {
+                    const meta = FOUNDATION_KINDS[l.kind] || FOUNDATION_KINDS.text;
+                    const KIcon = meta.Icon;
+                    return (
+                      <li key={l.id} className={`flex items-center gap-3 px-3 py-3 transition-colors active:bg-secondary/40 sm:gap-4 sm:px-5 ${l.isVisible ? '' : 'opacity-55'}`}>
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-xs font-extrabold text-white" style={{ background: meta.tone }}>{idx + 1}</span>
+                        <button
+                          type="button"
+                          onClick={() => openPreview(l)}
+                          className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl border border-border active:scale-95"
+                          style={{ background: l.coverUrl ? undefined : `${meta.tone}18` }}
+                          aria-label="معاينة"
+                        >
+                          {l.coverUrl
+                            ? <img src={l.coverUrl} alt="" className="h-full w-full object-cover" />
+                            : previewLoading && preview?.id === l.id
+                              ? <RefreshCw size={18} className="animate-spin text-primary" />
+                              : <KIcon size={20} style={{ color: meta.tone }} />}
+                        </button>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="rounded-lg px-2 py-0.5 text-[10px] font-extrabold text-white" style={{ background: meta.tone }}>{meta.label}</span>
+                            {l.htmlContent || l.htmlFileUrl ? <span className="rounded-lg bg-[#6a1b9a]/12 px-2 py-0.5 text-[10px] font-extrabold text-[#6a1b9a]">HTML</span> : null}
+                            {l.isLocked ? <span className="rounded-lg bg-[#b7791f]/15 px-2 py-0.5 text-[10px] font-extrabold text-[#b7791f]">مقفل</span> : null}
+                            {!l.isVisible ? <span className="rounded-lg bg-muted px-2 py-0.5 text-[10px] font-extrabold text-muted-foreground">مخفي</span> : null}
+                          </div>
+                          <p className="mt-1 truncate text-[15px] font-extrabold text-primary">{l.title}</p>
+                          {l.textPreview ? <p className="mt-0.5 line-clamp-1 text-[11px] leading-5 text-muted-foreground">{l.textPreview}</p> : null}
+                        </div>
+                        <div className="flex shrink-0 flex-col items-center gap-0.5">
+                          <button type="button" onClick={() => move(l, 'up')} disabled={idx === 0} className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground active:bg-secondary disabled:opacity-25" aria-label="تقديم"><ArrowUp size={15} /></button>
+                          <button type="button" onClick={() => move(l, 'down')} disabled={idx === visibleLessons.length - 1} className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground active:bg-secondary disabled:opacity-25" aria-label="تأخير"><ArrowDown size={15} /></button>
+                        </div>
+                        <div className="grid shrink-0 grid-cols-2 gap-1">
+                          <button type="button" onClick={() => openPreview(l)} className="grid h-11 w-11 place-items-center rounded-xl bg-secondary text-primary active:bg-accent/40" aria-label="معاينة"><Eye size={16} /></button>
+                          <button type="button" onClick={() => openLessonEdit(l)} className="grid h-11 w-11 place-items-center rounded-xl bg-secondary text-primary active:bg-accent/40" aria-label="تعديل" data-testid={`button-edit-lesson-${l.id}`}><Pencil size={16} /></button>
+                          <button type="button" onClick={() => quickLesson(l, { isLocked: !l.isLocked })} className="grid h-11 w-11 place-items-center rounded-xl bg-secondary text-muted-foreground active:bg-accent/40" aria-label="قفل">{l.isLocked ? <LockOpen size={16} /> : <Lock size={16} />}</button>
+                          <button type="button" onClick={() => removeLesson(l)} className="grid h-11 w-11 place-items-center rounded-xl bg-secondary text-destructive active:bg-destructive/10" aria-label="حذف"><Trash2 size={16} /></button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
               </div>
             )}
           </section>
         </div>
       )}
+
+      {/* ═══ نافذة القسم الفرعي ═══ */}
+      {unitModal ? (
+        <Modal
+          title={unitModal.mode === 'create' ? 'قسم فرعي جديد' : 'تعديل القسم الفرعي'}
+          eyebrow="الحلقة الوسطى — يجمع دروساً متقاربة تحت سقف واحد"
+          onClose={() => setUnitModal(null)}
+          maxWidth="max-w-2xl"
+        >
+          <form onSubmit={saveUnit} className="space-y-5 pb-4">
+            <div className="relative overflow-hidden rounded-3xl p-5 shadow-lg" style={{ background: `linear-gradient(135deg, ${unitForm.color || current?.color || '#17413f'}, ${unitForm.color || current?.color || '#17413f'}bb)` }}>
+              <div className="pointer-events-none absolute -left-6 -top-8 select-none font-display text-[6rem] leading-none text-white/15">ق</div>
+              <div className="relative flex items-center gap-4">
+                <span className="grid h-12 w-12 place-items-center rounded-2xl bg-white/25 text-white shadow-lg">
+                  {(() => { const I = (UNIT_ICONS as any)[unitForm.icon] || BookOpen; return <I size={22} />; })()}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-display text-lg font-extrabold text-white">{unitForm.title || 'عنوان القسم الفرعي...'}</p>
+                  <p className="mt-0.5 truncate text-xs font-bold text-white/85">{current ? `داخل ${current.subtitle || current.title}` : ''}</p>
+                </div>
+              </div>
+              <span className="absolute left-4 top-4 rounded-full bg-black/40 px-3 py-1 text-[10px] font-bold text-white backdrop-blur-md">معاينة حية</span>
+            </div>
+
+            {unitError ? (
+              <p className="flex items-start gap-2.5 rounded-2xl border-2 border-destructive/40 bg-destructive/10 px-4 py-3.5 text-sm font-extrabold leading-6 text-destructive">
+                <CircleAlert size={19} className="mt-0.5 shrink-0" /> {unitError}
+              </p>
+            ) : null}
+
+            <label className="block text-sm font-extrabold text-foreground">
+              <span className="mb-2 block">عنوان القسم الفرعي *</span>
+              <input
+                name="unit-title" required autoFocus value={unitForm.title || ''}
+                onChange={(e) => setUnitForm((f: any) => ({ ...f, title: e.target.value }))}
+                placeholder="مثال: الجملة وأنواعها"
+                data-testid="input-unit-title"
+                className={touchCls}
+              />
+            </label>
+
+            <label className="block text-sm font-extrabold text-foreground">
+              <span className="mb-2 block">وصف مختصر (يظهر للطالب على المربع)</span>
+              <textarea
+                name="unit-description" rows={3} value={unitForm.description || ''}
+                onChange={(e) => setUnitForm((f: any) => ({ ...f, description: e.target.value }))}
+                placeholder="جملة واحدة تشرح للطالب ماذا يجد داخل هذا القسم"
+                data-testid="input-unit-description"
+                className={touchCls}
+              />
+            </label>
+
+            <div>
+              <span className="mb-2 block text-sm font-extrabold text-foreground">الأيقونة</span>
+              <div className="flex flex-wrap gap-2">
+                {Object.keys(UNIT_ICONS).map((k) => {
+                  const I = (UNIT_ICONS as any)[k];
+                  return (
+                    <button
+                      key={k} type="button" onClick={() => setUnitForm((f: any) => ({ ...f, icon: k }))}
+                      className={`grid h-12 w-12 place-items-center rounded-2xl border-2 transition-colors ${unitForm.icon === k ? 'border-primary bg-accent/25 text-primary' : 'border-border bg-card text-muted-foreground'}`}
+                      aria-label={k}
+                    >
+                      <I size={19} />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <label className="flex items-center gap-2.5 text-sm font-bold text-foreground">
+              <input type="checkbox" checked={!!unitForm.isVisible} onChange={(e) => setUnitForm((f: any) => ({ ...f, isVisible: e.target.checked }))} className="h-5 w-5 accent-primary" />
+              ظاهر للطالب
+            </label>
+            <label className="flex items-center gap-2.5 text-sm font-bold text-foreground">
+              <input type="checkbox" checked={!!unitForm.isLocked} onChange={(e) => setUnitForm((f: any) => ({ ...f, isLocked: e.target.checked }))} className="h-5 w-5 accent-primary" />
+              مقفل مؤقتاً (يرى الطالب الاسم ولا يفتح الدروس)
+            </label>
+
+            <div className="flex gap-3 pt-1">
+              <button type="submit" disabled={savingUnit} className={`${touchBtnPrimary} flex-1`} data-testid="button-save-unit">
+                {savingUnit ? <><RefreshCw size={18} className="animate-spin" /> جارٍ الحفظ...</> : <><Save size={18} /> {unitModal.mode === 'create' ? 'أنشئ القسم الفرعي' : 'احفظ التعديل'}</>}
+              </button>
+              <button type="button" onClick={() => setUnitModal(null)} className={`${touchBtnGhost} px-6`}>إلغاء</button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
 
       {sectionModal ? (
         <Modal title={sectionModal.mode === 'create' ? 'فاصل جديد في التدفّق' : 'تعديل الفاصل'} eyebrow="فاصل تنظيمي فقط — الطالب لا يفتحه" onClose={() => setSectionModal(null)} maxWidth="max-w-3xl">
@@ -10771,6 +11030,7 @@ function TeacherFoundationPage() {
             submitLabel={lessonModal.mode === 'create' ? 'أضف إلى التدفّق' : 'حفظ التعديلات'}
             onSubmit={saveLesson}
             onCancel={() => setLessonModal(null)}
+            unitOptions={currentUnits.filter((u: any) => !u.isVirtual)}
           />
         </Modal>
       ) : null}
@@ -10956,7 +11216,7 @@ function FoundationMembersPanel({ sectionId, sectionTitle, flash, onChanged }: {
 }
 
 /* ══════════════════ نموذج الدرس (لمس) ══════════════════ */
-function FoundationLessonForm({ form, setForm, saving, error, submitLabel, onSubmit, onCancel }: {
+function FoundationLessonForm({ form, setForm, saving, error, submitLabel, onSubmit, onCancel, unitOptions = [] }: {
   form: any;
   setForm: (updater: any) => void;
   saving: boolean;
@@ -10964,6 +11224,8 @@ function FoundationLessonForm({ form, setForm, saving, error, submitLabel, onSub
   submitLabel: string;
   onSubmit: (e: FormEvent) => void;
   onCancel: () => void;
+  /** أقسام المستوى التي يصل إليها الدرس — lets the teacher move the lesson without recreating it */
+  unitOptions?: any[];
 }) {
   const kind = String(form.kind || 'text');
   const meta = FOUNDATION_KINDS[kind] || FOUNDATION_KINDS.text;
@@ -11060,6 +11322,23 @@ function FoundationLessonForm({ form, setForm, saving, error, submitLabel, onSub
 
       <Field2 label="عنوان الدرس *"><input value={form.title || ''} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="مثال: حروف المد — من الفتح إلى الياء" className={touchCls} data-testid="input-foundation-lesson-title" /></Field2>
       <Field2 label="وصف قصير" hint="سطر أو سطران يظهر أعلى الدرس عند الطالب"><textarea value={form.description || ''} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2} placeholder="نتعلم اليوم..." className={`${touchCls} resize-none leading-7`} /></Field2>
+
+      {/* نقل الدرس بين الأقسام الفرعية — بلا إعادة إنشاء الدرس */}
+      {unitOptions.length ? (
+        <Field2 label="القسم الفرعي" hint="الدرس ينزل تحت هذا القسم في صفحة الطالب">
+          <select
+            value={form.unitId || ''}
+            onChange={(e) => setForm({ ...form, unitId: e.target.value })}
+            className={touchCls}
+            data-testid="select-foundation-lesson-unit"
+          >
+            <option value="">— بلا قسم (يظهر في أول قسم فرعي) —</option>
+            {unitOptions.map((u) => (
+              <option key={u.id} value={u.id}>{u.title}</option>
+            ))}
+          </select>
+        </Field2>
+      ) : null}
 
       {/* النص */}
       {wants('text') ? (
@@ -11182,308 +11461,206 @@ function FoundationLessonForm({ form, setForm, saving, error, submitLabel, onSub
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   واجهة الطالب — التأسيس صفحة واحدة متصلة
-   لا أقسام تُفتح ولا دروس يُدخل إليها: كل شيء ينزل تحت بعضه في مجرى
-   واحد: عنوان فاصل ← نص ← صورة ← نص ← فيديو ← HTML… يقرأه الطالب سيراً.
+   واجهة الطالب — التأسيس بثلاثة مستويات
+   ───────────────────────────────────────────────────────────────────────
+   القسم (المستوى) ← القسم الفرعي ← الدرس ← صفحة الدرس.
+   كل خطوة صفحة مستقلة فيها مربعات كبيرة: يفتح الطالب المستوى فيرى
+   أقسامه، ويفتح القسم فيرى دروسه، ويفتح الدرس فيقرأه ويعلّمه منجزاً.
    ═══════════════════════════════════════════════════════════════════════ */
 
-/** درجة واحدة في التدفّق: رقم + خط ناحي يربط كل الدروس ببعضها */
-function FoundationSpine({ index, color, done, doneFn, saving, meta }: {
-  index: number; color: string; done: boolean; doneFn: () => void; saving: boolean; meta: { label: string; tone: string; Icon: any };
-}) {
-  const KIcon = meta.Icon;
-  return (
-    <div className="flex gap-3 sm:gap-5">
-      {/* العمود الرفيع على اليمين (RTL) */}
-      <div className="flex w-11 shrink-0 flex-col items-center sm:w-14">
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-sm font-extrabold text-white shadow-md sm:h-12 sm:w-12 sm:text-base" style={{ background: color }}>
-          <KIcon size={20} />
-        </span>
-        <span className="mt-1 text-[11px] font-extrabold tabular-nums text-muted-foreground">{index}</span>
-        <span className="mt-1 w-0.5 flex-1 rounded-full bg-border" />
-      </div>
+/** ذاكرة واحدة للجسر: التنقّل بين الصفحات لا يعيد الطلب في كل مرة */
+let foundationStreamCache: { at: number; data: any } | null = null;
+const FOUNDATION_STREAM_TTL = 60 * 1000;
 
-      {/* المحتوى — ينزل تحت الذي قبله مباشرة بلا كرت */}
-      <div className="min-w-0 flex-1 pb-10 sm:pb-14">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full px-3 py-1 text-[11px] font-extrabold text-white" style={{ background: color }}>{meta.label}</span>
-          {done ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-green-600/12 px-3 py-1 text-[11px] font-extrabold text-green-800">
-              <CheckCircle2 size={12} /> أنهيتَه
-            </span>
-          ) : null}
-        </div>
-        <h3 className="mt-2 font-display text-xl font-extrabold leading-snug text-primary sm:text-2xl">{meta.title}</h3>
-        {meta.subtitle ? <p className="mt-1.5 text-[15px] font-semibold leading-7 text-muted-foreground">{meta.subtitle}</p> : null}
+function useFoundationStream(opts: { fresh?: boolean } = {}) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
 
-        <div className="mt-4">
-          <FoundationLessonBody lesson={meta.lesson} />
-        </div>
+  const load = useCallback(async (force = false) => {
+    setLoading(true);
+    setErr('');
+    try {
+      if (!force && foundationStreamCache && Date.now() - foundationStreamCache.at < FOUNDATION_STREAM_TTL) {
+        setData(foundationStreamCache.data);
+        return foundationStreamCache.data;
+      }
+      const d = await jsonFetch('/api/foundation/stream');
+      foundationStreamCache = { at: Date.now(), data: d };
+      setData(d);
+      return d;
+    } catch (e: any) {
+      setErr(e?.message || 'تعذر تحميل التأسيس');
+      setData(null);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-        {/* زر الإنجاز — صغير وهادئ أسفل كل درس، لا يقطع القراءة */}
-        <div className="mt-5 flex flex-wrap items-center gap-2.5">
-          <button
-            type="button"
-            onClick={doneFn}
-            disabled={saving || done}
-            className={`${touchBtn} ${done ? 'border-2 border-green-600/30 bg-green-600/10 text-green-800' : 'bg-secondary text-primary'} px-5 text-sm`}
-            data-testid={`button-foundation-complete-${meta.lesson.id}`}
-          >
-            {done ? <CheckCircle2 size={17} /> : <Check size={17} />}
-            {done ? 'أنجزته' : saving ? 'جارٍ الحفظ...' : 'أنهيت هذا الدرس'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+  useEffect(() => { void load(opts.fresh === true); }, [load, opts.fresh]);
+
+  return { data, loading, err, reload: load };
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
-   قائمة المستويات العلوية — شريط ثابت فوق المحتوى.
-   الغرض: الطالب ينتقل بين الأقسام الخمسة بضغطة واحدة بلا تمرير طويل.
-   يتتبّع مكان التمرير فيضئ المستوى الذي يقرأه الآن، ويعرض تقدّمه في شريط.
-   الإضاءة تتبع لون القسم نفسه فيبقى الشريط هادئاً لا يزاحم القراءة.
-   ═══════════════════════════════════════════════════════════════════════ */
-function FoundationLevelNav({ sections, activeId, onPick }: {
-  sections: any[]; activeId: string; onPick: (id: string) => void;
-}) {
-  const totalLessons = sections.reduce((a: number, s: any) => a + (Number(s.totalCount) || 0), 0);
-  const totalDone = sections.reduce((a: number, s: any) => a + (Number(s.doneCount) || 0), 0);
-
+/** شريط المسار: أين أنا الآن — القسم ← القسم الفرعي ← الدرس */
+function FoundationCrumbs({ items }: { items: { label: string; href?: string }[] }) {
   return (
-    <nav
-      aria-label="أقسام التأسيس"
-      data-testid="foundation-level-nav"
-      className="sticky top-[76px] z-20 mb-8 rounded-[1.75rem] border border-border/80 bg-card/85 p-2.5 shadow-xl shadow-primary/[0.07] backdrop-blur-xl"
-    >
-      {/* سطر العنوان — يخبر الطالب أين هو وإلى أين ينتقل */}
-      <div className="flex items-center gap-2.5 px-2 pb-2.5">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-primary to-[#2a7a72] text-primary-foreground shadow-md">
-          <Layers size={17} />
+    <nav aria-label="مسار التأسيس" data-testid="foundation-crumbs" className="mb-4 flex flex-wrap items-center gap-1.5 text-sm font-bold">
+      {items.map((it, i) => (
+        <span key={i} className="flex items-center gap-1.5">
+          {i > 0 ? <ChevronLeft size={14} className="text-muted-foreground/50" /> : null}
+          {it.href ? (
+            <Link href={it.href} className="rounded-lg px-2 py-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-primary" data-testid={`crumb-${i}`}>
+              {it.label}
+            </Link>
+          ) : (
+            <span className="rounded-lg bg-secondary px-2.5 py-1 text-primary" data-testid={`crumb-${i}`}>{it.label}</span>
+          )}
         </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-extrabold leading-tight text-primary">أقسام التأسيس</p>
-          <p className="text-[11px] font-semibold leading-tight text-muted-foreground">
-            {sections.length} مستويات · {totalLessons} درس · أنجزت {totalDone}
-          </p>
-        </div>
-        <span className="hidden shrink-0 items-center gap-1.5 rounded-full bg-accent/25 px-3 py-1.5 text-[11px] font-extrabold text-accent-foreground sm:inline-flex">
-          <Sparkles size={12} /> اختر مستواك
-        </span>
-      </div>
-
-      {/* شرائط الأقسام — تنزلق أفقياً على الجوال، وتحمل لون قسمها */}
-      <div className="flex gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {sections.map((s: any, i: number) => {
-          const Icon = (UNIT_ICONS as any)[s.icon] || Sparkles;
-          const total = Number(s.totalCount) || 0;
-          const done = Number(s.doneCount) || 0;
-          const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-          const active = activeId === s.id;
-
-          return (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => onPick(s.id)}
-              aria-current={active ? 'true' : undefined}
-              data-testid={`button-foundation-level-${s.id}`}
-              className={`group relative flex w-56 shrink-0 flex-col gap-2.5 overflow-hidden rounded-2xl border p-3 text-right transition-all duration-300 ${
-                active
-                  ? 'border-transparent bg-primary text-primary-foreground shadow-lg shadow-primary/30'
-                  : 'border-border bg-background hover:-translate-y-1 hover:border-primary/35 hover:shadow-lg'
-              }`}
-            >
-              {/* توهّج خلفي بلون القسم — يظهر في 상태 الاختيار فقط */}
-              <span
-                aria-hidden
-                className={`pointer-events-none absolute -left-6 -top-8 h-20 w-20 rounded-full blur-2xl transition-opacity duration-300 ${active ? 'opacity-45' : 'opacity-0 group-hover:opacity-25'}`}
-                style={{ background: s.color || '#17413f' }}
-              />
-
-              <span className="relative flex items-center gap-2.5">
-                <span
-                  className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-white shadow-sm ring-1 ring-white/25"
-                  style={{ background: `linear-gradient(135deg, ${s.color || '#17413f'}, ${s.color || '#17413f'}99)` }}
-                >
-                  <Icon size={16} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className={`block text-[11px] font-extrabold ${active ? 'text-accent' : 'text-muted-foreground'}`}>
-                    {s.subtitle || `المستوى ${i + 1}`}
-                  </span>
-                  <span className="block truncate text-[13px] font-extrabold leading-tight">{s.title || 'قسم'}</span>
-                </span>
-                <span
-                  aria-hidden
-                  className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] font-extrabold tabular-nums ${
-                    active ? 'bg-accent text-[#3a2c07]' : pct === 100 ? 'bg-green-600/15 text-green-700' : 'bg-secondary text-muted-foreground'
-                  }`}
-                >
-                  {done >= total && total > 0 ? <Check size={11} /> : i + 1}
-                </span>
-              </span>
-
-              <span className="relative flex items-center justify-between text-[11px] font-extrabold">
-                <span className={active ? 'text-white/70' : 'text-muted-foreground'}>{total} دروس</span>
-                <span className={active ? 'text-accent' : 'text-primary'}>{done}/{total}</span>
-              </span>
-
-              <span className={`relative h-1.5 overflow-hidden rounded-full ${active ? 'bg-black/20' : 'bg-secondary'}`}>
-                <span
-                  className="block h-full rounded-full transition-[width] duration-700"
-                  style={{ width: `${pct}%`, background: active ? 'linear-gradient(to left,#e7b55f,#f7e2b0)' : (s.color || '#17413f') }}
-                />
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      ))}
     </nav>
   );
 }
 
-function StudentFoundationPage() {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState('');
-  const [savingId, setSavingId] = useState('');
-
-  const load = () => {
-    setLoading(true);
-    setErr('');
-    jsonFetch('/api/foundation/stream')
-      .then((d) => { setData(d); if (d?.sections) foundationNavCache.set(String(d?.stats?.sections ?? ''), { at: Date.now(), count: d.sections.length }); })
-      .catch((e) => { setErr(e?.message || 'تعذر التحميل'); setData(null); })
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const markDone = async (sectionId: string, lessonId: string) => {
-    setSavingId(lessonId);
-    try {
-      await jsonFetch(`/api/foundation/lessons/${lessonId}/complete`, { method: 'POST' });
-      // نحدّث الحالة محلياً بلا إعادة تحميل — يبقى التدفّق ثابتاً أمام الطالب
-      setData((prev: any) => {
-        if (!prev?.sections) return prev;
-        let doneAdded = 0;
-        const sections = prev.sections.map((s: any) => ({
-          ...s,
-          lessons: s.lessons.map((l: any) => {
-            if (l.id !== lessonId || l.done) return l;
-            doneAdded++;
-            return { ...l, done: true };
-          }),
-        }));
-        return { ...prev, sections, stats: { ...prev.stats, done: (prev.stats?.done || 0) + doneAdded, percent: prev.stats?.lessons ? Math.round((((prev.stats.done || 0) + doneAdded) / prev.stats.lessons) * 100) : 0 } };
-      });
-      void sectionId;
-    } catch { /* نُبقي الحالة كما هي */ }
-    finally { setSavingId(''); }
-  };
-
-  const sections: any[] = Array.isArray(data?.sections) ? data.sections : [];
-  const stats = data?.stats || { sections: 0, lessons: 0, done: 0, percent: 0 };
-  const hasContent = sections.some((s) => s.lessons?.length);
-  const flatIndex = (sectionId: string, lessonId: string) => {
-    let n = 0;
-    for (const s of sections) {
-      for (const l of s.lessons || []) {
-        n++;
-        if (l.id === lessonId) return n;
-      }
-    }
-    return 0;
-  };
-
-  /* ── قائمة المستويات: تتبّع القسم المعروض + القفز إليه ──
-     الـ key هنا نص معرّفات الأقسام لا المصفوفة نفسها: `sections` تُبنى
-     جديداً في كل رسم، وربطها مباشرة يعيد تركيب المستمع في كل مرة. */
-  const [activeSectionId, setActiveSectionId] = useState('');
-  const sectionKey = sections.map((s) => s.id).join('|');
-
-  useEffect(() => {
-    if (!sections.length) { setActiveSectionId(''); return; }
-    setActiveSectionId((prev) => (sections.some((s) => s.id === prev) ? prev : sections[0].id));
-
-    // نختار القسم الذي يمرّ خطّه العلوي بحوالي ربع الشاشة — أقرب إحساس
-    // بالقراءة: المشروع الذي تحت العين مباشرة هو النشط.
-    const onScroll = () => {
-      const probe = Math.max(120, Math.round(window.innerHeight * 0.3));
-      let current = sections[0].id;
-      for (const s of sections) {
-        const el = document.getElementById(`foundation-section-${s.id}`);
-        if (!el) continue;
-        if (el.getBoundingClientRect().top - probe <= 0) current = s.id;
-      }
-      setActiveSectionId(current);
-    };
-
-    onScroll();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onScroll);
-    return () => {
-      window.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', onScroll);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sectionKey]);
-
-  const jumpToSection = (id: string) => {
-    setActiveSectionId(id);
-    const el = document.getElementById(`foundation-section-${id}`);
-    if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
-
+/** ترويسة صفحة داخلية: أيقونة المستوى + عنوانه + شريط تقدّمه */
+function FoundationPageHead({ color, icon: Icon, eyebrow, title, description, done, total, extra }: {
+  color: string; icon: any; eyebrow: string; title: string; description?: string; done?: number; total?: number; extra?: ReactNode;
+}) {
+  const pct = total && total > 0 ? Math.round(((done || 0) / total) * 100) : 0;
   return (
-    <Shell mode="student">
-      {/* ترويسة خفيفة — لأن المحتوى هو البطل */}
-      <header className="relative mb-7 overflow-hidden rounded-[2rem] bg-gradient-to-l from-[#0c2725] via-[#17413f] to-[#2a7a72] p-6 text-white shadow-xl sm:p-8">
-        <div className="pointer-events-none absolute -left-14 -top-14 h-52 w-52 rounded-full bg-accent/25 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-16 right-1/3 h-40 w-40 rounded-full bg-accent/15 blur-3xl" />
-        <div className="pointer-events-none absolute -left-2 -top-8 select-none font-display text-[8rem] leading-none text-white/[0.07]">ت</div>
-        <div className="relative">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-accent px-3.5 py-1.5 text-xs font-extrabold text-[#3a2c07] shadow-sm">
-            <Sprout size={13} /> خمسة مستويات · خمسون درساً
-          </span>
-          <h1 className="mt-3 font-display text-3xl font-bold leading-snug sm:text-4xl">إعداد التأسيس</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-7 text-white/75">
-            من الجملة إلى الكلمة، ومن النحو إلى الصرف فالبلاغة فالإملاء — خمسة مستويات متدرّجة، كل مستوى عشرة دروس.
-            تنقّل بين المستويات من القائمة فوق، واقرأ ما يكفيك اليوم.
-          </p>
-          {stats.lessons > 0 ? (
-            <div className="mt-6 max-w-xl">
+    <header className="relative mb-7 overflow-hidden rounded-[2rem] bg-gradient-to-l from-[#0c2725] via-[#17413f] to-[#2a7a72] p-6 text-white shadow-xl sm:p-8">
+      <div className="pointer-events-none absolute -left-16 -top-16 h-52 w-52 rounded-full blur-3xl" style={{ background: `${color}88` }} />
+      <div className="pointer-events-none absolute -bottom-20 right-1/3 h-44 w-44 rounded-full bg-accent/15 blur-3xl" />
+      <div className="relative flex flex-wrap items-start gap-4">
+        <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl shadow-lg ring-1 ring-white/20" style={{ background: color }}>
+          <Icon size={26} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-extrabold text-accent">{eyebrow}</p>
+          <h1 className="mt-1 font-display text-2xl font-bold leading-snug sm:text-3xl">{title}</h1>
+          {description ? <p className="mt-2 max-w-2xl text-sm leading-7 text-white/75">{description}</p> : null}
+          {total ? (
+            <div className="mt-5 max-w-md">
               <div className="mb-2 flex items-center justify-between text-xs font-extrabold text-white/85">
                 <span className="inline-flex items-center gap-2"><Sparkles size={14} className="text-accent" /> تقدّمك</span>
-                <span className="tabular-nums">{stats.done} من {stats.lessons} · {stats.percent}%</span>
+                <span className="tabular-nums">{done} من {total} · {pct}%</span>
               </div>
               <div className="h-2.5 overflow-hidden rounded-full bg-white/15">
-                <div className="h-full rounded-full bg-gradient-to-l from-accent to-[#f3d68a] transition-[width] duration-700" style={{ width: `${stats.percent}%` }} />
+                <div className="h-full rounded-full bg-gradient-to-l from-accent to-[#f3d68a] transition-[width] duration-700" style={{ width: `${pct}%` }} />
               </div>
             </div>
           ) : null}
-          <div className="mt-5 flex flex-wrap gap-2.5">
-            {[
-              { value: stats.sections, label: 'مستوى' },
-              { value: stats.lessons, label: 'درس' },
-              { value: stats.done, label: 'أنجزته' },
-            ].map((s, i) => (
-              <div key={i} className="rounded-2xl bg-white/10 px-4 py-2.5 backdrop-blur-md ring-1 ring-white/15">
-                <p className="font-display text-xl font-bold text-accent">{s.value}</p>
-                <p className="text-[11px] font-semibold text-white/65">{s.label}</p>
-              </div>
-            ))}
-          </div>
         </div>
-      </header>
+        {extra}
+      </div>
+    </header>
+  );
+}
+
+/** مربعات الأقسام — التأسيس كله شبكة: مستوى → أقسام → دروس */
+function FoundationTileGrid({ items, onOpen, emptyText }: {
+  items: any[]; onOpen: (item: any) => void; emptyText: string;
+}) {
+  if (!items.length) {
+    return (
+      <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-16 text-center">
+        <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-secondary text-primary"><NotebookPen size={30} /></span>
+        <p className="font-display text-xl font-bold text-primary">لا يوجد شيء هنا بعد</p>
+        <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-muted-foreground">{emptyText}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+      {items.map((item) => <FoundationTile key={item.id} item={item} onOpen={onOpen} />)}
+    </div>
+  );
+}
+
+function FoundationTile({ item, onOpen }: { item: any; onOpen: (item: any) => void }) {
+  const Icon = (UNIT_ICONS as any)[item.icon] || Sparkles;
+  const color = item.color || '#17413f';
+  const total = Number(item.totalCount ?? item.lessonsCount ?? 0);
+  const done = Number(item.doneCount ?? 0);
+  const children: any[] = Array.isArray(item.units) ? item.units : [];
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(item)}
+      data-testid={`tile-${item.id}`}
+      className="group relative flex flex-col overflow-hidden rounded-3xl border border-border bg-card text-right shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:border-primary/35 hover:shadow-2xl"
+    >
+      {/* رأس ملوّن — لون المستوى أو وراثته */}
+      <span className="relative block h-24 overflow-hidden" style={{ background: `linear-gradient(135deg, ${color}, ${color}88)` }}>
+        <span className="absolute -left-8 -top-10 h-28 w-28 rounded-full bg-white/15 blur-2xl" />
+        <span className="absolute -bottom-12 right-6 h-24 w-24 rounded-full bg-black/10 blur-xl" />
+        {item.coverUrl ? <img src={item.coverUrl} alt="" className="absolute inset-0 h-full w-full object-cover" /> : null}
+        <span className="absolute bottom-3 right-4 grid h-11 w-11 place-items-center rounded-2xl bg-white/25 text-white shadow-lg ring-1 ring-white/25 backdrop-blur-sm">
+          <Icon size={22} />
+        </span>
+        {item.isLocked ? (
+          <span className="absolute inset-0 grid place-items-center bg-black/45 backdrop-blur-[2px]">
+            <span className="inline-flex items-center gap-2 rounded-2xl bg-black/55 px-4 py-2.5 text-xs font-extrabold text-white ring-1 ring-white/25">
+              <Lock size={15} /> مقفل مؤقتاً
+            </span>
+          </span>
+        ) : null}
+      </span>
+
+      <span className="flex flex-1 flex-col p-5">
+        {item.subtitle ? <span className="text-[11px] font-extrabold text-accent-foreground">{item.subtitle}</span> : null}
+        <span className="mt-0.5 font-display text-lg font-extrabold leading-snug text-primary">{item.title}</span>
+        {item.description ? (
+          <span className="mt-2 line-clamp-2 text-[13px] font-semibold leading-6 text-muted-foreground">{item.description}</span>
+        ) : null}
+
+        {/* شريط التقدّم داخل المربع — هو الكلام الوحيد الذي يهمّ الطالب هنا */}
+        <span className="mt-auto pt-5">
+          <span className="mb-2 flex items-center justify-between text-xs font-extrabold">
+            <span className="text-muted-foreground">
+              {children.length ? `${children.length} أقسام · ${total} درس` : `${total} درس`}
+            </span>
+            <span className={pct === 100 && total > 0 ? 'text-green-700' : 'text-primary'}>{done}/{total}</span>
+          </span>
+          <span className="block h-2 overflow-hidden rounded-full bg-secondary">
+            <span
+              className="block h-full rounded-full transition-[width] duration-700"
+              style={{ width: `${pct}%`, background: pct === 100 && total > 0 ? '#16a34a' : color }}
+            />
+          </span>
+        </span>
+
+        <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-extrabold text-primary transition-transform group-hover:-translate-x-1">
+          ادخل <ArrowLeft size={15} />
+        </span>
+      </span>
+    </button>
+  );
+}
+
+/* ═══════════════════ الصفحة 1: المستويات (مربعات الأقسام) ═══════════════════ */
+function StudentFoundationPage() {
+  const [, setLocation] = useLocation();
+  const { data, loading, err, reload } = useFoundationStream();
+  const sections: any[] = Array.isArray(data?.sections) ? data.sections : [];
+  const stats = data?.stats || { sections: 0, units: 0, lessons: 0, done: 0, percent: 0 };
+
+  return (
+
+    <Shell mode="student">
+      <FoundationPageHead
+        color="#17413f" icon={Sprout}
+        eyebrow="خمسة مستويات · خمسون درساً"
+        title="إعداد التأسيس"
+        description="من الجملة إلى الكلمة، ومن النحو إلى الصرف فالبلاغة فالإملاء. اختر المستوى ثم القسم ثم الدرس — ثلاث خطوات فقط."
+        done={stats.done} total={stats.lessons}
+      />
 
       {loading ? <StateNotice type="loading" /> : err && !sections.length ? (
-        <StateNotice type="error" onRetry={load} />
+        <StateNotice type="error" onRetry={() => reload(true)} />
       ) : !sections.length ? (
         <div className="relative overflow-hidden rounded-[2rem] border border-dashed border-border bg-card px-6 py-16 text-center">
           <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-secondary text-primary"><ShieldCheck size={30} /></span>
@@ -11492,120 +11669,313 @@ function StudentFoundationPage() {
             هذا القسم خاص — يظهر فقط لمن يختاره الأستاذ بالاسم. تواصل مع الأستاذ لتُضاف إليه.
           </p>
         </div>
-      ) : !hasContent ? (
+      ) : (
+        <FoundationTileGrid
+          items={sections}
+          onOpen={(s) => setLocation(`/student/foundation/section/${s.id}`)}
+          emptyText="الأستاذ يحضّر المستويات الآن. عد قريباً."
+        />
+      )}
+    </Shell>
+  );
+}
+
+/* ═══════════════════ الصفحة 2: أقسام المستوى (مربعات) ═══════════════════ */
+function FoundationSectionPage() {
+  const [, setLocation] = useLocation();
+  const { sectionId = '' } = useParams();
+  const { data, loading, err, reload } = useFoundationStream();
+  const sections: any[] = Array.isArray(data?.sections) ? data.sections : [];
+  const section = sections.find((s) => s.id === sectionId) || null;
+  const units: any[] = section ? (Array.isArray(section.units) ? section.units : []) : [];
+  const Icon = section ? ((UNIT_ICONS as any)[section.icon] || Sparkles) : Layers;
+
+  return (
+    <Shell mode="student">
+      <FoundationCrumbs
+        items={[
+          { label: 'التأسيس', href: '/student/foundation' },
+          { label: section?.subtitle || section?.title || 'المستوى' },
+        ]}
+      />
+
+      {loading ? <StateNotice type="loading" /> : err ? (
+        <StateNotice type="error" onRetry={() => reload(true)} />
+      ) : !section ? (
         <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-16 text-center">
-          <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-secondary text-primary"><NotebookPen size={30} /></span>
-          <p className="font-display text-xl font-bold text-primary">التأسيس جاهز — والدروس لم تُنشر بعد</p>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-muted-foreground">الأستاذ يحضّر الدروس الآن. عد قريباً وستجدها كلها هنا مرصوفة.</p>
+          <p className="font-display text-xl font-bold text-primary">هذا المستوى غير متاح لحسابك</p>
+          <Link href="/student/foundation" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-extrabold text-primary-foreground">
+            <ArrowLeft size={16} /> رجع للتأسيس
+          </Link>
         </div>
       ) : (
-        /* ══ التدفّق: كل شيء عمود واحد متصل ══ */
         <>
-        {/* قائمة المستويات — تبقى ظاهرة فوق كل قسم أثناء التمرير */}
-        <FoundationLevelNav sections={sections} activeId={activeSectionId} onPick={jumpToSection} />
+          <FoundationPageHead
+            color={section.color} icon={Icon}
+            eyebrow={section.subtitle || 'المستوى'}
+            title={section.title}
+            description={section.description}
+            done={section.doneCount} total={section.totalCount}
+          />
 
-        <div className="mx-auto max-w-4xl space-y-14">
-          {sections.map((s, sectionIndex) => {
-            const Icon = (UNIT_ICONS as any)[s.icon] || Sparkles;
-            const lessons: any[] = Array.isArray(s.lessons) ? s.lessons : [];
-            const secPct = s.totalCount > 0 ? Math.round((s.doneCount / s.totalCount) * 100) : 0;
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <h2 className="flex items-center gap-2 font-display text-lg font-extrabold text-primary">
+              <Layers size={20} /> أقسام المستوى
+            </h2>
+            <span className="rounded-xl bg-secondary px-3 py-1.5 text-xs font-extrabold tabular-nums text-primary">{units.length}</span>
+          </div>
 
-            return (
-              <section
-                key={s.id}
-                id={`foundation-section-${s.id}`}
-                data-testid={`foundation-section-${s.id}`}
-                /* نُبقي العنوان تحت الشريطين الثابتين عند القفز من القائمة */
-                className="scroll-mt-[196px]"
-              >
-                {/* ── عنوان الفاصل: نقطة توقف بصرية فقط، بلا صفحة جديدة ── */}
-                <header className="relative mb-8 overflow-hidden rounded-[2rem] shadow-lg">
-                  {s.coverUrl ? (
-                    <img src={s.coverUrl} alt="" className="h-36 w-full object-cover sm:h-44" />
-                  ) : (
-                    <div className="h-28 sm:h-36" style={{ background: `linear-gradient(135deg, ${s.color}, ${s.color}99)` }} />
-                  )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-                  <div className="absolute bottom-0 right-0 left-0 flex items-end gap-4 p-5 sm:p-6">
-                    <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/25 text-white shadow-lg backdrop-blur-sm"><Icon size={24} /></span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-extrabold text-accent">{s.subtitle || `المستوى ${sectionIndex + 1}`}</p>
-                      <h2 className="mt-0.5 font-display text-xl font-extrabold text-white sm:text-2xl">{s.title}</h2>
-                    </div>
-                    {s.totalCount > 0 ? (
-                      <span className="shrink-0 rounded-xl bg-black/45 px-3 py-2 text-[11px] font-extrabold tabular-nums text-white backdrop-blur-sm">
-                        {s.doneCount} / {s.totalCount} · {secPct}%
-                      </span>
-                    ) : null}
-                  </div>
-                  {s.isLocked ? (
-                    <span className="absolute inset-0 grid place-items-center bg-black/45 backdrop-blur-[2px]">
-                      <span className="inline-flex items-center gap-2 rounded-2xl bg-black/55 px-5 py-3 text-sm font-extrabold text-white ring-1 ring-white/25">
-                        <Lock size={17} /> مقفل مؤقتاً — يفتجه الأستاذ قريباً
-                      </span>
-                    </span>
-                  ) : null}
-                </header>
+          <FoundationTileGrid
+            items={units}
+            onOpen={(u) => setLocation(`/student/foundation/section/${section.id}/unit/${u.id}`)}
+            emptyText="يقسّم الأستاذ هذا المستوى إلى أقسام فرعية — عد قريباً."
 
-                {s.description ? (
-                  <p className="mb-8 rounded-3xl border-r-4 border-accent bg-secondary/50 p-5 text-[15px] font-semibold leading-8 text-primary">{s.description}</p>
-                ) : null}
-
-                {lessons.length ? (
-                  <div className="space-y-2">
-                    {lessons.map((l) => {
-                      const meta = FOUNDATION_KINDS[l.kind] || FOUNDATION_KINDS.text;
-                      if (l.isLocked) {
-                        return (
-                          <div key={l.id} className="flex gap-3 sm:gap-5">
-                            <div className="flex w-11 shrink-0 flex-col items-center sm:w-14">
-                              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-muted text-muted-foreground sm:h-12 sm:w-12"><Lock size={18} /></span>
-                              <span className="mt-1 text-[11px] font-extrabold tabular-nums text-muted-foreground">{flatIndex(s.id, l.id)}</span>
-                              <span className="mt-1 w-0.5 flex-1 rounded-full bg-border" />
-                            </div>
-                            <div className="min-w-0 flex-1 rounded-3xl border border-dashed border-[#b7791f]/40 bg-[#b7791f]/6 p-5 pb-12">
-                              <span className="rounded-full bg-[#b7791f]/15 px-3 py-1 text-[11px] font-extrabold text-[#b7791f]">{meta.label}</span>
-                              <h3 className="mt-2 font-display text-xl font-extrabold text-primary">{l.title}</h3>
-                              <p className="mt-2 text-sm font-semibold text-muted-foreground">مقفل — يفتحه الأستاذ حين يجهّزه.</p>
-                            </div>
-                          </div>
-                        );
-                      }
-                      return (
-                        <FoundationSpine
-                          key={l.id}
-                          index={flatIndex(s.id, l.id)}
-                          color={meta.tone}
-                          done={!!l.done}
-                          saving={savingId === l.id}
-                          doneFn={() => markDone(s.id, l.id)}
-                          meta={{ label: meta.label, tone: meta.tone, Icon: meta.Icon, title: l.title, subtitle: l.description, lesson: l }}
-                        />
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="rounded-3xl border border-dashed border-border bg-card px-5 py-10 text-center text-sm text-muted-foreground">
-                    لا دروس في هذا الجزء بعد — يضيفها الأستاذ.
-                  </p>
-                )}
-
-                {secPct === 100 && s.totalCount > 0 ? (
-                  <p className="mt-2 flex items-center justify-center gap-2.5 rounded-3xl border border-green-500/30 bg-green-500/10 px-5 py-4 text-sm font-extrabold text-green-800">
-                    <CheckCircle2 size={20} /> أكملت «{s.title}» كاملاً — بارك الله فيك!
-                  </p>
-                ) : null}
-              </section>
-            );
-          })}
-
-          <p className="flex items-center justify-center gap-2 border-t border-border pt-8 text-center text-xs font-bold text-muted-foreground">
-            <CheckCircle2 size={15} className="text-accent-foreground" />
-            {stats.done >= stats.lessons && stats.lessons > 0 ? 'أكملت كل دروس التأسيس — أحسنت!' : 'واصل — ما оста إلا إكمال الباقي.'}
-          </p>
-        </div>
+          />
         </>
       )}
+    </Shell>
+  );
+}
+
+/* ═══════════════════ الصفحة 3: دروس القسم الفرعي ═══════════════════ */
+function FoundationUnitPage() {
+  const [, setLocation] = useLocation();
+  const { sectionId = '', unitId = '' } = useParams();
+  const { data, loading, err, reload } = useFoundationStream();
+  const sections: any[] = Array.isArray(data?.sections) ? data.sections : [];
+  const section = sections.find((s) => s.id === sectionId) || null;
+  const unit = section?.units?.find((u: any) => u.id === unitId) || null;
+  const lessons: any[] = unit ? (Array.isArray(unit.lessons) ? unit.lessons : []) : [];
+  const color = unit?.color || section?.color || '#17413f';
+  const Icon = unit ? ((UNIT_ICONS as any)[unit.icon] || BookOpen) : BookOpen;
+
+  return (
+    <Shell mode="student">
+      <FoundationCrumbs
+        items={[
+          { label: 'التأسيس', href: '/student/foundation' },
+          { label: section?.subtitle || section?.title || 'المستوى', href: section ? `/student/foundation/section/${section.id}` : undefined },
+          { label: unit?.title || 'القسم الفرعي' },
+        ]}
+      />
+
+      {loading ? <StateNotice type="loading" /> : err ? (
+        <StateNotice type="error" onRetry={() => reload(true)} />
+      ) : !unit ? (
+        <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-16 text-center">
+          <p className="font-display text-xl font-bold text-primary">هذا القسم غير موجود</p>
+          <Link href="/student/foundation" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-extrabold text-primary-foreground">
+            <ArrowLeft size={16} /> رجع للتأسيس
+          </Link>
+        </div>
+      ) : (
+        <>
+          <FoundationPageHead
+            color={color} icon={Icon}
+            eyebrow={section?.subtitle ? `${section.subtitle} · قسم فرعي` : 'قسم فرعي'}
+            title={unit.title}
+            description={unit.description}
+            done={unit.doneCount} total={unit.totalCount}
+          />
+
+          {lessons.length ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {lessons.map((l: any, i: number) => (
+                <FoundationLessonCard
+                  key={l.id} lesson={l} index={i + 1} color={color}
+                  onOpen={() => setLocation(`/student/foundation/lesson/${l.id}`)}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-16 text-center">
+              <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-secondary text-primary"><NotebookPen size={30} /></span>
+              <p className="font-display text-xl font-bold text-primary">دروس هذا القسم لم تُنشر بعد</p>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-muted-foreground">الأستاذ يحضّرها الآن. عد قريباً وستجدها هنا.</p>
+            </div>
+          )}
+        </>
+      )}
+    </Shell>
+  );
+}
+
+/** بطاقة درس في القائمة — رقم + نوع + عنوان + حالة الإنجاز */
+function FoundationLessonCard({ lesson, index, color, onOpen }: {
+  lesson: any; index: number; color: string; onOpen: () => void;
+}) {
+  const meta = FOUNDATION_KINDS[lesson.kind] || FOUNDATION_KINDS.text;
+  const KIcon = meta.Icon;
+
+  if (lesson.isLocked) {
+    return (
+      <div className="flex items-center gap-4 rounded-3xl border border-dashed border-[#b7791f]/40 bg-[#b7791f]/6 p-5">
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-muted text-muted-foreground"><Lock size={19} /></span>
+        <div className="min-w-0">
+          <p className="truncate font-display text-base font-extrabold text-muted-foreground">{lesson.title}</p>
+          <p className="mt-0.5 text-xs font-extrabold text-[#b7791f]">مقفل — يفتحه الأستاذ حين يجهّزه.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      data-testid={`lesson-card-${lesson.id}`}
+      className={`group relative flex items-start gap-4 overflow-hidden rounded-3xl border bg-card p-5 text-right shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-primary/35 hover:shadow-xl ${lesson.done ? 'border-green-500/35' : 'border-border'}`}
+    >
+      <span
+        className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-white shadow-md"
+        style={{ background: `linear-gradient(135deg, ${color}, ${color}99)` }}
+      >
+        <span className="text-sm font-extrabold tabular-nums">{index}</span>
+      </span>
+
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-1.5">
+          <span className="rounded-full px-2.5 py-0.5 text-[10px] font-extrabold text-white" style={{ background: meta.tone }}>
+            {meta.label}
+          </span>
+          {lesson.done ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-green-600/12 px-2.5 py-0.5 text-[10px] font-extrabold text-green-800">
+              <CheckCircle2 size={11} /> منجز
+            </span>
+          ) : null}
+        </span>
+        <span className="mt-2 block font-display text-base font-extrabold leading-snug text-primary">{lesson.title}</span>
+        {lesson.description ? (
+          <span className="mt-1 block line-clamp-2 text-xs font-semibold leading-6 text-muted-foreground">{lesson.description}</span>
+        ) : null}
+        <span className="mt-3 inline-flex items-center gap-1.5 text-xs font-extrabold text-primary opacity-0 transition-opacity group-hover:opacity-100">
+          افتح الدرس <ArrowLeft size={14} />
+        </span>
+      </span>
+    </button>
+  );
+}
+
+/* ═══════════════════ الصفحة 4: الدرس بمحتواه ═══════════════════ */
+function FoundationLessonPage() {
+  const [, setLocation] = useLocation();
+  const { lessonId = '' } = useParams();
+  const { data, loading, err, reload } = useFoundationStream();
+  const [saving, setSaving] = useState(false);
+
+  const sections: any[] = Array.isArray(data?.sections) ? data.sections : [];
+  let section: any = null;
+  let unit: any = null;
+  let lesson: any = null;
+  let index = 0;
+  for (const s of sections) {
+    for (const u of s.units || []) {
+      const hit = (u.lessons || []).find((l: any) => l.id === lessonId);
+      if (hit) { section = s; unit = u; lesson = hit; index = (u.lessons || []).indexOf(hit) + 1; }
+    }
+  }
+  const siblings: any[] = unit?.lessons || [];
+  const prev = index > 1 ? siblings[index - 2] : null;
+  const next = index > 0 && index < siblings.length ? siblings[index] : null;
+  const color = unit?.color || section?.color || '#17413f';
+
+  const markDone = async () => {
+    if (!lesson || saving || lesson.done) return;
+    setSaving(true);
+    try {
+      await jsonFetch(`/api/foundation/lessons/${lesson.id}/complete`, { method: 'POST' });
+      foundationStreamCache = null;
+      await reload(true);
+    } catch { /* نُبقي الحالة كما هي */ }
+    finally { setSaving(false); }
+  };
+
+  if (loading) {
+    return <Shell mode="student"><StateNotice type="loading" /></Shell>;
+  }
+
+  if (err) {
+    return <Shell mode="student"><StateNotice type="error" onRetry={() => reload(true)} /></Shell>;
+  }
+
+  if (!lesson) {
+    return (
+      <Shell mode="student">
+        <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-16 text-center">
+          <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-secondary text-primary"><Lock size={30} /></span>
+          <p className="font-display text-xl font-bold text-primary">هذا الدرس غير متاح لك</p>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-muted-foreground">قد يكون مقفلاً أو نُقل إلى قسم آخر. عُد إلى التأسيس واختر من جديد.</p>
+          <Link href="/student/foundation" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-extrabold text-primary-foreground">
+            <ArrowLeft size={16} /> رجع للتأسيس
+          </Link>
+        </div>
+      </Shell>
+    );
+  }
+
+  const meta = FOUNDATION_KINDS[lesson.kind] || FOUNDATION_KINDS.text;
+
+  return (
+    <Shell mode="student">
+      <FoundationCrumbs
+        items={[
+          { label: 'التأسيس', href: '/student/foundation' },
+          { label: section?.subtitle || section?.title || 'المستوى', href: section ? `/student/foundation/section/${section.id}` : undefined },
+          { label: unit?.title || 'القسم الفرعي', href: unit ? `/student/foundation/section/${section.id}/unit/${unit.id}` : undefined },
+          { label: lesson.title },
+        ]}
+      />
+
+      {/* رأس الدرس */}
+      <header className="relative mb-6 overflow-hidden rounded-[2rem] bg-gradient-to-l from-[#0c2725] via-[#17413f] to-[#2a7a72] p-6 text-white shadow-xl sm:p-8">
+        <div className="pointer-events-none absolute -left-14 -top-14 h-48 w-48 rounded-full blur-3xl" style={{ background: `${color}88` }} />
+        <div className="relative">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-[11px] font-extrabold ring-1 ring-white/20">
+            <meta.Icon size={13} /> {meta.label}
+          </span>
+          <h1 className="mt-3 font-display text-2xl font-bold leading-snug sm:text-3xl">{lesson.title}</h1>
+          {unit ? (
+            <p className="mt-1.5 text-sm font-bold text-accent">
+              {section?.subtitle ? `${section.subtitle} · ` : ''}{unit.title} · الدرس {index} من {siblings.length}
+            </p>
+          ) : null}
+          {lesson.description ? <p className="mt-3 max-w-2xl text-sm leading-7 text-white/75">{lesson.description}</p> : null}
+        </div>
+      </header>
+
+      {/* محتوى الدرس */}
+      <FoundationLessonBody lesson={lesson} />
+
+      {/* الإنجاز ثم التنقّل بين الدروس — أسفل الدرس لا فوقه */}
+      <div className="mt-8 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={markDone}
+          disabled={saving || lesson.done}
+          data-testid="button-lesson-done"
+          className={`${touchBtn} ${lesson.done ? 'border-2 border-green-600/30 bg-green-600/10 text-green-800' : touchBtnPrimary} px-6`}
+        >
+          {lesson.done ? <CheckCircle2 size={18} /> : <Check size={18} />}
+          {lesson.done ? 'أنجزتَه' : saving ? 'جارٍ الحفظ...' : 'أنهيت هذا الدرس'}
+        </button>
+
+        <div className="flex flex-1 flex-wrap items-center justify-end gap-2.5">
+          {prev ? (
+            <Link href={`/student/foundation/lesson/${prev.id}`} className={`${touchBtn} ${touchBtnGhost} px-5 text-sm`} data-testid="button-lesson-prev">
+              <ArrowRight size={16} /> السابق
+            </Link>
+          ) : null}
+          {next ? (
+            <Link href={`/student/foundation/lesson/${next.id}`} className={`${touchBtn} ${touchBtnPrimary} px-5 text-sm`} data-testid="button-lesson-next">
+              التالي <ArrowLeft size={16} />
+            </Link>
+          ) : (
+            <Link href={`/student/foundation/section/${section?.id}`} className={`${touchBtn} ${touchBtnSoft} px-5 text-sm`} data-testid="button-lesson-back">
+              رجع لأقسام المستوى <ArrowLeft size={16} />
+            </Link>
+          )}
+        </div>
+      </div>
     </Shell>
   );
 }
@@ -11630,6 +12000,9 @@ function Router() {
         <Route path="/student/courses" component={StudentCoursesPage} />
         <Route path="/student/courses/:courseId/lessons/:lessonId" component={StudentLessonPage} />
         <Route path="/student/foundation" component={StudentFoundationPage} />
+        <Route path="/student/foundation/section/:sectionId" component={FoundationSectionPage} />
+        <Route path="/student/foundation/section/:sectionId/unit/:unitId" component={FoundationUnitPage} />
+        <Route path="/student/foundation/lesson/:lessonId" component={FoundationLessonPage} />
         <Route path="/student/notebook" component={StudentNotebookPage} />
         <Route path="/student/assignments" component={AssignmentsPage} />
         <Route path="/student/announcements" component={StudentAnnouncementsPage} />

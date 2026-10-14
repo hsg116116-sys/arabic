@@ -37256,6 +37256,7 @@ init_logger();
 var router7 = (0, import_express7.Router)();
 var enc3 = (v) => encodeURIComponent(Array.isArray(v) ? v[0] ?? "" : v ?? "");
 var V7_HINT = "\u0646\u0641\u0651\u0630 \u0627\u0644\u0645\u0644\u0641 sql_foundation_v7.sql \u0641\u064A Supabase \u2190 SQL Editor \u0623\u0648\u0644\u0627\u064B.";
+var V10_HINT = "\u0646\u0641\u0651\u0630 \u0627\u0644\u0645\u0644\u0641 sql_foundation_units_v10.sql \u0641\u064A Supabase \u2190 SQL Editor \u0644\u062A\u0641\u0639\u064A\u0644 \u0627\u0644\u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u0641\u0631\u0639\u064A\u0629.";
 var KINDS = /* @__PURE__ */ new Set(["text", "image", "video", "html", "mixed"]);
 var kindOf = (v) => {
   const k = String(v || "text").toLowerCase();
@@ -37351,11 +37352,52 @@ function sectionToJson(s) {
     updatedAt: s.updated_at || null
   };
 }
+function unitToJson(u) {
+  return {
+    id: u.id,
+    sectionId: u.section_id,
+    title: u.title || "\u0642\u0633\u0645 \u0641\u0631\u0639\u064A \u0628\u0644\u0627 \u0627\u0633\u0645",
+    description: u.description || "",
+    coverUrl: u.cover_url || "",
+    color: u.color || "",
+    icon: u.icon || "book-open",
+    sortOrder: u.sort_order ?? 1,
+    isLocked: !!u.is_locked,
+    isVisible: u.is_visible !== false,
+    isVirtual: false
+  };
+}
+function virtualUnit(sectionId) {
+  return {
+    id: `__flat__${sectionId}`,
+    section_id: sectionId,
+    title: "\u062F\u0631\u0648\u0633 \u0627\u0644\u0645\u0633\u062A\u0648\u0649",
+    description: "",
+    cover_url: "",
+    color: "",
+    icon: "book-open",
+    sort_order: 1,
+    is_locked: false,
+    is_visible: true
+  };
+}
+var unitsTableCheckAt = 0;
+var unitsTableReady = false;
+var UNITS_TABLE_TTL = 60 * 1e3;
+async function hasUnitsTable() {
+  if (Date.now() - unitsTableCheckAt < UNITS_TABLE_TTL) return unitsTableReady;
+  unitsTableCheckAt = Date.now();
+  const { error } = await supabaseQuery("foundation_units?select=id&limit=1");
+  unitsTableReady = !error;
+  if (!unitsTableReady) logger.warn({ hint: V10_HINT }, "foundation_units not ready \u2014 running flat");
+  return unitsTableReady;
+}
 function lessonToJson2(l, opts = {}) {
   const images = jsonList(l.images);
   const base = {
     id: l.id,
     sectionId: l.section_id,
+    unitId: l.unit_id || `__flat__${l.section_id}`,
     title: l.title || "\u062F\u0631\u0633 \u0628\u0644\u0627 \u0627\u0633\u0645",
     description: l.description || "",
     kind: kindOf(l.kind),
@@ -37384,6 +37426,55 @@ function lessonToJson2(l, opts = {}) {
     htmlContent: l.html_content || "",
     htmlFileUrl: l.html_file_url || ""
   };
+}
+function buildSectionTree(sections, lessons, done, opts) {
+  const lessonsByUnit = {};
+  const unitIds = new Set((opts.units || []).map((u) => u.id));
+  for (const l of lessons) {
+    const key = unitIds.has(l.unit_id) ? l.unit_id : `__first__${l.section_id}`;
+    (lessonsByUnit[key] ||= []).push(l);
+  }
+  return sections.map((s) => {
+    const sectionUnits = opts.units ? (opts.units || []).filter((u) => u.section_id === s.id) : [];
+    let units = sectionUnits.map((u) => {
+      const list = [...lessonsByUnit[u.id] || []];
+      const orphans = lessonsByUnit[`__first__${s.id}`] || [];
+      if (u === sectionUnits[0]) list.push(...orphans);
+      const doneCount2 = list.filter((l) => done.has(l.id)).length;
+      return {
+        ...unitToJson(u),
+        lessonsCount: list.length,
+        doneCount: doneCount2,
+        totalCount: list.length,
+        lessons: list.map((l) => lessonToJson2(l, { full: true, done: done.has(l.id) }))
+      };
+    }).sort((a, b) => (a.sortOrder ?? 1) - (b.sortOrder ?? 1));
+    if (!units.length) {
+      const list = lessons.filter((l) => l.section_id === s.id);
+      const doneCount2 = list.filter((l) => done.has(l.id)).length;
+      units = [
+        {
+          ...unitToJson(virtualUnit(s.id)),
+          isVirtual: true,
+          lessonsCount: list.length,
+          doneCount: doneCount2,
+          totalCount: list.length,
+          lessons: list.map((l) => lessonToJson2(l, { full: true, done: done.has(l.id) }))
+        }
+      ];
+    }
+    const totalCount = units.reduce((a, u) => a + u.totalCount, 0);
+    const doneCount = units.reduce((a, u) => a + u.doneCount, 0);
+    return {
+      ...sectionToJson(s),
+      memberCount: opts.memberCount?.[s.id] || 0,
+      lessonsCount: totalCount,
+      doneCount,
+      totalCount,
+      unitsCount: units.length,
+      units
+    };
+  });
 }
 router7.get("/foundation/sections", requireAuth, async (req, res) => {
   try {
@@ -37459,31 +37550,23 @@ router7.get("/foundation/stream", requireAuth, async (req, res) => {
     }
     const sectionFilter = ids ? `&id=in.(${ids.map(enc3).join(",")})` : "";
     const lessonFilter = ids ? `&section_id=in.(${ids.map(enc3).join(",")})` : "";
-    const [{ data: sections }, { data: lessons }, { data: progress }] = await Promise.all([
+    const unitFilter = ids ? `&section_id=in.(${ids.map(enc3).join(",")})` : "";
+    const unitsReady = await hasUnitsTable();
+    const [{ data: sections }, { data: lessons }, { data: progress }, { data: units }] = await Promise.all([
       supabaseQuery(`foundation_sections?is_visible=eq.true&order=sort_order.asc${sectionFilter}&limit=200`),
       supabaseQuery(`foundation_lessons?is_visible=eq.true&order=position.asc${lessonFilter}&limit=1000`),
-      supabaseQuery(`foundation_progress?user_id=eq.${enc3(auth.userId)}&select=lesson_id&limit=2000`)
+      supabaseQuery(`foundation_progress?user_id=eq.${enc3(auth.userId)}&select=lesson_id&limit=2000`),
+      unitsReady ? supabaseQuery(`foundation_units?is_visible=eq.true&order=sort_order.asc${unitFilter}&limit=500`) : Promise.resolve({ data: null, error: null, count: null })
     ]);
     const done = new Set((progress || []).map((p) => p.lesson_id));
-    const grouped = {};
-    for (const l of lessons || []) (grouped[l.section_id] ||= []).push(l);
-    const out = (sections || []).map((s) => {
-      const list = grouped[s.id] || [];
-      const doneCount = list.filter((l) => done.has(l.id)).length;
-      return {
-        ...sectionToJson(s),
-        lessonsCount: list.length,
-        doneCount,
-        totalCount: list.length,
-        lessons: list.map((l) => lessonToJson2(l, { full: true, done: done.has(l.id) }))
-      };
-    });
+    const out = buildSectionTree(sections || [], lessons || [], done, { units: units || null });
     const totalLessons = out.reduce((a, s) => a + s.totalCount, 0);
     const totalDone = out.reduce((a, s) => a + s.doneCount, 0);
     res.json({
       sections: out,
       stats: {
         sections: out.length,
+        units: out.reduce((a, s) => a + s.unitsCount, 0),
         lessons: totalLessons,
         done: totalDone,
         percent: totalLessons > 0 ? Math.round(totalDone / totalLessons * 100) : 0
@@ -37649,27 +37732,20 @@ router7.get("/teacher/foundation/sections", requireAdmin, async (_req, res) => {
 });
 router7.get("/teacher/foundation/stream", requireAdmin, async (_req, res) => {
   try {
-    const [{ data: sections, error }, { data: lessons }, { data: members }] = await Promise.all([
+    const unitsReady = await hasUnitsTable();
+    const [{ data: sections, error }, { data: lessons }, { data: members }, { data: units }] = await Promise.all([
       supabaseQuery("foundation_sections?order=sort_order.asc&limit=200"),
       supabaseQuery("foundation_lessons?order=position.asc&limit=2000"),
-      supabaseQuery("foundation_members?select=section_id&limit=5000")
+      supabaseQuery("foundation_members?select=section_id&limit=5000"),
+      unitsReady ? supabaseQuery("foundation_units?order=sort_order.asc&limit=500") : Promise.resolve({ data: null, error: null, count: null })
     ]);
     if (error) throw new Error(String(error));
     const memberCount = {};
     for (const m of members || []) memberCount[m.section_id] = (memberCount[m.section_id] || 0) + 1;
-    const grouped = {};
-    for (const l of lessons || []) (grouped[l.section_id] ||= []).push(l);
-    res.json(
-      (sections || []).map((s) => {
-        const list = grouped[s.id] || [];
-        return {
-          ...sectionToJson(s),
-          memberCount: memberCount[s.id] || 0,
-          lessonsCount: list.length,
-          lessons: list.map((l) => lessonToJson2(l))
-        };
-      })
-    );
+    res.json(buildSectionTree(sections || [], lessons || [], /* @__PURE__ */ new Set(), {
+      units: units || null,
+      memberCount
+    }));
   } catch (err) {
     logger.error({ err }, "GET teacher foundation stream failed");
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u0645\u064A\u0644 \u0645\u062D\u062A\u0648\u0649 \u0627\u0644\u062A\u0623\u0633\u064A\u0633 \u2014 " + V7_HINT });
@@ -37752,6 +37828,204 @@ router7.delete("/teacher/foundation/sections/:id", requireAdmin, async (req, res
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0642\u0633\u0645 \u2014 " + V7_HINT });
   }
 });
+router7.post("/teacher/foundation/sections/reorder", requireAdmin, async (req, res) => {
+  try {
+    const id = String(req.body?.id || "");
+    const dir = req.body?.dir === "up" ? -1 : 1;
+    if (!id) {
+      res.status(400).json({ error: "\u0627\u0644\u0642\u0633\u0645 \u0645\u0637\u0644\u0648\u0628" });
+      return;
+    }
+    const { data: rows } = await supabaseQuery("foundation_sections?select=id,sort_order&order=sort_order.asc&limit=200");
+    const list = rows || [];
+    const index = list.findIndex((s) => s.id === id);
+    const target = index + dir;
+    if (index < 0 || target < 0 || target >= list.length) {
+      res.json({ success: true, swapped: false });
+      return;
+    }
+    const a = list[index];
+    const b = list[target];
+    const pa = a.sort_order ?? index + 1;
+    const pb = b.sort_order ?? target + 1;
+    const nextA = pa === pb ? target + 1 : pa;
+    const nextB = pa === pb ? index + 1 : pb;
+    await Promise.all([
+      supabaseQuery(`foundation_sections?id=eq.${enc3(a.id)}`, { method: "PATCH", body: { sort_order: nextB, updated_at: (/* @__PURE__ */ new Date()).toISOString() } }),
+      supabaseQuery(`foundation_sections?id=eq.${enc3(b.id)}`, { method: "PATCH", body: { sort_order: nextA, updated_at: (/* @__PURE__ */ new Date()).toISOString() } })
+    ]);
+    res.json({ success: true, swapped: true });
+  } catch (err) {
+    logger.error({ err }, "POST foundation section reorder failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0639\u0627\u062F\u0629 \u062A\u0631\u062A\u064A\u0628 \u0627\u0644\u0623\u0642\u0633\u0627\u0645 \u2014 " + V7_HINT });
+  }
+});
+router7.get("/teacher/foundation/sections/:id/units", requireAdmin, async (req, res) => {
+  try {
+    if (!await hasUnitsTable()) {
+      res.json([]);
+      return;
+    }
+    const { data, error } = await supabaseQuery(
+      `foundation_units?section_id=eq.${enc3(req.params.id)}&order=sort_order.asc&limit=300`
+    );
+    if (error) throw new Error(String(error));
+    const ids = (data || []).map((u) => u.id);
+    const { data: lessons } = ids.length ? await supabaseQuery(
+      `foundation_lessons?section_id=eq.${enc3(req.params.id)}&select=id,unit_id&limit=500`
+    ) : { data: [] };
+    const counts = {};
+    for (const l of lessons || []) {
+      const key = l.unit_id || "__first__";
+      counts[key] = (counts[key] || 0) + 1;
+    }
+    res.json(
+      (data || []).map((u) => ({ ...unitToJson(u), lessonsCount: counts[u.id] || 0 }))
+    );
+  } catch (err) {
+    logger.error({ err }, "GET teacher foundation units failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u0645\u064A\u0644 \u0627\u0644\u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u0641\u0631\u0639\u064A\u0629 \u2014 " + V10_HINT });
+  }
+});
+router7.post("/teacher/foundation/units", requireAdmin, async (req, res) => {
+  try {
+    if (!await hasUnitsTable()) {
+      res.status(503).json({ error: "\u0627\u0644\u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u0641\u0631\u0639\u064A\u0629 \u063A\u064A\u0631 \u0645\u0641\u0639\u0651\u0644\u0629 \u2014 " + V10_HINT });
+      return;
+    }
+    const b = req.body || {};
+    const sectionId = String(b.sectionId || b.section_id || "");
+    const title = String(b.title || "").trim();
+    if (!sectionId) {
+      res.status(400).json({ error: "\u0627\u0644\u0642\u0633\u0645 \u0645\u0637\u0644\u0648\u0628" });
+      return;
+    }
+    if (!title) {
+      res.status(400).json({ error: "\u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u0642\u0633\u0645 \u0627\u0644\u0641\u0631\u0639\u064A \u0645\u0637\u0644\u0648\u0628" });
+      return;
+    }
+    const { data: existing } = await supabaseQuery(
+      `foundation_units?section_id=eq.${enc3(sectionId)}&select=sort_order&limit=300`
+    );
+    const nextOrder = (existing || []).reduce((max, u) => Math.max(max, u.sort_order ?? 0), 0) + 1;
+    const { data, error } = await supabaseQuery("foundation_units", {
+      method: "POST",
+      headers: { Prefer: "return=representation" },
+      body: [
+        {
+          section_id: sectionId,
+          title: title.slice(0, 200),
+          description: String(b.description || "").slice(0, 2e3),
+          cover_url: String(b.coverUrl || ""),
+          color: String(b.color || ""),
+          icon: String(b.icon || "book-open"),
+          sort_order: Number(b.sortOrder) || nextOrder,
+          is_locked: !!b.isLocked,
+          is_visible: b.isVisible !== false
+        }
+      ]
+    });
+    if (error) throw new Error(String(error));
+    const created = (data || [])[0];
+    if (!created?.id) throw new Error("\u0644\u0645 \u064A\u064F\u0631\u062C\u0639 \u0627\u0644\u062E\u0627\u062F\u0645 \u0645\u0639\u0631\u0651\u0641 \u0627\u0644\u0642\u0633\u0645 \u0627\u0644\u0641\u0631\u0639\u064A");
+    res.json({ success: true, unit: unitToJson(created), message: "\u062A\u0645 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u0642\u0633\u0645 \u0627\u0644\u0641\u0631\u0639\u064A!" });
+  } catch (err) {
+    logger.error({ err }, "POST foundation unit failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u0642\u0633\u0645 \u0627\u0644\u0641\u0631\u0639\u064A \u2014 " + V10_HINT });
+  }
+});
+router7.patch("/teacher/foundation/units/:id", requireAdmin, async (req, res) => {
+  try {
+    if (!await hasUnitsTable()) {
+      res.status(503).json({ error: "\u0627\u0644\u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u0641\u0631\u0639\u064A\u0629 \u063A\u064A\u0631 \u0645\u0641\u0639\u0651\u0644\u0629 \u2014 " + V10_HINT });
+      return;
+    }
+    const b = req.body || {};
+    const full = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+    if (b.title !== void 0) full.title = String(b.title).slice(0, 200);
+    if (b.description !== void 0) full.description = String(b.description || "").slice(0, 2e3);
+    if (b.coverUrl !== void 0) full.cover_url = String(b.coverUrl || "");
+    if (b.color !== void 0) full.color = String(b.color || "");
+    if (b.icon !== void 0) full.icon = String(b.icon || "book-open");
+    if (b.sortOrder !== void 0) full.sort_order = Number(b.sortOrder) || 1;
+    if (b.isLocked !== void 0) full.is_locked = !!b.isLocked;
+    if (b.isVisible !== void 0) full.is_visible = b.isVisible !== false;
+    const { error } = await supabaseQuery(`foundation_units?id=eq.${enc3(req.params.id)}`, {
+      method: "PATCH",
+      body: full
+    });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u0642\u0633\u0645 \u0627\u0644\u0641\u0631\u0639\u064A!" });
+  } catch (err) {
+    logger.error({ err }, "PATCH foundation unit failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0642\u0633\u0645 \u0627\u0644\u0641\u0631\u0639\u064A \u2014 " + V10_HINT });
+  }
+});
+router7.delete("/teacher/foundation/units/:id", requireAdmin, async (req, res) => {
+  try {
+    if (!await hasUnitsTable()) {
+      res.status(503).json({ error: "\u0627\u0644\u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u0641\u0631\u0639\u064A\u0629 \u063A\u064A\u0631 \u0645\u0641\u0639\u0651\u0644\u0629 \u2014 " + V10_HINT });
+      return;
+    }
+    const { data: rows } = await supabaseQuery(`foundation_units?id=eq.${enc3(req.params.id)}&select=id&limit=1`);
+    if (!rows?.[0]) {
+      res.status(404).json({ error: "\u0627\u0644\u0642\u0633\u0645 \u0627\u0644\u0641\u0631\u0639\u064A \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F" });
+      return;
+    }
+    const { error } = await supabaseQuery(`foundation_units?id=eq.${enc3(req.params.id)}`, {
+      method: "DELETE"
+    });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u0642\u0633\u0645 \u0627\u0644\u0641\u0631\u0639\u064A \u2014 \u062F\u0631\u0648\u0633\u0647 \u0627\u0646\u062A\u0642\u0644\u062A \u0625\u0644\u0649 \u0627\u0644\u0642\u0633\u0645 \u0627\u0644\u0623\u0648\u0644." });
+  } catch (err) {
+    logger.error({ err }, "DELETE foundation unit failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0642\u0633\u0645 \u0627\u0644\u0641\u0631\u0639\u064A \u2014 " + V10_HINT });
+  }
+});
+router7.post("/teacher/foundation/units/reorder", requireAdmin, async (req, res) => {
+  try {
+    if (!await hasUnitsTable()) {
+      res.status(503).json({ error: "\u0627\u0644\u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u0641\u0631\u0639\u064A\u0629 \u063A\u064A\u0631 \u0645\u0641\u0639\u0651\u0644\u0629 \u2014 " + V10_HINT });
+      return;
+    }
+    const id = String(req.body?.id || "");
+    const dir = req.body?.dir === "up" ? -1 : 1;
+    if (!id) {
+      res.status(400).json({ error: "\u0627\u0644\u0642\u0633\u0645 \u0627\u0644\u0641\u0631\u0639\u064A \u0645\u0637\u0644\u0648\u0628" });
+      return;
+    }
+    const { data: rows } = await supabaseQuery(`foundation_units?id=eq.${enc3(id)}&select=id,section_id&limit=1`);
+    const unit = rows?.[0];
+    if (!unit) {
+      res.status(404).json({ error: "\u0627\u0644\u0642\u0633\u0645 \u0627\u0644\u0641\u0631\u0639\u064A \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F" });
+      return;
+    }
+    const { data: siblings } = await supabaseQuery(
+      `foundation_units?section_id=eq.${enc3(unit.section_id)}&order=sort_order.asc&limit=300`
+    );
+    const list = siblings || [];
+    const index = list.findIndex((u) => u.id === unit.id);
+    const target = index + dir;
+    if (index < 0 || target < 0 || target >= list.length) {
+      res.json({ success: true, swapped: false });
+      return;
+    }
+    const a = list[index];
+    const b = list[target];
+    const pa = a.sort_order ?? index + 1;
+    const pb = b.sort_order ?? target + 1;
+    const nextA = pa === pb ? target + 1 : pa;
+    const nextB = pa === pb ? index + 1 : pb;
+    await Promise.all([
+      supabaseQuery(`foundation_units?id=eq.${enc3(a.id)}`, { method: "PATCH", body: { sort_order: nextB, updated_at: (/* @__PURE__ */ new Date()).toISOString() } }),
+      supabaseQuery(`foundation_units?id=eq.${enc3(b.id)}`, { method: "PATCH", body: { sort_order: nextA, updated_at: (/* @__PURE__ */ new Date()).toISOString() } })
+    ]);
+    res.json({ success: true, swapped: true });
+  } catch (err) {
+    logger.error({ err }, "POST foundation unit reorder failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0639\u0627\u062F\u0629 \u062A\u0631\u062A\u064A\u0628 \u0627\u0644\u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u0641\u0631\u0639\u064A\u0629 \u2014 " + V10_HINT });
+  }
+});
 router7.get("/teacher/foundation/sections/:id/members", requireAdmin, async (req, res) => {
   try {
     const sectionId = String(req.params.id);
@@ -37831,6 +38105,7 @@ router7.post("/teacher/foundation/lessons", requireAdmin, async (req, res) => {
   try {
     const b = req.body || {};
     const sectionId = String(b.sectionId || b.section_id || "");
+    const unitId = String(b.unitId || b.unit_id || "").trim();
     if (!sectionId) {
       res.status(400).json({ error: "\u0627\u0644\u0642\u0633\u0645 \u0645\u0637\u0644\u0648\u0628" });
       return;
@@ -37839,31 +38114,34 @@ router7.post("/teacher/foundation/lessons", requireAdmin, async (req, res) => {
       res.status(400).json({ error: "\u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u062F\u0631\u0633 \u0645\u0637\u0644\u0648\u0628" });
       return;
     }
-    const { data: existing } = await supabaseQuery(
+    const unitsReady = await hasUnitsTable();
+    const { data: existing } = unitsReady && unitId ? await supabaseQuery(
+      `foundation_lessons?unit_id=eq.${enc3(unitId)}&select=position&limit=500`
+    ) : await supabaseQuery(
       `foundation_lessons?section_id=eq.${enc3(sectionId)}&select=position&limit=500`
     );
     const nextPos = (existing || []).reduce((max, l) => Math.max(max, l.position ?? 0), 0) + 1;
+    const row = {
+      section_id: sectionId,
+      title: String(b.title).slice(0, 200),
+      description: String(b.description || "").slice(0, 1e3),
+      kind: kindOf(b.kind),
+      body_text: String(b.bodyText ?? b.body_text ?? ""),
+      cover_url: String(b.coverUrl || ""),
+      images: Array.isArray(b.images) ? b.images.filter(Boolean).slice(0, 40) : [],
+      video_url: String(b.videoUrl || ""),
+      video_caption: String(b.videoCaption || "").slice(0, 300),
+      html_content: String(b.htmlContent || ""),
+      html_file_url: String(b.htmlFileUrl || ""),
+      position: Number(b.position) || nextPos,
+      is_locked: !!b.isLocked,
+      is_visible: b.isVisible !== false
+    };
+    if (unitsReady && unitId) row.unit_id = unitId;
     const { data, error } = await supabaseQuery("foundation_lessons", {
       method: "POST",
       headers: { Prefer: "return=representation" },
-      body: [
-        {
-          section_id: sectionId,
-          title: String(b.title).slice(0, 200),
-          description: String(b.description || "").slice(0, 1e3),
-          kind: kindOf(b.kind),
-          body_text: String(b.bodyText ?? b.body_text ?? ""),
-          cover_url: String(b.coverUrl || ""),
-          images: Array.isArray(b.images) ? b.images.filter(Boolean).slice(0, 40) : [],
-          video_url: String(b.videoUrl || ""),
-          video_caption: String(b.videoCaption || "").slice(0, 300),
-          html_content: String(b.htmlContent || ""),
-          html_file_url: String(b.htmlFileUrl || ""),
-          position: Number(b.position) || nextPos,
-          is_locked: !!b.isLocked,
-          is_visible: b.isVisible !== false
-        }
-      ]
+      body: [row]
     });
     if (error) throw new Error(String(error));
     const created = (data || [])[0];
@@ -37891,6 +38169,9 @@ router7.patch("/teacher/foundation/lessons/:id", requireAdmin, async (req, res) 
     if (b.position !== void 0) full.position = Number(b.position) || 1;
     if (b.isLocked !== void 0) full.is_locked = !!b.isLocked;
     if (b.isVisible !== void 0) full.is_visible = b.isVisible !== false;
+    if ((b.unitId !== void 0 || b.unit_id !== void 0) && await hasUnitsTable()) {
+      full.unit_id = String(b.unitId ?? b.unit_id ?? "").trim() || null;
+    }
     const { error } = await supabaseQuery(`foundation_lessons?id=eq.${enc3(req.params.id)}`, {
       method: "PATCH",
       body: full
@@ -37922,14 +38203,15 @@ router7.post("/teacher/foundation/lessons/reorder", requireAdmin, async (req, re
       res.status(400).json({ error: "\u0627\u0644\u062F\u0631\u0633 \u0645\u0637\u0644\u0648\u0628" });
       return;
     }
-    const { data: rows } = await supabaseQuery(`foundation_lessons?id=eq.${enc3(id)}&select=id,section_id,position&limit=1`);
+    const { data: rows } = await supabaseQuery(`foundation_lessons?id=eq.${enc3(id)}&select=id,section_id,unit_id,position&limit=1`);
     const lesson = rows?.[0];
     if (!lesson) {
       res.status(404).json({ error: "\u0627\u0644\u062F\u0631\u0633 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F" });
       return;
     }
+    const scoped = await hasUnitsTable() && lesson.unit_id ? { key: "unit_id", value: lesson.unit_id } : { key: "section_id", value: lesson.section_id };
     const { data: siblings } = await supabaseQuery(
-      `foundation_lessons?section_id=eq.${enc3(lesson.section_id)}&order=position.asc&limit=500`
+      `foundation_lessons?${scoped.key}=eq.${enc3(scoped.value)}&order=position.asc&limit=500`
     );
     const list = siblings || [];
     const index = list.findIndex((l) => l.id === lesson.id);

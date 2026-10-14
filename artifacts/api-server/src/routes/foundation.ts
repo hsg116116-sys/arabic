@@ -18,6 +18,7 @@ const enc = (v: string | string[] | undefined): string =>
   encodeURIComponent(Array.isArray(v) ? v[0] ?? "" : v ?? "");
 
 const V7_HINT = "نفّذ الملف sql_foundation_v7.sql في Supabase ← SQL Editor أولاً.";
+const V10_HINT = "نفّذ الملف sql_foundation_units_v10.sql في Supabase ← SQL Editor لتفعيل الأقسام الفرعية.";
 
 const KINDS = new Set(["text", "image", "video", "html", "mixed"]);
 const kindOf = (v: unknown): string => {
@@ -135,11 +136,63 @@ function sectionToJson(s: any) {
   };
 }
 
+function unitToJson(u: any) {
+  return {
+    id: u.id,
+    sectionId: u.section_id,
+    title: u.title || "قسم فرعي بلا اسم",
+    description: u.description || "",
+    coverUrl: u.cover_url || "",
+    color: u.color || "",
+    icon: u.icon || "book-open",
+    sortOrder: u.sort_order ?? 1,
+    isLocked: !!u.is_locked,
+    isVisible: u.is_visible !== false,
+    isVirtual: false,
+  };
+}
+
+/** قسم فرعي وهمي يحوي دروس المستوى كلّها — يُستخدم قبل تنفيذ ملف V10 فقط */
+function virtualUnit(sectionId: string): any {
+  return {
+    id: `__flat__${sectionId}`,
+    section_id: sectionId,
+    title: "دروس المستوى",
+    description: "",
+    cover_url: "",
+    color: "",
+    icon: "book-open",
+    sort_order: 1,
+    is_locked: false,
+    is_visible: true,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// بنية التأسيس ثلاثية المستويات: القسم ← القسم الفرعي ← الدرس.
+// جدول foundation_units أُضيف في ملف V10. قبل تنفيذه نعمل مسطّحاً: قسم
+// فرعي واحد وهمي لكل مستوى يحمل دروسه — فالموقع لا ينكسر أبداً، ويصحّ
+// وحده تلقائياً بعد تنفيذ الملف.
+// ---------------------------------------------------------------------------
+let unitsTableCheckAt = 0;
+let unitsTableReady = false;
+const UNITS_TABLE_TTL = 60 * 1000;
+
+export async function hasUnitsTable(): Promise<boolean> {
+  if (Date.now() - unitsTableCheckAt < UNITS_TABLE_TTL) return unitsTableReady;
+  unitsTableCheckAt = Date.now();
+  const { error } = await supabaseQuery("foundation_units?select=id&limit=1");
+  unitsTableReady = !error;
+  if (!unitsTableReady) logger.warn({ hint: V10_HINT }, "foundation_units not ready — running flat");
+  return unitsTableReady;
+}
+
 function lessonToJson(l: any, opts: { full?: boolean; done?: boolean } = {}) {
   const images = jsonList(l.images);
   const base = {
     id: l.id,
     sectionId: l.section_id,
+    unitId: l.unit_id || `__flat__${l.section_id}`,
     title: l.title || "درس بلا اسم",
     description: l.description || "",
     kind: kindOf(l.kind),
@@ -174,6 +227,74 @@ function lessonToJson(l: any, opts: { full?: boolean; done?: boolean } = {}) {
 // ============================================================================
 // واجهة الطالب
 // ============================================================================
+
+/** يبني شجرة القسم ← الأقسام الفرعية ← الدروس مع عدّاداتها.
+ *  بدون جدول الأقسام الفرعية يبني شجرة مسطّحة: قسم فرعي واحد لكل مستوى. */
+function buildSectionTree(
+  sections: any[],
+  lessons: any[],
+  done: Set<string>,
+  opts: { units: any[] | null; memberCount?: Record<string, number> },
+) {
+  const lessonsByUnit: Record<string, any[]> = {};
+  const unitIds = new Set((opts.units || []).map((u: any) => u.id));
+  for (const l of lessons) {
+    // درس بلا قسم فرعي (أُنشئ قبل V10 أو حُذف قسمه) ينزل في القسم الفرعي الأول
+    const key = unitIds.has(l.unit_id) ? l.unit_id : `__first__${l.section_id}`;
+    (lessonsByUnit[key] ||= []).push(l);
+  }
+
+  return sections.map((s: any) => {
+    const sectionUnits = opts.units
+      ? (opts.units || []).filter((u: any) => u.section_id === s.id)
+      : [];
+
+    let units = sectionUnits
+      .map((u: any) => {
+        const list = [...(lessonsByUnit[u.id] || [])];
+        // دروس بلا قسم فرعي تُلحق بأول قسم فرعي ظاهر في المستوى
+        const orphans = lessonsByUnit[`__first__${s.id}`] || [];
+        if (u === sectionUnits[0]) list.push(...orphans);
+        const doneCount = list.filter((l: any) => done.has(l.id)).length;
+        return {
+          ...unitToJson(u),
+          lessonsCount: list.length,
+          doneCount,
+          totalCount: list.length,
+          lessons: list.map((l: any) => lessonToJson(l, { full: true, done: done.has(l.id) })),
+        };
+      })
+      .sort((a: any, b: any) => (a.sortOrder ?? 1) - (b.sortOrder ?? 1));
+
+    // مستوى بلا أقسام فرعية بعد (فارغ أو جدول غير منفّذ) → قسم وهمي واحد
+    if (!units.length) {
+      const list = lessons.filter((l: any) => l.section_id === s.id);
+      const doneCount = list.filter((l: any) => done.has(l.id)).length;
+      units = [
+        {
+          ...unitToJson(virtualUnit(s.id)),
+          isVirtual: true,
+          lessonsCount: list.length,
+          doneCount,
+          totalCount: list.length,
+          lessons: list.map((l: any) => lessonToJson(l, { full: true, done: done.has(l.id) })),
+        },
+      ];
+    }
+
+    const totalCount = units.reduce((a: number, u: any) => a + u.totalCount, 0);
+    const doneCount = units.reduce((a: number, u: any) => a + u.doneCount, 0);
+    return {
+      ...sectionToJson(s),
+      memberCount: opts.memberCount?.[s.id] || 0,
+      lessonsCount: totalCount,
+      doneCount,
+      totalCount,
+      unitsCount: units.length,
+      units,
+    };
+  });
+}
 
 /** أقسام التأسيس المسموحة لهذا الطالب فقط — فحص واحد مفهرس ثم قراءة القسم */
 router.get("/foundation/sections", requireAuth, async (req, res) => {
@@ -271,27 +392,19 @@ router.get("/foundation/stream", requireAuth, async (req, res) => {
 // الطالب يرى أقساماً فارغة دائماً لأن id للدرس لا يساوي id للقسم أبداً.
     const sectionFilter = ids ? `&id=in.(${ids.map(enc).join(",")})` : "";
     const lessonFilter = ids ? `&section_id=in.(${ids.map(enc).join(",")})` : "";
-    const [{ data: sections }, { data: lessons }, { data: progress }] = await Promise.all([
+    const unitFilter = ids ? `&section_id=in.(${ids.map(enc).join(",")})` : "";
+    const unitsReady = await hasUnitsTable();
+    const [{ data: sections }, { data: lessons }, { data: progress }, { data: units }] = await Promise.all([
       supabaseQuery<any[]>(`foundation_sections?is_visible=eq.true&order=sort_order.asc${sectionFilter}&limit=200`),
       supabaseQuery<any[]>(`foundation_lessons?is_visible=eq.true&order=position.asc${lessonFilter}&limit=1000`),
       supabaseQuery<any[]>(`foundation_progress?user_id=eq.${enc(auth.userId)}&select=lesson_id&limit=2000`),
+      unitsReady
+        ? supabaseQuery<any[]>(`foundation_units?is_visible=eq.true&order=sort_order.asc${unitFilter}&limit=500`)
+        : Promise.resolve({ data: null, error: null, count: null }),
     ]);
 
     const done = new Set<string>((progress || []).map((p: any) => p.lesson_id));
-    const grouped: Record<string, any[]> = {};
-    for (const l of lessons || []) (grouped[l.section_id] ||= []).push(l);
-
-    const out = (sections || []).map((s: any) => {
-      const list = grouped[s.id] || [];
-      const doneCount = list.filter((l: any) => done.has(l.id)).length;
-      return {
-        ...sectionToJson(s),
-        lessonsCount: list.length,
-        doneCount,
-        totalCount: list.length,
-        lessons: list.map((l: any) => lessonToJson(l, { full: true, done: done.has(l.id) })),
-      };
-    });
+    const out = buildSectionTree(sections || [], lessons || [], done, { units: units || null });
 
     const totalLessons = out.reduce((a, s) => a + s.totalCount, 0);
     const totalDone = out.reduce((a, s) => a + s.doneCount, 0);
@@ -299,6 +412,7 @@ router.get("/foundation/stream", requireAuth, async (req, res) => {
       sections: out,
       stats: {
         sections: out.length,
+        units: out.reduce((a, s) => a + s.unitsCount, 0),
         lessons: totalLessons,
         done: totalDone,
         percent: totalLessons > 0 ? Math.round((totalDone / totalLessons) * 100) : 0,
@@ -494,30 +608,24 @@ router.get("/teacher/foundation/sections", requireAdmin, async (_req, res) => {
  */
 router.get("/teacher/foundation/stream", requireAdmin, async (_req, res) => {
   try {
-    const [{ data: sections, error }, { data: lessons }, { data: members }] = await Promise.all([
+    const unitsReady = await hasUnitsTable();
+    const [{ data: sections, error }, { data: lessons }, { data: members }, { data: units }] = await Promise.all([
       supabaseQuery<any[]>("foundation_sections?order=sort_order.asc&limit=200"),
       supabaseQuery<any[]>("foundation_lessons?order=position.asc&limit=2000"),
       supabaseQuery<any[]>("foundation_members?select=section_id&limit=5000"),
+      unitsReady
+        ? supabaseQuery<any[]>("foundation_units?order=sort_order.asc&limit=500")
+        : Promise.resolve({ data: null, error: null, count: null }),
     ]);
     if (error) throw new Error(String(error));
 
     const memberCount: Record<string, number> = {};
     for (const m of members || []) memberCount[m.section_id] = (memberCount[m.section_id] || 0) + 1;
 
-    const grouped: Record<string, any[]> = {};
-    for (const l of lessons || []) (grouped[l.section_id] ||= []).push(l);
-
-    res.json(
-      (sections || []).map((s: any) => {
-        const list = grouped[s.id] || [];
-        return {
-          ...sectionToJson(s),
-          memberCount: memberCount[s.id] || 0,
-          lessonsCount: list.length,
-          lessons: list.map((l: any) => lessonToJson(l)),
-        };
-      }),
-    );
+    res.json(buildSectionTree(sections || [], lessons || [], new Set(), {
+      units: units || null,
+      memberCount,
+    }));
   } catch (err: any) {
     logger.error({ err }, "GET teacher foundation stream failed");
     res.status(500).json({ error: "تعذر تحميل محتوى التأسيس — " + V7_HINT });
@@ -603,6 +711,219 @@ router.delete("/teacher/foundation/sections/:id", requireAdmin, async (req, res)
   } catch (err: any) {
     logger.error({ err }, "DELETE teacher foundation section failed");
     res.status(500).json({ error: "تعذر حذف القسم — " + V7_HINT });
+  }
+});
+
+/** تبديل موضع قسمين متتاليين — السهمان في لوحة الأستاذ */
+router.post("/teacher/foundation/sections/reorder", requireAdmin, async (req, res) => {
+  try {
+    const id = String(req.body?.id || "");
+    const dir = req.body?.dir === "up" ? -1 : 1;
+    if (!id) {
+      res.status(400).json({ error: "القسم مطلوب" });
+      return;
+    }
+    const { data: rows } = await supabaseQuery<any[]>("foundation_sections?select=id,sort_order&order=sort_order.asc&limit=200");
+    const list = rows || [];
+    const index = list.findIndex((s: any) => s.id === id);
+    const target = index + dir;
+    if (index < 0 || target < 0 || target >= list.length) {
+      res.json({ success: true, swapped: false });
+      return;
+    }
+    const a = list[index];
+    const b = list[target];
+    const pa = a.sort_order ?? index + 1;
+    const pb = b.sort_order ?? target + 1;
+    const nextA = pa === pb ? target + 1 : pa;
+    const nextB = pa === pb ? index + 1 : pb;
+    await Promise.all([
+      supabaseQuery(`foundation_sections?id=eq.${enc(a.id)}`, { method: "PATCH", body: { sort_order: nextB, updated_at: new Date().toISOString() } }),
+      supabaseQuery(`foundation_sections?id=eq.${enc(b.id)}`, { method: "PATCH", body: { sort_order: nextA, updated_at: new Date().toISOString() } }),
+    ]);
+    res.json({ success: true, swapped: true });
+  } catch (err: any) {
+    logger.error({ err }, "POST foundation section reorder failed");
+    res.status(500).json({ error: "تعذر إعادة ترتيب الأقسام — " + V7_HINT });
+  }
+});
+
+// ── الأقسام الفرعية ─────────────────────────────────────────────────────────
+
+router.get("/teacher/foundation/sections/:id/units", requireAdmin, async (req, res) => {
+  try {
+    if (!(await hasUnitsTable())) {
+      res.json([]);
+      return;
+    }
+    const { data, error } = await supabaseQuery<any[]>(
+      `foundation_units?section_id=eq.${enc(req.params.id)}&order=sort_order.asc&limit=300`,
+    );
+    if (error) throw new Error(String(error));
+    const ids = (data || []).map((u: any) => u.id);
+    const { data: lessons } = ids.length
+      ? await supabaseQuery<any[]>(
+          `foundation_lessons?section_id=eq.${enc(req.params.id)}&select=id,unit_id&limit=500`,
+        )
+      : { data: [] as any[] };
+    const counts: Record<string, number> = {};
+    for (const l of lessons || []) {
+      const key = l.unit_id || "__first__";
+      counts[key] = (counts[key] || 0) + 1;
+    }
+    res.json(
+      (data || []).map((u: any) => ({ ...unitToJson(u), lessonsCount: counts[u.id] || 0 })),
+    );
+  } catch (err: any) {
+    logger.error({ err }, "GET teacher foundation units failed");
+    res.status(500).json({ error: "تعذر تحميل الأقسام الفرعية — " + V10_HINT });
+  }
+});
+
+router.post("/teacher/foundation/units", requireAdmin, async (req, res) => {
+  try {
+    if (!(await hasUnitsTable())) {
+      res.status(503).json({ error: "الأقسام الفرعية غير مفعّلة — " + V10_HINT });
+      return;
+    }
+    const b = req.body || {};
+    const sectionId = String(b.sectionId || b.section_id || "");
+    const title = String(b.title || "").trim();
+    if (!sectionId) {
+      res.status(400).json({ error: "القسم مطلوب" });
+      return;
+    }
+    if (!title) {
+      res.status(400).json({ error: "عنوان القسم الفرعي مطلوب" });
+      return;
+    }
+    const { data: existing } = await supabaseQuery<any[]>(
+      `foundation_units?section_id=eq.${enc(sectionId)}&select=sort_order&limit=300`,
+    );
+    const nextOrder = (existing || []).reduce((max: number, u: any) => Math.max(max, u.sort_order ?? 0), 0) + 1;
+
+    const { data, error } = await supabaseQuery<any[]>("foundation_units", {
+      method: "POST",
+      headers: { Prefer: "return=representation" },
+      body: [
+        {
+          section_id: sectionId,
+          title: title.slice(0, 200),
+          description: String(b.description || "").slice(0, 2000),
+          cover_url: String(b.coverUrl || ""),
+          color: String(b.color || ""),
+          icon: String(b.icon || "book-open"),
+          sort_order: Number(b.sortOrder) || nextOrder,
+          is_locked: !!b.isLocked,
+          is_visible: b.isVisible !== false,
+        },
+      ],
+    });
+    if (error) throw new Error(String(error));
+    const created = (data || [])[0];
+    if (!created?.id) throw new Error("لم يُرجع الخادم معرّف القسم الفرعي");
+    res.json({ success: true, unit: unitToJson(created), message: "تم إنشاء القسم الفرعي!" });
+  } catch (err: any) {
+    logger.error({ err }, "POST foundation unit failed");
+    res.status(500).json({ error: "تعذر إنشاء القسم الفرعي — " + V10_HINT });
+  }
+});
+
+router.patch("/teacher/foundation/units/:id", requireAdmin, async (req, res) => {
+  try {
+    if (!(await hasUnitsTable())) {
+      res.status(503).json({ error: "الأقسام الفرعية غير مفعّلة — " + V10_HINT });
+      return;
+    }
+    const b = req.body || {};
+    const full: Record<string, any> = { updated_at: new Date().toISOString() };
+    if (b.title !== undefined) full.title = String(b.title).slice(0, 200);
+    if (b.description !== undefined) full.description = String(b.description || "").slice(0, 2000);
+    if (b.coverUrl !== undefined) full.cover_url = String(b.coverUrl || "");
+    if (b.color !== undefined) full.color = String(b.color || "");
+    if (b.icon !== undefined) full.icon = String(b.icon || "book-open");
+    if (b.sortOrder !== undefined) full.sort_order = Number(b.sortOrder) || 1;
+    if (b.isLocked !== undefined) full.is_locked = !!b.isLocked;
+    if (b.isVisible !== undefined) full.is_visible = b.isVisible !== false;
+
+    const { error } = await supabaseQuery(`foundation_units?id=eq.${enc(req.params.id)}`, {
+      method: "PATCH",
+      body: full,
+    });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "تم حفظ القسم الفرعي!" });
+  } catch (err: any) {
+    logger.error({ err }, "PATCH foundation unit failed");
+    res.status(500).json({ error: "تعذر حفظ القسم الفرعي — " + V10_HINT });
+  }
+});
+
+/** حذف قسم فرعي — دروسه تبقى موجودة ويظهرها القسم الفرعي الأول (SET NULL في القاعدة) */
+router.delete("/teacher/foundation/units/:id", requireAdmin, async (req, res) => {
+  try {
+    if (!(await hasUnitsTable())) {
+      res.status(503).json({ error: "الأقسام الفرعية غير مفعّلة — " + V10_HINT });
+      return;
+    }
+    const { data: rows } = await supabaseQuery<any[]>(`foundation_units?id=eq.${enc(req.params.id)}&select=id&limit=1`);
+    if (!rows?.[0]) {
+      res.status(404).json({ error: "القسم الفرعي غير موجود" });
+      return;
+    }
+    const { error } = await supabaseQuery(`foundation_units?id=eq.${enc(req.params.id)}`, {
+      method: "DELETE",
+    });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "تم حذف القسم الفرعي — دروسه انتقلت إلى القسم الأول." });
+  } catch (err: any) {
+    logger.error({ err }, "DELETE foundation unit failed");
+    res.status(500).json({ error: "تعذر حذف القسم الفرعي — " + V10_HINT });
+  }
+});
+
+/** تبديل موضعين بين قسمين فرعيين داخل المستوى نفسه */
+router.post("/teacher/foundation/units/reorder", requireAdmin, async (req, res) => {
+  try {
+    if (!(await hasUnitsTable())) {
+      res.status(503).json({ error: "الأقسام الفرعية غير مفعّلة — " + V10_HINT });
+      return;
+    }
+    const id = String(req.body?.id || "");
+    const dir = req.body?.dir === "up" ? -1 : 1;
+    if (!id) {
+      res.status(400).json({ error: "القسم الفرعي مطلوب" });
+      return;
+    }
+    const { data: rows } = await supabaseQuery<any[]>(`foundation_units?id=eq.${enc(id)}&select=id,section_id&limit=1`);
+    const unit = rows?.[0];
+    if (!unit) {
+      res.status(404).json({ error: "القسم الفرعي غير موجود" });
+      return;
+    }
+    const { data: siblings } = await supabaseQuery<any[]>(
+      `foundation_units?section_id=eq.${enc(unit.section_id)}&order=sort_order.asc&limit=300`,
+    );
+    const list = siblings || [];
+    const index = list.findIndex((u: any) => u.id === unit.id);
+    const target = index + dir;
+    if (index < 0 || target < 0 || target >= list.length) {
+      res.json({ success: true, swapped: false });
+      return;
+    }
+    const a = list[index];
+    const b = list[target];
+    const pa = a.sort_order ?? index + 1;
+    const pb = b.sort_order ?? target + 1;
+    const nextA = pa === pb ? target + 1 : pa;
+    const nextB = pa === pb ? index + 1 : pb;
+    await Promise.all([
+      supabaseQuery(`foundation_units?id=eq.${enc(a.id)}`, { method: "PATCH", body: { sort_order: nextB, updated_at: new Date().toISOString() } }),
+      supabaseQuery(`foundation_units?id=eq.${enc(b.id)}`, { method: "PATCH", body: { sort_order: nextA, updated_at: new Date().toISOString() } }),
+    ]);
+    res.json({ success: true, swapped: true });
+  } catch (err: any) {
+    logger.error({ err }, "POST foundation unit reorder failed");
+    res.status(500).json({ error: "تعذر إعادة ترتيب الأقسام الفرعية — " + V10_HINT });
   }
 });
 
@@ -698,6 +1019,7 @@ router.post("/teacher/foundation/lessons", requireAdmin, async (req, res) => {
   try {
     const b = req.body || {};
     const sectionId = String(b.sectionId || b.section_id || "");
+    const unitId = String(b.unitId || b.unit_id || "").trim();
     if (!sectionId) {
       res.status(400).json({ error: "القسم مطلوب" });
       return;
@@ -706,32 +1028,40 @@ router.post("/teacher/foundation/lessons", requireAdmin, async (req, res) => {
       res.status(400).json({ error: "عنوان الدرس مطلوب" });
       return;
     }
-    const { data: existing } = await supabaseQuery<any[]>(
-      `foundation_lessons?section_id=eq.${enc(sectionId)}&select=position&limit=500`,
-    );
+    const unitsReady = await hasUnitsTable();
+    // الموضع يُحسب داخل القسم الفرعي — فالترتيب يتبع التسلسل الذي يراه الطالب
+    const { data: existing } = unitsReady && unitId
+      ? await supabaseQuery<any[]>(
+          `foundation_lessons?unit_id=eq.${enc(unitId)}&select=position&limit=500`,
+        )
+      : await supabaseQuery<any[]>(
+          `foundation_lessons?section_id=eq.${enc(sectionId)}&select=position&limit=500`,
+        );
     const nextPos = (existing || []).reduce((max: number, l: any) => Math.max(max, l.position ?? 0), 0) + 1;
+
+    const row: Record<string, any> = {
+      section_id: sectionId,
+      title: String(b.title).slice(0, 200),
+      description: String(b.description || "").slice(0, 1000),
+      kind: kindOf(b.kind),
+      body_text: String(b.bodyText ?? b.body_text ?? ""),
+      cover_url: String(b.coverUrl || ""),
+      images: Array.isArray(b.images) ? b.images.filter(Boolean).slice(0, 40) : [],
+      video_url: String(b.videoUrl || ""),
+      video_caption: String(b.videoCaption || "").slice(0, 300),
+      html_content: String(b.htmlContent || ""),
+      html_file_url: String(b.htmlFileUrl || ""),
+      position: Number(b.position) || nextPos,
+      is_locked: !!b.isLocked,
+      is_visible: b.isVisible !== false,
+    };
+    // العمود موجود فقط بعد ملف V10 — بلاه يفشل الإدراج كله
+    if (unitsReady && unitId) row.unit_id = unitId;
 
     const { data, error } = await supabaseQuery<any[]>("foundation_lessons", {
       method: "POST",
       headers: { Prefer: "return=representation" },
-      body: [
-        {
-          section_id: sectionId,
-          title: String(b.title).slice(0, 200),
-          description: String(b.description || "").slice(0, 1000),
-          kind: kindOf(b.kind),
-          body_text: String(b.bodyText ?? b.body_text ?? ""),
-          cover_url: String(b.coverUrl || ""),
-          images: Array.isArray(b.images) ? b.images.filter(Boolean).slice(0, 40) : [],
-          video_url: String(b.videoUrl || ""),
-          video_caption: String(b.videoCaption || "").slice(0, 300),
-          html_content: String(b.htmlContent || ""),
-          html_file_url: String(b.htmlFileUrl || ""),
-          position: Number(b.position) || nextPos,
-          is_locked: !!b.isLocked,
-          is_visible: b.isVisible !== false,
-        },
-      ],
+      body: [row],
     });
     if (error) throw new Error(String(error));
     const created = (data || [])[0];
@@ -760,6 +1090,10 @@ router.patch("/teacher/foundation/lessons/:id", requireAdmin, async (req, res) =
     if (b.position !== undefined) full.position = Number(b.position) || 1;
     if (b.isLocked !== undefined) full.is_locked = !!b.isLocked;
     if (b.isVisible !== undefined) full.is_visible = b.isVisible !== false;
+    // نقل الدرس إلى قسم فرعي آخر — والعمود يُكتب فقط بعد تنفيذ ملف V10
+    if ((b.unitId !== undefined || b.unit_id !== undefined) && (await hasUnitsTable())) {
+      full.unit_id = String(b.unitId ?? b.unit_id ?? "").trim() || null;
+    }
 
     const { error } = await supabaseQuery(`foundation_lessons?id=eq.${enc(req.params.id)}`, {
       method: "PATCH",
@@ -786,7 +1120,7 @@ router.delete("/teacher/foundation/lessons/:id", requireAdmin, async (req, res) 
   }
 });
 
-/** إعادة ترتيب الدروس — يبدّل الموضعين في عملية واحدة */
+/** إعادة ترتيب الدروس — تبدّل موضعين داخل نفس القسم الفرعي (أو داخل القسم كلّه) */
 router.post("/teacher/foundation/lessons/reorder", requireAdmin, async (req, res) => {
   try {
     const id = String(req.body?.id || "");
@@ -795,14 +1129,18 @@ router.post("/teacher/foundation/lessons/reorder", requireAdmin, async (req, res
       res.status(400).json({ error: "الدرس مطلوب" });
       return;
     }
-    const { data: rows } = await supabaseQuery<any[]>(`foundation_lessons?id=eq.${enc(id)}&select=id,section_id,position&limit=1`);
+    const { data: rows } = await supabaseQuery<any[]>(`foundation_lessons?id=eq.${enc(id)}&select=id,section_id,unit_id,position&limit=1`);
     const lesson = rows?.[0];
     if (!lesson) {
       res.status(404).json({ error: "الدرس غير موجود" });
       return;
     }
+    // نرتب داخل القسم الفرعي إن وُجد، وإلا نرتب على مستوى القسم كامل
+    const scoped = (await hasUnitsTable()) && lesson.unit_id
+      ? { key: "unit_id", value: lesson.unit_id }
+      : { key: "section_id", value: lesson.section_id };
     const { data: siblings } = await supabaseQuery<any[]>(
-      `foundation_lessons?section_id=eq.${enc(lesson.section_id)}&order=position.asc&limit=500`,
+      `foundation_lessons?${scoped.key}=eq.${enc(scoped.value)}&order=position.asc&limit=500`,
     );
     const list = siblings || [];
     const index = list.findIndex((l: any) => l.id === lesson.id);
