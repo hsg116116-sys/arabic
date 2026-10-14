@@ -255,6 +255,7 @@ const navTeacher = [
   { href: '/teacher/exams', label: 'الاختبارات', icon: Target },
   { href: '/teacher/assignments', label: 'الواجبات', icon: ClipboardCheck },
   { href: '/teacher/notebooks', label: 'مهام الدفتر', icon: NotebookPen },
+  { href: '/teacher/report', label: 'كشف العلامات', icon: Award },
   { href: '/teacher/announcements', label: 'الإعلانات', icon: Bell },
   { href: '/teacher/settings', label: 'هوية المنصة', icon: Settings },
 ];
@@ -5023,6 +5024,638 @@ function EmptyOrg() {
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   كشف العلامات — ملف كل طالب
+   ───────────────────────────────────────────────────────────────────────
+   مدرسة ← صف ← طالب ← الملف الكامل: علاماته في الاختبارات (نسبة مئوية)
+   والواجبات (علامة/قصوى يضعها الأستاذ) ومهام الدفتر (علامة/قصوى)، وما
+   سلّمه وما لم يسلّمه، ومشاركته في التأسيس. مصمم للآيباد أولاً ثم
+   الهاتف والحاسوب.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/** لون التقدير — يُقرأ بنظرة واحدة على الآيباد */
+function reportTone(pct: number | null): string {
+  if (pct === null) return 'bg-muted text-muted-foreground';
+  if (pct >= 90) return 'bg-green-600/12 text-green-800';
+  if (pct >= 70) return 'bg-primary/10 text-primary';
+  if (pct >= 60) return 'bg-[#b7791f]/15 text-[#b7791f]';
+  return 'bg-destructive/10 text-destructive';
+}
+
+function TeacherReportPage() {
+  useCatalog();
+  const [school, setSchool] = useState('');
+  const [grade, setGrade] = useState('');
+  const [q, setQ] = useState('');
+  const [overview, setOverview] = useState<any>(null);
+  const [ovLoading, setOvLoading] = useState(true);
+  const [ovErr, setOvErr] = useState('');
+  const [selectedId, setSelectedId] = useState('');
+  const [file, setFile] = useState<any>(null);
+  const [fileLoading, setFileLoading] = useState(false);
+  const [fileErr, setFileErr] = useState('');
+  const [viewing, setViewing] = useState<null | { kind: 'hw' | 'nb'; itemId: string; title: string }>(null);
+
+  const loadOverview = useCallback(() => {
+    setOvLoading(true);
+    setOvErr('');
+    const params = new URLSearchParams();
+    if (school) params.set('school', school);
+    if (grade) params.set('grade', grade);
+    jsonFetch(`/api/teacher/report/overview${params.toString() ? `?${params.toString()}` : ''}`)
+      .then((d) => setOverview(d))
+      .catch((e: Error) => setOvErr(e?.message || 'تعذر تحميل الكشف'))
+      .finally(() => setOvLoading(false));
+  }, [school, grade]);
+
+  useEffect(() => { loadOverview(); }, [loadOverview]);
+
+  const openFile = (id: string) => {
+    setSelectedId(id);
+    setFile(null);
+    setFileErr('');
+    setFileLoading(true);
+    jsonFetch(`/api/teacher/report/student/${id}`)
+      .then((d) => setFile(d))
+      .catch((e: Error) => setFileErr(e?.message || 'تعذر فتح ملف الطالب'))
+      .finally(() => setFileLoading(false));
+  };
+
+  const students: any[] = Array.isArray(overview?.students) ? overview.students : [];
+  const schools: string[] = Array.isArray(overview?.schools) && overview.schools.length ? overview.schools : [];
+  const grades: string[] = Array.isArray(overview?.grades) && overview.grades.length ? overview.grades : [];
+  const shown = useMemo(() => {
+    const needle = String(q || '').trim();
+    if (!needle) return students;
+    return students.filter((s) => (s.name || '').includes(needle));
+  }, [students, q]);
+
+  const classAvg = useMemo(() => {
+    const vals = students.map((s) => s.overall).filter((v): v is number => typeof v === 'number');
+    return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+  }, [students]);
+  const totalMissing = useMemo(() => students.reduce((a, s) => a + (Number(s.missing) || 0), 0), [students]);
+
+  return (
+    <Shell mode="teacher">
+      <SectionHero
+        eyebrow="العلامات والنواقص والمشاركة — لكل طالب"
+        title="كشف العلامات"
+        body="اختر المدرسة ثم الصف ثم الطالب لتفتح ملفه الكامل: علاماته في الاختبارات والواجبات والدفتر، وما سلّمه وما فاته، ومشاركته في التأسيس. الاختبار نسبة مئوية، والواجب والدفتر علامة من قصوى يضعها الأستاذ."
+        stats={[
+          { value: students.length, label: 'طالب في الكشف' },
+          { value: classAvg === null ? '—' : `${classAvg}%`, label: 'متوسط الصف' },
+          { value: totalMissing, label: 'بند ناقص' },
+        ]}
+      />
+
+      {/* ── المدرسة ← الصف ← البحث ── */}
+      <div className="mb-4 space-y-2.5">
+        <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-testid="report-schools">
+          <ReportPill active={!school} onClick={() => setSchool('')} label="كل المدارس" />
+          {schools.map((s) => (
+            <ReportPill key={s} active={school === s} onClick={() => setSchool(school === s ? '' : s)} label={s} />
+          ))}
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-testid="report-grades">
+          <ReportPill active={!grade} onClick={() => setGrade('')} label="كل الصفوف" />
+          {grades.map((g) => (
+            <ReportPill key={g} active={grade === g} onClick={() => setGrade(grade === g ? '' : g)} label={g} />
+          ))}
+        </div>
+        <div className="relative">
+          <Search size={18} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="ابحث باسم الطالب..."
+            className={`${touchCls} pr-12`}
+            data-testid="input-report-search"
+          />
+        </div>
+      </div>
+
+      {ovLoading ? <StateNotice type="loading" /> : ovErr ? (
+        <StateNotice type="error" onRetry={loadOverview} />
+      ) : !shown.length ? (
+        <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-16 text-center">
+          <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-secondary text-primary"><UsersRound size={30} /></span>
+          <p className="font-display text-xl font-bold text-primary">لا طلاب في هذا التحديد</p>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-muted-foreground">غيّر المدرسة أو الصف أو امسح البحث.</p>
+        </div>
+      ) : (
+        /* ── شبكة الطلاب: بطاقة لكل طالب تفتح ملفه ── */
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {shown.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => openFile(s.id)}
+              data-testid={`button-report-student-${s.id}`}
+              className={`group flex flex-col gap-3 rounded-3xl border bg-card p-5 text-right shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-xl ${selectedId === s.id ? 'border-accent ring-4 ring-accent/20' : 'border-border hover:border-primary/35'}`}
+            >
+              <span className="flex items-center gap-3">
+                <Avatar name={s.name} src={s.avatarUrl} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-display text-base font-extrabold text-primary">{s.name}</span>
+                  <span className="mt-0.5 block truncate text-[11px] font-semibold text-muted-foreground">
+                    {[s.school, s.grade].filter(Boolean).join(' · ') || 'بلا بيانات'}
+                  </span>
+                </span>
+                {s.overall === null ? (
+                  <span className="rounded-xl bg-muted px-2.5 py-1.5 text-xs font-extrabold text-muted-foreground">بلا علامات</span>
+                ) : (
+                  <span className={`rounded-xl px-2.5 py-1.5 text-sm font-extrabold tabular-nums ${reportTone(s.overall)}`}>
+                    {s.overall}%
+                  </span>
+                )}
+              </span>
+
+              <span className="grid grid-cols-4 gap-1.5 text-center">
+                <ReportMini label="اختبار" value={s.exams.avg === null ? '—' : `${s.exams.avg}%`} sub={`${s.exams.taken}/${s.exams.total}`} />
+                <ReportMini label="واجب" value={`${s.homework.done}/${s.homework.total}`} sub={s.homework.percent === null ? '—' : `${s.homework.percent}%`} />
+                <ReportMini label="دفتر" value={`${s.notebook.done}/${s.notebook.total}`} sub={s.notebook.percent === null ? '—' : `${s.notebook.percent}%`} />
+                <ReportMini label="تأسيس" value={s.foundation.inFoundation ? `${s.foundation.done}/${s.foundation.total}` : '—'} sub={s.foundation.percent === null ? (s.foundation.inFoundation ? '0%' : 'خارج') : `${s.foundation.percent}%`} />
+              </span>
+
+              <span className="flex items-center justify-between">
+                {s.missing > 0 ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2.5 py-1 text-[11px] font-extrabold text-destructive">
+                    <CircleAlert size={12} /> {s.missing} ناقص
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-green-600/12 px-2.5 py-1 text-[11px] font-extrabold text-green-800">
+                    <CheckCircle2 size={12} /> مكتمل
+                  </span>
+                )}
+                <span className="inline-flex items-center gap-1 text-xs font-extrabold text-primary opacity-0 transition-opacity group-hover:opacity-100">
+                  افتح الملف <ArrowLeft size={13} />
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── ملف الطالب الكامل ── */}
+      {selectedId ? (
+        <div className="mt-8" data-testid="report-student-file">
+          {fileLoading ? <StateNotice type="loading" /> : fileErr || !file ? (
+            <StateNotice type="error" onRetry={() => openFile(selectedId)} />
+          ) : (
+            <ReportStudentFile
+              file={file}
+              onClose={() => { setSelectedId(''); setFile(null); }}
+              onView={(kind, itemId, title) => setViewing({ kind, itemId, title })}
+              onReload={() => { loadOverview(); openFile(selectedId); }}
+            />
+          )}
+        </div>
+      ) : null}
+
+      {viewing && file ? (
+        <ReportWorkViewer
+          kind={viewing.kind}
+          itemId={viewing.itemId}
+          title={viewing.title}
+          studentId={file.student.id}
+          onClose={() => setViewing(null)}
+        />
+      ) : null}
+    </Shell>
+  );
+}
+
+function ReportPill({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`shrink-0 rounded-xl px-4 py-2.5 text-sm font-extrabold transition-colors ${active ? 'bg-primary text-primary-foreground shadow-sm' : 'border border-border bg-card text-muted-foreground hover:text-primary'}`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function ReportMini({ label, value, sub }: { label: string; value: string; sub: string }) {
+  return (
+    <span className="rounded-xl bg-secondary/70 px-1 py-2">
+      <span className="block text-[10px] font-extrabold text-muted-foreground">{label}</span>
+      <span className="mt-0.5 block text-[13px] font-extrabold tabular-nums text-primary">{value}</span>
+      <span className="block text-[10px] font-bold tabular-nums text-muted-foreground">{sub}</span>
+    </span>
+  );
+}
+
+/* ═══════════════ ملف الطالب: كل شيء عنه في شاشة واحدة ═══════════════ */
+function ReportStudentFile({ file, onClose, onView, onReload }: {
+  file: any; onClose: () => void; onView: (kind: 'hw' | 'nb', itemId: string, title: string) => void; onReload: () => void;
+}) {
+  const s = file.student;
+  const [tab, setTab] = useState<'exams' | 'homework' | 'notebook' | 'foundation' | 'missing'>('exams');
+  const ov = file.overall || { percent: null, level: '' };
+
+  return (
+    <section className="overflow-hidden rounded-[2rem] border border-border bg-card shadow-xl" data-testid="report-file-card">
+      {/* الترويسة: الطالب + الحلقة + التقدير */}
+      <div className="relative overflow-hidden bg-gradient-to-l from-[#0c2725] via-[#17413f] to-[#2a7a72] p-6 text-white sm:p-8">
+        <div className="pointer-events-none absolute -left-14 -top-14 h-48 w-48 rounded-full bg-accent/20 blur-3xl" />
+        <div className="relative flex flex-wrap items-center gap-5">
+          <Avatar name={s.name} src={s.avatarUrl} size="lg" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-extrabold text-accent">ملف الطالب الكامل</p>
+            <h2 className="mt-1 font-display text-2xl font-bold sm:text-3xl">{s.name}</h2>
+            <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-white/75">
+              {[s.school, s.grade, s.section ? `شعبة ${s.section}` : '', s.gender].filter(Boolean).join(' · ')}
+            </p>
+            <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-white/60">
+              {s.phone ? <span className="inline-flex items-center gap-1"><Phone size={11} /> <span dir="ltr">{s.phone}</span></span> : null}
+              {s.email ? <span className="inline-flex items-center gap-1"><Mail size={11} /> <span dir="ltr">{s.email}</span></span> : null}
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-col items-center gap-2">
+            <ReportRing value={ov.percent} />
+            <span className="rounded-full bg-accent px-3.5 py-1 text-xs font-extrabold text-[#3a2c07]">{ov.level}</span>
+          </div>
+          <button type="button" onClick={onClose} className="absolute left-4 top-4 grid h-10 w-10 place-items-center rounded-xl bg-white/10 text-white/80 transition-colors hover:bg-white/20" aria-label="إغلاق الملف" data-testid="button-close-file">
+            <X size={18} />
+          </button>
+        </div>
+      </div>
+
+      {/* مؤشرات الأقسام الأربعة */}
+      <div className="grid grid-cols-2 gap-2.5 p-4 sm:p-5 lg:grid-cols-4">
+        <ReportKpi icon={<Target size={19} />} tone="#0d47a1" label="الاختبارات" main={file.exams.avg === null ? '—' : `${file.exams.avg}%`} sub={`${file.exams.taken} من ${file.exams.total}`} onClick={() => setTab('exams')} active={tab === 'exams'} />
+        <ReportKpi icon={<ClipboardCheck size={19} />} tone="#2e7d32" label="الواجبات" main={`${file.homework.done}/${file.homework.total}`} sub={file.homework.percent === null ? 'بلا علامات' : `${file.homework.earned}/${file.homework.possible} · ${file.homework.percent}%`} onClick={() => setTab('homework')} active={tab === 'homework'} />
+        <ReportKpi icon={<NotebookPen size={19} />} tone="#6a1b9a" label="مهام الدفتر" main={`${file.notebook.done}/${file.notebook.total}`} sub={file.notebook.percent === null ? 'بلا علامات' : `${file.notebook.earned}/${file.notebook.possible} · ${file.notebook.percent}%`} onClick={() => setTab('notebook')} active={tab === 'notebook'} />
+        <ReportKpi icon={<Sprout size={19} />} tone="#b7791f" label="التأسيس" main={file.foundation.inFoundation ? `${file.foundation.done}/${file.foundation.total}` : 'خارج'} sub={file.foundation.percent === null ? (file.foundation.inFoundation ? 'لم ينجز بعد' : 'غير مشارك') : `${file.foundation.percent}%`} onClick={() => setTab('foundation')} active={tab === 'foundation'} />
+      </div>
+
+      {/* تبويبات التفاصيل */}
+      <div className="flex gap-2 overflow-x-auto border-y border-border bg-secondary/40 px-4 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {([
+          { id: 'exams', label: `الاختبارات (${file.exams.taken}/${file.exams.total})` },
+          { id: 'homework', label: `الواجبات (${file.homework.done}/${file.homework.total})` },
+          { id: 'notebook', label: `الدفتر (${file.notebook.done}/${file.notebook.total})` },
+          { id: 'foundation', label: 'التأسيس' },
+          { id: 'missing', label: `النواقص (${file.missing.count})` },
+        ] as const).map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            data-testid={`button-file-tab-${t.id}`}
+            className={`shrink-0 rounded-xl px-4 py-2.5 text-sm font-extrabold transition-colors ${tab === t.id ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-card text-muted-foreground hover:text-primary'}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="p-4 sm:p-5">
+        {tab === 'exams' && <ReportExamsTab exams={file.exams} />}
+        {tab === 'homework' && <ReportWorkTab kind="hw" data={file.homework} emptyHint="لا واجبات موجهة لهذا الطالب بعد." onView={onView} />}
+        {tab === 'notebook' && <ReportWorkTab kind="nb" data={file.notebook} emptyHint="لا مهام دفتر موجهة لهذا الطالب بعد." onView={onView} />}
+        {tab === 'foundation' && <ReportFoundationTab foundation={file.foundation} />}
+        {tab === 'missing' && <ReportMissingTab missing={file.missing} />}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2.5 border-t border-border bg-secondary/30 px-4 py-3.5 sm:px-5">
+        <button type="button" onClick={onReload} className={`${touchBtnSoft} px-5 py-2.5 text-xs`} data-testid="button-file-reload">
+          <RefreshCw size={14} /> تحديث الملف
+        </button>
+        <span className="ms-auto text-[11px] font-bold text-muted-foreground">
+          الاختبار نسبة مئوية · الواجب والدفتر علامة من قصوى يضعها الأستاذ
+        </span>
+      </div>
+    </section>
+  );
+}
+
+/** حلقة المجموع — كبيرة وواضحة على الآيباد */
+function ReportRing({ value }: { value: number | null }) {
+  const radius = 30;
+  const circumference = 2 * Math.PI * radius;
+  return (
+    <div className="relative h-24 w-24 shrink-0">
+      <svg className="-rotate-90" viewBox="0 0 80 80" width={96} height={96}>
+        <circle cx="40" cy="40" r={radius} fill="none" stroke="rgba(255,255,255,.18)" strokeWidth="8" />
+        <circle
+          cx="40" cy="40" r={radius} fill="none" stroke="#e7b55f" strokeWidth="8" strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={value === null ? circumference : circumference - (circumference * Math.min(value, 100)) / 100}
+        />
+      </svg>
+      <span className="absolute inset-0 grid place-items-center font-display text-xl font-bold tabular-nums text-white">
+        {value === null ? '—' : `${value}%`}
+      </span>
+    </div>
+  );
+}
+
+function ReportKpi({ icon, tone, label, main, sub, onClick, active }: {
+  icon: ReactNode; tone: string; label: string; main: string; sub: string; onClick: () => void; active: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center gap-3 rounded-2xl border p-3.5 text-right transition-all ${active ? 'border-accent ring-4 ring-accent/20' : 'border-border bg-background hover:border-primary/35'}`}
+    >
+      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-white shadow-sm" style={{ background: tone }}>
+        {icon}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-[11px] font-extrabold text-muted-foreground">{label}</span>
+        <span className="block truncate font-display text-lg font-extrabold tabular-nums text-primary">{main}</span>
+        <span className="block truncate text-[10px] font-bold text-muted-foreground">{sub}</span>
+      </span>
+    </button>
+  );
+}
+
+/* ── تبويب الاختبارات: كل اختبار + أفضل علامة + المحاولات ── */
+function ReportExamsTab({ exams }: { exams: any }) {
+  if (!exams.items.length) {
+    return <ReportEmpty text="لا اختبارات موجهة لهذا الطالب بعد." />;
+  }
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {exams.items.map((e: any) => (
+        <div key={e.id} className={`rounded-3xl border bg-background p-4 ${e.status === 'missing' ? 'border-dashed border-border' : 'border-border'}`}>
+          <div className="flex items-start gap-3">
+            <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl font-display text-base font-extrabold tabular-nums ${e.status === 'missing' ? 'bg-muted text-muted-foreground' : 'bg-[#0d47a1] text-white'}`}>
+              {e.best === null ? '–' : e.best}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-extrabold text-primary">{e.title}</p>
+              <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] font-semibold text-muted-foreground">
+                {e.date ? <span className="inline-flex items-center gap-1"><CalendarDays size={11} /> {e.date}</span> : null}
+                <span>{e.questions} أسئلة</span>
+                {e.unitTitle ? <span className="truncate">{e.unitTitle}</span> : null}
+              </p>
+              {e.status === 'missing' ? (
+                <p className="mt-2 inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2.5 py-1 text-[11px] font-extrabold text-destructive">
+                  <CircleAlert size={12} /> لم يتقدم
+                </p>
+              ) : (
+                <p className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold tabular-nums ${reportTone(e.best)}`}>
+                    الأفضل {e.best}%
+                  </span>
+                  {e.attempts.length > 1 ? (
+                    <span className="text-[11px] font-bold text-muted-foreground" title={e.attempts.map((a: any) => `${a.score}%`).join('، ')}>
+                      {e.attempts.length} محاولات
+                    </span>
+                  ) : null}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── تبويب الواجبات/الدفتر: سلّم X من Y + كل بند بعلامته ── */
+function ReportWorkTab({ kind, data, emptyHint, onView }: {
+  kind: 'hw' | 'nb'; data: any; emptyHint: string; onView: (kind: 'hw' | 'nb', itemId: string, title: string) => void;
+}) {
+  if (!data.items.length) {
+    return <ReportEmpty text={emptyHint} />;
+  }
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2.5 rounded-2xl bg-secondary/60 px-4 py-3">
+        <span className="text-sm font-extrabold text-primary">
+          سلّم {data.done} من أصل {data.total}
+        </span>
+        <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-background">
+          <span className="block h-full rounded-full bg-primary transition-[width]" style={{ width: data.total ? `${Math.round((data.done / data.total) * 100)}%` : '0%' }} />
+        </span>
+        <span className="text-sm font-extrabold tabular-nums text-primary">
+          {data.earned}/{data.possible}
+        </span>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {data.items.map((it: any) => (
+          <div key={it.id} className={`flex items-start gap-3 rounded-3xl border bg-background p-4 ${it.status === 'missing' ? 'border-dashed' : 'border-border'}`}>
+            <span className={`grid h-12 min-w-12 shrink-0 place-items-center rounded-2xl px-2 font-display text-sm font-extrabold tabular-nums ${it.status === 'missing' ? 'bg-muted text-muted-foreground' : 'bg-[#2e7d32] text-white'}`}>
+              {it.score === null ? (it.status === 'done' ? '✓' : '–') : `${it.score}/${it.points}`}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-extrabold text-primary">{it.title}</p>
+              <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px] font-semibold text-muted-foreground">
+                {it.dueDate ? <span className="inline-flex items-center gap-1"><CalendarDays size={11} /> {it.dueDate}</span> : null}
+                <span>القصوى {it.points}</span>
+                {it.submittedAt ? <span>{it.submittedAt.slice(0, 10)}</span> : null}
+              </p>
+              {it.status === 'missing' ? (
+                <p className="mt-2 inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2.5 py-1 text-[11px] font-extrabold text-destructive">
+                  <CircleAlert size={12} /> لم يسلّم
+                </p>
+              ) : (
+                <span className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${reportTone(it.score === null ? null : (it.points ? Math.round((it.score / it.points) * 100) : null))}`}>
+                    {it.score === null ? 'بانتظار التصحيح' : `${it.score} من ${it.points}`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onView(kind, it.id, it.title)}
+                    className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-[11px] font-extrabold text-primary transition-colors hover:bg-accent/40"
+                    data-testid={`button-view-work-${it.id}`}
+                  >
+                    <Eye size={12} /> عرض التسليم
+                  </button>
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── تبويب التأسيس: هل هو مشارك؟ وأين وصل في كل مستوى؟ ── */
+function ReportFoundationTab({ foundation }: { foundation: any }) {
+  if (!foundation.inFoundation) {
+    return (
+      <div className="rounded-3xl border border-dashed border-border bg-background px-6 py-12 text-center">
+        <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-secondary text-primary"><Sprout size={30} /></span>
+        <p className="font-display text-xl font-bold text-primary">غير مشارك بالتأسيس</p>
+        <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-muted-foreground">
+          هذا الطالب ليس عضواً في أي مستوى تأسيس. أضفه من لوحة «إعداد التأسيس ← من يرى التأسيس؟».
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2.5 rounded-2xl bg-secondary/60 px-4 py-3">
+        <Sprout size={17} className="text-primary" />
+        <span className="text-sm font-extrabold text-primary">
+          مشارك في {foundation.levels.length} مستويات · أنجز {foundation.done} من {foundation.total} درساً
+        </span>
+        {foundation.percent !== null ? (
+          <span className="ms-auto rounded-full bg-primary px-3 py-1 text-xs font-extrabold tabular-nums text-primary-foreground">{foundation.percent}%</span>
+        ) : null}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {foundation.levels.map((l: any) => (
+          <div key={l.id} className="rounded-3xl border border-border bg-background p-4">
+            <div className="flex items-center gap-3">
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-white shadow-sm" style={{ background: l.color }}>
+                {(() => { const I = (UNIT_ICONS as any)[l.icon] || Sprout; return <I size={19} />; })()}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-extrabold text-accent-foreground">{l.subtitle}</p>
+                <p className="truncate text-sm font-extrabold text-primary">{l.title}</p>
+              </div>
+              <span className="shrink-0 text-xs font-extrabold tabular-nums text-primary">{l.done}/{l.total}</span>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-secondary">
+              <div className="h-full rounded-full transition-[width]" style={{ width: `${l.percent}%`, background: l.color }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── تبويب النواقص: كل ما لم يعمله — القائمة التي يطبعها الأستاذ ── */
+function ReportMissingTab({ missing }: { missing: any }) {
+  const groups = [
+    { label: 'اختبارات لم يتقدم لها', items: missing.exams || [], tone: 'text-[#0d47a1]' },
+    { label: 'واجبات لم يسلّمها', items: missing.homework || [], tone: 'text-[#2e7d32]' },
+    { label: 'مهام دفتر لم يسلّمها', items: missing.notebook || [], tone: 'text-[#6a1b9a]' },
+  ];
+  if (!missing.count) {
+    return (
+      <div className="rounded-3xl border border-green-500/30 bg-green-500/8 px-6 py-12 text-center">
+        <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-green-600/15 text-green-800"><CheckCircle2 size={30} /></span>
+        <p className="font-display text-xl font-bold text-green-800">لا نواقص — كل شيء مُسلَّم</p>
+        <p className="mt-2 text-sm text-muted-foreground">هذا الطالب أنجز كل ما طُلب منه.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-4">
+      <p className="flex items-center gap-2 rounded-2xl bg-destructive/8 px-4 py-3 text-sm font-extrabold text-destructive">
+        <CircleAlert size={17} /> عليه {missing.count} بنود ناقصة — تابعها معه
+      </p>
+      {groups.filter((g) => g.items.length).map((g) => (
+        <div key={g.label} className="overflow-hidden rounded-3xl border border-border bg-background">
+          <p className={`border-b border-border bg-secondary/50 px-4 py-3 text-sm font-extrabold ${g.tone}`}>
+            {g.label} ({g.items.length})
+          </p>
+          <ul className="divide-y divide-border">
+            {g.items.map((t: string, i: number) => (
+              <li key={i} className="flex items-center gap-2.5 px-4 py-3 text-sm font-semibold text-primary">
+                <CircleAlert size={15} className="shrink-0 text-destructive" />
+                <span className="min-w-0 flex-1 truncate">{t}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ReportEmpty({ text }: { text: string }) {
+  return (
+    <div className="rounded-3xl border border-dashed border-border bg-background px-6 py-12 text-center">
+      <p className="text-sm font-semibold text-muted-foreground">{text}</p>
+    </div>
+  );
+}
+
+/* ═══════════════ عارض التسليم: صور الحل + العلامة + الملاحظة ═══════════════ */
+function ReportWorkViewer({ kind, itemId, title, studentId, onClose }: {
+  kind: 'hw' | 'nb'; itemId: string; title: string; studentId: string; onClose: () => void;
+}) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [img, setImg] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    setErr('');
+    const url = kind === 'hw'
+      ? `/api/teacher/curriculum/assignments/${itemId}/submissions`
+      : `/api/teacher/curriculum/notebooks/${itemId}/submissions`;
+    jsonFetch(url)
+      .then((list: any[]) => {
+        if (!live) return;
+        const hit = (Array.isArray(list) ? list : []).find((s: any) => s?.student?.id === studentId) || null;
+        setData(hit);
+      })
+      .catch((e: Error) => { if (live) setErr(e?.message || 'تعذر تحميل التسليم'); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [kind, itemId, studentId]);
+
+  const photos: string[] = Array.isArray(data?.photos) ? data.photos.filter(Boolean) : [];
+
+  return (
+    <Modal title={title} eyebrow={kind === 'hw' ? 'تسليم الواجب' : 'تسليم مهمة الدفتر'} onClose={onClose} maxWidth="max-w-3xl">
+      {loading ? <StateNotice type="loading" /> : err || !data ? (
+        <StateNotice type="error" onRetry={onClose} />
+      ) : (
+        <div className="space-y-4 pb-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-full px-3 py-1.5 text-xs font-extrabold tabular-nums ${data.score === null || data.score === undefined ? 'bg-muted text-muted-foreground' : 'bg-primary text-primary-foreground'}`}>
+              {data.score === null || data.score === undefined ? 'بلا علامة بعد' : `العلامة: ${data.score}`}
+            </span>
+            <span className="rounded-full bg-secondary px-3 py-1.5 text-xs font-bold text-muted-foreground">{data.status || 'مُسلَّم'}</span>
+            {data.submittedAt ? <span className="text-[11px] font-bold text-muted-foreground">{String(data.submittedAt).slice(0, 16).replace('T', ' ')}</span> : null}
+          </div>
+
+          {(data.answer || data.note) ? (
+            <div className="rounded-2xl border border-border bg-background p-4">
+              <p className="mb-2 text-xs font-extrabold text-muted-foreground">{kind === 'hw' ? 'إجابة الطالب' : 'ملاحظة الطالب'}</p>
+              <p className="whitespace-pre-line text-sm font-semibold leading-7 text-primary">{data.answer || data.note}</p>
+            </div>
+          ) : null}
+
+          {photos.length ? (
+            <div>
+              <p className="mb-2 text-xs font-extrabold text-muted-foreground">صور الحل ({photos.length})</p>
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+                {photos.map((src, i) => (
+                  <button key={i} type="button" onClick={() => setImg(src)} className="overflow-hidden rounded-2xl border border-border bg-secondary active:scale-[.98]">
+                    <img src={src} alt={`صورة ${i + 1}`} loading="lazy" className="aspect-[4/3] w-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="rounded-2xl bg-secondary/60 px-4 py-3 text-center text-xs font-bold text-muted-foreground">لا صور مرفقة في هذا التسليم</p>
+          )}
+
+          {data.feedback ? (
+            <div className="rounded-2xl border-r-4 border-accent bg-accent/10 p-4">
+              <p className="mb-1 text-xs font-extrabold text-accent-foreground">ملاحظة الأستاذ</p>
+              <p className="whitespace-pre-line text-sm font-semibold leading-7 text-primary">{data.feedback}</p>
+            </div>
+          ) : null}
+
+          {img ? (
+            <button type="button" onClick={() => setImg(null)} className="fixed inset-0 z-[70] grid cursor-zoom-out place-items-center bg-black/80 p-4" aria-label="إغلاق الصورة">
+              <img src={img} alt="تكبير" className="max-h-[88vh] max-w-full rounded-2xl object-contain shadow-2xl" />
+            </button>
+          ) : null}
+        </div>
+      )}
+    </Modal>
+  );
+}
 function SettingsPage() {
   // الصفوف والمدارس تأتي من قاعدة البيانات — يشترك هنا ليعيد الرسم فور تغيّرها
   useCatalog();
@@ -11826,6 +12459,7 @@ function Router() {
         <Route path="/teacher/assignments" component={TeacherAssignmentsPage} />
         <Route path="/teacher/announcements" component={TeacherAnnouncementsPage} />
         <Route path="/teacher/notebooks" component={TeacherNotebooksPage} />
+        <Route path="/teacher/report" component={TeacherReportPage} />
         <Route path="/teacher/books" component={TeacherBooksPage} />
         <Route path="/teacher/settings" component={SettingsPage} />
         <Route component={NotFound} />

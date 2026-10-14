@@ -5240,9 +5240,9 @@ var require_lib = __commonJS({
       var trail = decoder.end();
       return trail ? res + trail : res;
     };
-    module.exports.encodingExists = function encodingExists(enc5) {
+    module.exports.encodingExists = function encodingExists(enc6) {
       try {
-        module.exports.getCodec(enc5);
+        module.exports.getCodec(enc6);
         return true;
       } catch (e) {
         return false;
@@ -5257,36 +5257,36 @@ var require_lib = __commonJS({
         module.exports.encodings = { __proto__: null };
         mergeModules(module.exports.encodings, raw);
       }
-      var enc5 = module.exports._canonicalizeEncoding(encoding);
+      var enc6 = module.exports._canonicalizeEncoding(encoding);
       var codecOptions = {};
       while (true) {
-        var codec = module.exports._codecDataCache[enc5];
+        var codec = module.exports._codecDataCache[enc6];
         if (codec) {
           return codec;
         }
-        var codecDef = module.exports.encodings[enc5];
+        var codecDef = module.exports.encodings[enc6];
         switch (typeof codecDef) {
           case "string":
-            enc5 = codecDef;
+            enc6 = codecDef;
             break;
           case "object":
             for (var key in codecDef) {
               codecOptions[key] = codecDef[key];
             }
             if (!codecOptions.encodingName) {
-              codecOptions.encodingName = enc5;
+              codecOptions.encodingName = enc6;
             }
-            enc5 = codecDef.type;
+            enc6 = codecDef.type;
             break;
           case "function":
             if (!codecOptions.encodingName) {
-              codecOptions.encodingName = enc5;
+              codecOptions.encodingName = enc6;
             }
             codec = new codecDef(codecOptions, module.exports);
             module.exports._codecDataCache[codecOptions.encodingName] = codec;
             return codec;
           default:
-            throw new Error("Encoding not recognized: '" + encoding + "' (searched as: '" + enc5 + "')");
+            throw new Error("Encoding not recognized: '" + encoding + "' (searched as: '" + enc6 + "')");
         }
       }
     };
@@ -15930,14 +15930,14 @@ var require_object_inspect = __commonJS({
     var gPO = (typeof Reflect === "function" ? Reflect.getPrototypeOf : Object.getPrototypeOf) || ([].__proto__ === Array.prototype ? function(O) {
       return O.__proto__;
     } : null);
-    function addNumericSeparator(num, str) {
-      if (num === Infinity || num === -Infinity || num !== num || num && num > -1e3 && num < 1e3 || $test.call(/e/, str)) {
+    function addNumericSeparator(num2, str) {
+      if (num2 === Infinity || num2 === -Infinity || num2 !== num2 || num2 && num2 > -1e3 && num2 < 1e3 || $test.call(/e/, str)) {
         return str;
       }
       var sepRegex = /[0-9](?=(?:[0-9]{3})+(?![0-9]))/g;
-      if (typeof num === "number") {
-        var int = num < 0 ? -$floor(-num) : $floor(num);
-        if (int !== num) {
+      if (typeof num2 === "number") {
+        var int = num2 < 0 ? -$floor(-num2) : $floor(num2);
+        if (int !== num2) {
           var intStr = String(int);
           var dec = $slice.call(str, intStr.length + 1);
           return $replace.call(intStr, sepRegex, "$&_") + "." + $replace.call($replace.call(dec, /([0-9]{3})/g, "$&_"), /_$/, "");
@@ -20804,27 +20804,27 @@ var require_router = __commonJS({
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router10;
+    module.exports = Router11;
     module.exports.Route = Route;
-    function Router10(options) {
-      if (!(this instanceof Router10)) {
-        return new Router10(options);
+    function Router11(options) {
+      if (!(this instanceof Router11)) {
+        return new Router11(options);
       }
       const opts = options || {};
-      function router10(req, res, next) {
-        router10.handle(req, res, next);
+      function router11(req, res, next) {
+        router11.handle(req, res, next);
       }
-      Object.setPrototypeOf(router10, this);
-      router10.caseSensitive = opts.caseSensitive;
-      router10.mergeParams = opts.mergeParams;
-      router10.params = {};
-      router10.strict = opts.strict;
-      router10.stack = [];
-      return router10;
+      Object.setPrototypeOf(router11, this);
+      router11.caseSensitive = opts.caseSensitive;
+      router11.mergeParams = opts.mergeParams;
+      router11.params = {};
+      router11.strict = opts.strict;
+      router11.stack = [];
+      return router11;
     }
-    Router10.prototype = function() {
+    Router11.prototype = function() {
     };
-    Router10.prototype.param = function param(name, fn) {
+    Router11.prototype.param = function param(name, fn) {
       if (!name) {
         throw new TypeError("argument name is required");
       }
@@ -20844,7 +20844,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router10.prototype.handle = function handle(req, res, callback) {
+    Router11.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20971,7 +20971,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router10.prototype.use = function use(handler) {
+    Router11.prototype.use = function use(handler) {
       let offset = 0;
       let path = "/";
       if (typeof handler !== "function") {
@@ -21004,7 +21004,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router10.prototype.route = function route(path) {
+    Router11.prototype.route = function route(path) {
       const route2 = new Route(path);
       const layer = new Layer(path, {
         sensitive: this.caseSensitive,
@@ -21019,7 +21019,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router10.prototype[method] = function(path) {
+      Router11.prototype[method] = function(path) {
         const route = this.route(path);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
@@ -21202,13 +21202,13 @@ var require_application = __commonJS({
     var compileTrust = require_utils3().compileTrust;
     var resolve2 = __require("node:path").resolve;
     var once = require_once();
-    var Router10 = require_router();
+    var Router11 = require_router();
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
     var trustProxyDefaultSymbol = "@@symbol:trust_proxy_default";
     app2.init = function init() {
-      var router10 = null;
+      var router11 = null;
       this.cache = /* @__PURE__ */ Object.create(null);
       this.engines = /* @__PURE__ */ Object.create(null);
       this.settings = /* @__PURE__ */ Object.create(null);
@@ -21217,13 +21217,13 @@ var require_application = __commonJS({
         configurable: true,
         enumerable: true,
         get: function getrouter() {
-          if (router10 === null) {
-            router10 = new Router10({
+          if (router11 === null) {
+            router11 = new Router11({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
           }
-          return router10;
+          return router11;
         }
       });
     };
@@ -21294,15 +21294,15 @@ var require_application = __commonJS({
       if (fns.length === 0) {
         throw new TypeError("app.use() requires a middleware function");
       }
-      var router10 = this.router;
+      var router11 = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router10.use(path, fn2);
+          return router11.use(path, fn2);
         }
         debug(".use app under %s", path);
         fn2.mountpath = path;
         fn2.parent = this;
-        router10.use(path, function mounted_app(req, res, next) {
+        router11.use(path, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -22572,14 +22572,14 @@ var require_cookie = __commonJS({
       return min;
     }
     function serialize(name, val, opt) {
-      var enc5 = opt && opt.encode || encodeURIComponent;
-      if (typeof enc5 !== "function") {
+      var enc6 = opt && opt.encode || encodeURIComponent;
+      if (typeof enc6 !== "function") {
         throw new TypeError("option encode is invalid");
       }
       if (!cookieNameRegExp.test(name)) {
         throw new TypeError("argument name is invalid");
       }
-      var value = enc5(val);
+      var value = enc6(val);
       if (!cookieValueRegExp.test(value)) {
         throw new TypeError("argument val is invalid");
       }
@@ -23811,7 +23811,7 @@ var require_express = __commonJS({
     var EventEmitter = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router10 = require_router();
+    var Router11 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23833,8 +23833,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router10.Route;
-    exports.Router = Router10;
+    exports.Route = Router11.Route;
+    exports.Router = Router11;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -26883,14 +26883,14 @@ var require_tools = __commonJS({
       }
       return point < 32 ? JSON.stringify(str) : '"' + result + '"';
     }
-    function asJson(obj, msg, num, time) {
+    function asJson(obj, msg, num2, time) {
       if (asJsonChan.hasSubscribers === false) {
-        return _asJson.call(this, obj, msg, num, time);
+        return _asJson.call(this, obj, msg, num2, time);
       }
       const store = { instance: this, arguments };
-      return asJsonChan.traceSync(_asJson, store, this, obj, msg, num, time);
+      return asJsonChan.traceSync(_asJson, store, this, obj, msg, num2, time);
     }
-    function _asJson(obj, msg, num, time) {
+    function _asJson(obj, msg, num2, time) {
       const stringify2 = this[stringifySym];
       const stringifySafe = this[stringifySafeSym];
       const stringifiers = this[stringifiersSym];
@@ -26900,7 +26900,7 @@ var require_tools = __commonJS({
       const formatters = this[formattersSym];
       const messageKey = this[messageKeySym];
       const errorKey = this[errorKeySym];
-      let data = this[lsCacheSym][num] + time;
+      let data = this[lsCacheSym][num2] + time;
       data = data + chindings;
       let value;
       if (formatters.log) {
@@ -27526,7 +27526,7 @@ var require_proto = __commonJS({
     function defaultMixinMergeStrategy(mergeObject, mixinObject) {
       return Object.assign(mixinObject, mergeObject);
     }
-    function write(_obj, msg, num) {
+    function write(_obj, msg, num2) {
       const t = this[timeSym]();
       const mixin = this[mixinSym];
       const errorKey = this[errorKeySym];
@@ -27548,12 +27548,12 @@ var require_proto = __commonJS({
         }
       }
       if (mixin) {
-        obj = mixinMergeStrategy(obj, mixin(obj, num, this));
+        obj = mixinMergeStrategy(obj, mixin(obj, num2, this));
       }
-      const s = this[asJsonSym](obj, msg, num, t);
+      const s = this[asJsonSym](obj, msg, num2, t);
       const stream = this[streamSym];
       if (stream[needsMetadataGsym] === true) {
-        stream.lastLevel = num;
+        stream.lastLevel = num2;
         stream.lastObj = obj;
         stream.lastMsg = msg;
         stream.lastTime = t.slice(this[timeSliceIndexSym]);
@@ -31019,13 +31019,13 @@ init_env();
 
 // src/app.ts
 init_env();
-var import_express10 = __toESM(require_express2(), 1);
+var import_express11 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_cookie_parser = __toESM(require_cookie_parser(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
 
 // src/routes/index.ts
-var import_express9 = __toESM(require_express2(), 1);
+var import_express10 = __toESM(require_express2(), 1);
 
 // src/routes/health.ts
 var import_express = __toESM(require_express2(), 1);
@@ -36009,7 +36009,9 @@ router4.get("/teacher/students/report", requireAdmin, async (req, res) => {
       supabaseQuery("course_progress?select=user_id,progress&limit=20000"),
       supabaseQuery("assignment_submissions?select=user_id,score,status&limit=20000"),
       supabaseQuery(
-        "assessment_attempts?select=user_id,score,total,completed_at&limit=20000"
+        // ملاحظة: لا عمود total في assessment_attempts — طُلب مرة خطأً فكسر
+        // الاستعلام كله (42703) وجعل متوسط الاختبارات فارغاً دائماً.
+        "assessment_attempts?select=user_id,score,completed_at&limit=20000"
       )
     ]);
     const lessonCount = /* @__PURE__ */ new Map();
@@ -38721,21 +38723,360 @@ router8.put("/teacher/org/grades/:gradeId/schools", requireAdmin, async (req, re
 });
 var organization_default = router8;
 
-// src/routes/index.ts
+// src/routes/report.ts
+var import_express9 = __toESM(require_express2(), 1);
+init_supabase();
+init_auth();
+init_logger();
+init_curriculum();
 var router9 = (0, import_express9.Router)();
-router9.use(health_default);
-router9.use(platform_default);
-router9.use(curriculum_default);
-router9.use(storage_default);
-router9.use(study_default);
-router9.use(auth_default);
-router9.use(foundation_default);
-router9.use(organization_default);
-var routes_default = router9;
+var enc5 = (v) => encodeURIComponent(Array.isArray(v) ? v[0] ?? "" : v ?? "");
+function num(v, fallback = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+function pctOf(earned, possible) {
+  if (possible <= 0) return null;
+  return Math.round(earned / possible * 100);
+}
+function levelOf(pct) {
+  if (pct === null) return "\u0644\u0627 \u0639\u0644\u0627\u0645\u0627\u062A \u0628\u0639\u062F";
+  if (pct >= 90) return "\u0645\u0645\u062A\u0627\u0632";
+  if (pct >= 80) return "\u062C\u064A\u062F \u062C\u062F\u0627\u064B";
+  if (pct >= 70) return "\u062C\u064A\u062F";
+  if (pct >= 60) return "\u0645\u0642\u0628\u0648\u0644";
+  return "\u064A\u062D\u062A\u0627\u062C \u0645\u062A\u0627\u0628\u0639\u0629";
+}
+function appliesTo(item, profile, splitMap) {
+  if (item.published === false) return false;
+  if (item.is_visible === false) return false;
+  return itemVisible(item.grade, item.section, profile.grade, profile.gender, splitMap, item.school, profile.school);
+}
+router9.get("/teacher/report/overview", requireAdmin, async (req, res) => {
+  try {
+    const q = req.query || {};
+    const schoolFilter = (q.school || "").trim();
+    const gradeFilter = (q.grade || "").trim();
+    const [
+      { data: profiles },
+      { data: assessments },
+      { data: attempts },
+      { data: assignments },
+      { data: hwSubs },
+      { data: tasks },
+      { data: nbSubs },
+      { data: sections },
+      { data: fLessons },
+      { data: fMembers },
+      { data: fProgress },
+      splitMap,
+      { data: managedGrades },
+      { data: managedSchools }
+    ] = await Promise.all([
+      supabaseQuery("profiles?role=eq.student&order=full_name.asc&limit=2000"),
+      supabaseQuery("assessments?order=available_date.asc&limit=500"),
+      supabaseQuery("assessment_attempts?select=user_id,assessment_id,score&limit=20000"),
+      supabaseQuery("assignments?order=due_date.asc&limit=500"),
+      supabaseQuery("assignment_submissions?select=user_id,assignment_id,score&limit=20000"),
+      supabaseQuery("notebook_tasks?order=due_date.asc&limit=500"),
+      supabaseQuery("notebook_submissions?select=user_id,task_id,score&limit=20000"),
+      supabaseQuery("foundation_sections?is_visible=eq.true&order=sort_order.asc&limit=200"),
+      supabaseQuery("foundation_lessons?is_visible=eq.true&select=id,section_id&limit=3000"),
+      supabaseQuery("foundation_members?select=section_id,user_id&limit=20000"),
+      supabaseQuery("foundation_progress?select=user_id,lesson_id&limit=20000"),
+      getSplitMap(),
+      supabaseQuery("grade_levels?order=sort_order.asc&limit=500"),
+      supabaseQuery("schools?order=sort_order.asc&limit=500")
+    ]);
+    const attByUser = {};
+    for (const a of attempts || []) {
+      if (!a.user_id) continue;
+      const cur = num(a.score);
+      const prev = attByUser[a.user_id]?.[a.assessment_id];
+      if (prev === void 0 || cur > prev) {
+        (attByUser[a.user_id] ||= {})[a.assessment_id] = cur;
+      }
+    }
+    const hwByUser = {};
+    for (const s of hwSubs || []) {
+      if (!s?.user_id) continue;
+      (hwByUser[s.user_id] ||= {})[s.assignment_id] = typeof s.score === "number" ? num(s.score) : null;
+    }
+    const nbByUser = {};
+    for (const s of nbSubs || []) {
+      if (!s?.user_id) continue;
+      (nbByUser[s.user_id] ||= {})[s.task_id] = typeof s.score === "number" ? num(s.score) : null;
+    }
+    const fDoneByUser = {};
+    for (const p of fProgress || []) {
+      if (!p.user_id) continue;
+      (fDoneByUser[p.user_id] ||= /* @__PURE__ */ new Set()).add(String(p.lesson_id));
+    }
+    const fMemberByUser = {};
+    for (const m of fMembers || []) {
+      if (!m.user_id) continue;
+      (fMemberByUser[m.user_id] ||= /* @__PURE__ */ new Set()).add(String(m.section_id));
+    }
+    const lessonsBySection = {};
+    for (const l of fLessons || []) (lessonsBySection[l.section_id] ||= []).push(l.id);
+    let students = (profiles || []).map((p) => {
+      const who = {
+        grade: String(p.grade || ""),
+        gender: p.gender || null,
+        school: String(p.school || "")
+      };
+      const myExams = (assessments || []).filter((a) => appliesTo(a, who, splitMap));
+      const myHw = (assignments || []).filter((a) => appliesTo(a, who, splitMap));
+      const myNb = (tasks || []).filter((t) => appliesTo(t, who, splitMap));
+      const att = attByUser[p.id] || {};
+      const takenScores = myExams.map((e) => att[e.id]).filter((v) => typeof v === "number");
+      const examAvg = takenScores.length ? Math.round(takenScores.reduce((a, b) => a + b, 0) / takenScores.length * 10) / 10 : null;
+      const hw = hwByUser[p.id] || {};
+      const hwDoneIds = myHw.filter((h) => hw[h.id] !== void 0).map((h) => h.id);
+      const hwEarned = hwDoneIds.reduce((s, id) => s + (hw[id] ?? 0), 0);
+      const hwPossible = myHw.reduce((s, h) => s + num(h.points, 20), 0);
+      const nb = nbByUser[p.id] || {};
+      const nbDoneIds = myNb.filter((t) => nb[t.id] !== void 0).map((t) => t.id);
+      const nbEarned = nbDoneIds.reduce((s, id) => s + (nb[id] ?? 0), 0);
+      const nbPossible = myNb.reduce((s, t) => s + num(t.points, 10), 0);
+      const mySections = (sections || []).filter((s) => (fMemberByUser[p.id] || /* @__PURE__ */ new Set()).has(s.id));
+      const fDone = mySections.reduce(
+        (s, sec) => s + (lessonsBySection[sec.id] || []).filter((id) => (fDoneByUser[p.id] || /* @__PURE__ */ new Set()).has(id)).length,
+        0
+      );
+      const fTotal = mySections.reduce((s, sec) => s + (lessonsBySection[sec.id] || []).length, 0);
+      const parts = [examAvg, pctOf(hwEarned, hwPossible), pctOf(nbEarned, nbPossible), pctOf(fDone, fTotal)].filter((v) => typeof v === "number");
+      const overall = parts.length ? Math.round(parts.reduce((a, b) => a + b, 0) / parts.length) : null;
+      const missing = myExams.filter((e) => att[e.id] === void 0).length + myHw.filter((h) => hw[h.id] === void 0).length + myNb.filter((t) => nb[t.id] === void 0).length;
+      return {
+        id: p.id,
+        name: p.full_name || "",
+        school: p.school || "",
+        grade: p.grade || "",
+        section: p.section || "",
+        gender: p.gender || "",
+        avatarUrl: p.avatar_url || "",
+        status: p.status || "\u0646\u0634\u0637",
+        exams: { taken: takenScores.length, total: myExams.length, avg: examAvg },
+        homework: { done: hwDoneIds.length, total: myHw.length, earned: hwEarned, possible: hwPossible, percent: pctOf(hwEarned, hwPossible) },
+        notebook: { done: nbDoneIds.length, total: myNb.length, earned: nbEarned, possible: nbPossible, percent: pctOf(nbEarned, nbPossible) },
+        foundation: { inFoundation: mySections.length > 0, levels: mySections.length, done: fDone, total: fTotal, percent: pctOf(fDone, fTotal) },
+        missing,
+        overall,
+        level: levelOf(overall)
+      };
+    });
+    if (schoolFilter) students = students.filter((s) => s.school === schoolFilter);
+    if (gradeFilter) students = students.filter((s) => s.grade === gradeFilter);
+    const allRows = (profiles || []).map((p) => ({ school: p.school || "", grade: p.grade || "" }));
+    const schools = [
+      ...new Set([
+        ...(managedSchools || []).filter((s) => s.is_active !== false).map((s) => s.name),
+        ...allRows.map((r) => r.school)
+      ].filter(Boolean))
+    ].sort((a, b) => a.localeCompare(b, "ar"));
+    const grades = [
+      ...new Set([
+        ...(managedGrades || []).filter((g) => g.is_active !== false).map((g) => g.name),
+        ...allRows.map((r) => r.grade)
+      ].filter(Boolean))
+    ];
+    res.json({ students, schools, grades, generatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+  } catch (err) {
+    logger.error({ err }, "GET teacher report overview failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062C\u0647\u064A\u0632 \u0643\u0634\u0641 \u0627\u0644\u0639\u0644\u0627\u0645\u0627\u062A" });
+  }
+});
+router9.get("/teacher/report/student/:id", requireAdmin, async (req, res) => {
+  try {
+    const studentId = String(req.params.id || "").trim();
+    if (!studentId) {
+      res.status(400).json({ error: "\u0627\u0644\u0637\u0627\u0644\u0628 \u0645\u0637\u0644\u0648\u0628" });
+      return;
+    }
+    const { data: profRows } = await supabaseQuery(
+      `profiles?id=eq.${enc5(studentId)}&select=id,email,full_name,role,grade,school,section,gender,phone,avatar_url,status,student_number,created_at&limit=1`
+    );
+    const profile = profRows?.[0];
+    if (!profile || profile.role !== "student") {
+      res.status(404).json({ error: "\u0627\u0644\u0637\u0627\u0644\u0628 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F" });
+      return;
+    }
+    const who = {
+      grade: String(profile.grade || ""),
+      gender: profile.gender || null,
+      school: String(profile.school || "")
+    };
+    const [
+      { data: assessments },
+      { data: attempts },
+      { data: assignments },
+      { data: hwSubs },
+      { data: tasks },
+      { data: nbSubs },
+      { data: sections },
+      { data: fLessons },
+      { data: fMembers },
+      { data: fProgress },
+      splitMap
+    ] = await Promise.all([
+      supabaseQuery("assessments?order=available_date.asc&limit=500"),
+      supabaseQuery(`assessment_attempts?user_id=eq.${enc5(studentId)}&select=assessment_id,score,status,completed_at&order=completed_at.desc&limit=1000`),
+      supabaseQuery("assignments?order=due_date.asc&limit=500"),
+      supabaseQuery(`assignment_submissions?user_id=eq.${enc5(studentId)}&select=assignment_id,answer,score,feedback,status,submitted_at,reviewed_at&limit=1000`),
+      supabaseQuery("notebook_tasks?order=due_date.asc&limit=500"),
+      supabaseQuery(`notebook_submissions?user_id=eq.${enc5(studentId)}&select=task_id,photos,note,score,feedback,status,submitted_at,reviewed_at&limit=1000`),
+      supabaseQuery("foundation_sections?is_visible=eq.true&order=sort_order.asc&limit=200"),
+      supabaseQuery("foundation_lessons?is_visible=eq.true&select=id,section_id,title&limit=3000"),
+      supabaseQuery(`foundation_members?user_id=eq.${enc5(studentId)}&select=section_id&limit=200`),
+      supabaseQuery(`foundation_progress?user_id=eq.${enc5(studentId)}&select=lesson_id&limit=2000`),
+      getSplitMap()
+    ]);
+    const byExam = {};
+    for (const a of attempts || []) (byExam[a.assessment_id] ||= []).push(a);
+    const examItems = (assessments || []).filter((a) => appliesTo(a, who, splitMap)).map((a) => {
+      const list = (byExam[a.id] || []).slice().sort(
+        (x, y) => num(x.score) - num(y.score)
+      );
+      const best = list.length ? list[list.length - 1] : null;
+      return {
+        id: a.id,
+        title: a.title || "\u0627\u062E\u062A\u0628\u0627\u0631 \u0628\u0644\u0627 \u0639\u0646\u0648\u0627\u0646",
+        date: a.available_date || "",
+        duration: a.duration || "",
+        questions: num(a.questions_count),
+        unitTitle: a.unit_title || "",
+        status: best ? "done" : "missing",
+        best: best ? num(best.score) : null,
+        bestAt: best?.completed_at || "",
+        attempts: list.map((t) => ({
+          score: num(t.score),
+          status: t.status || "\u0645\u0643\u062A\u0645\u0644",
+          at: t.completed_at || ""
+        }))
+      };
+    });
+    const examTaken = examItems.filter((e) => e.status === "done");
+    const examAvg = examTaken.length ? Math.round(examTaken.reduce((s, e) => s + e.best, 0) / examTaken.length * 10) / 10 : null;
+    const hwById = {};
+    for (const s of hwSubs || []) hwById[s.assignment_id] = s;
+    const hwItems = (assignments || []).filter((a) => appliesTo(a, who, splitMap)).map((a) => {
+      const sub = hwById[a.id] || null;
+      const points = num(a.points, 20);
+      return {
+        id: a.id,
+        title: a.title || "\u0648\u0627\u062C\u0628 \u0628\u0644\u0627 \u0639\u0646\u0648\u0627\u0646",
+        points,
+        dueDate: a.due_date || "",
+        status: sub ? "done" : "missing",
+        score: sub && typeof sub.score === "number" ? num(sub.score) : null,
+        subStatus: sub?.status || "",
+        submittedAt: sub?.submitted_at || "",
+        feedback: sub?.feedback || "",
+        hasAnswer: !!(sub?.answer && String(sub.answer).trim())
+      };
+    });
+    const hwDone = hwItems.filter((h) => h.status === "done");
+    const hwEarned = hwDone.reduce((s, h) => s + (h.score ?? 0), 0);
+    const hwPossible = hwItems.reduce((s, h) => s + h.points, 0);
+    const nbById = {};
+    for (const s of nbSubs || []) nbById[s.task_id] = s;
+    const nbItems = (tasks || []).filter((t) => appliesTo(t, who, splitMap)).map((t) => {
+      const sub = nbById[t.id] || null;
+      const points = num(t.points, 10);
+      return {
+        id: t.id,
+        title: t.title || "\u0645\u0647\u0645\u0629 \u0628\u0644\u0627 \u0639\u0646\u0648\u0627\u0646",
+        points,
+        dueDate: t.due_date || "",
+        status: sub ? "done" : "missing",
+        score: sub && typeof sub.score === "number" ? num(sub.score) : null,
+        subStatus: sub?.status || "",
+        submittedAt: sub?.submitted_at || "",
+        feedback: sub?.feedback || "",
+        photoCount: Array.isArray(sub?.photos) ? sub.photos.filter(Boolean).length : 0
+      };
+    });
+    const nbDone = nbItems.filter((t) => t.status === "done");
+    const nbEarned = nbDone.reduce((s, t) => s + (t.score ?? 0), 0);
+    const nbPossible = nbItems.reduce((s, t) => s + t.points, 0);
+    const memberIds = new Set((fMembers || []).map((m) => m.section_id));
+    const doneSet = new Set((fProgress || []).map((p) => p.lesson_id));
+    const lessonsBySection = {};
+    for (const l of fLessons || []) (lessonsBySection[l.section_id] ||= []).push(l.id);
+    const levels = (sections || []).map((s) => {
+      const ids = lessonsBySection[s.id] || [];
+      const done = ids.filter((id) => doneSet.has(id)).length;
+      return {
+        id: s.id,
+        title: s.title || "\u0642\u0633\u0645 \u0628\u0644\u0627 \u0627\u0633\u0645",
+        subtitle: s.subtitle || "",
+        color: s.color || "#17413f",
+        icon: s.icon || "sparkles",
+        member: memberIds.has(s.id),
+        done,
+        total: ids.length,
+        percent: ids.length ? Math.round(done / ids.length * 100) : 0
+      };
+    });
+    const inLevels = levels.filter((l) => l.member);
+    const fDone = inLevels.reduce((s, l) => s + l.done, 0);
+    const fTotal = inLevels.reduce((s, l) => s + l.total, 0);
+    const hwPct = pctOf(hwEarned, hwPossible);
+    const nbPct = pctOf(nbEarned, nbPossible);
+    const fPct = pctOf(fDone, fTotal);
+    const parts = [examAvg, hwPct, nbPct, fPct].filter((v) => typeof v === "number");
+    const overall = parts.length ? Math.round(parts.reduce((a, b) => a + b, 0) / parts.length) : null;
+    const missing = {
+      exams: examItems.filter((e) => e.status === "missing").map((e) => e.title),
+      homework: hwItems.filter((h) => h.status === "missing").map((h) => h.title),
+      notebook: nbItems.filter((t) => t.status === "missing").map((t) => t.title)
+    };
+    const missingCount = missing.exams.length + missing.homework.length + missing.notebook.length;
+    res.json({
+      student: {
+        id: profile.id,
+        name: profile.full_name || "",
+        email: profile.email || "",
+        phone: profile.phone || "",
+        school: profile.school || "",
+        grade: profile.grade || "",
+        section: profile.section || "",
+        gender: profile.gender || "",
+        avatarUrl: profile.avatar_url || "",
+        status: profile.status || "\u0646\u0634\u0637",
+        studentNumber: profile.student_number || ""
+      },
+      exams: { items: examItems, taken: examTaken.length, total: examItems.length, avg: examAvg },
+      homework: { items: hwItems, done: hwDone.length, total: hwItems.length, earned: hwEarned, possible: hwPossible, percent: hwPct },
+      notebook: { items: nbItems, done: nbDone.length, total: nbItems.length, earned: nbEarned, possible: nbPossible, percent: nbPct },
+      foundation: { inFoundation: inLevels.length > 0, levels, done: fDone, total: fTotal, percent: fPct },
+      missing: { ...missing, count: missingCount },
+      overall: { percent: overall, level: levelOf(overall) }
+    });
+  } catch (err) {
+    logger.error({ err }, "GET teacher report student failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062C\u0647\u064A\u0632 \u0643\u0634\u0641 \u0627\u0644\u0637\u0627\u0644\u0628" });
+  }
+});
+var report_default = router9;
+
+// src/routes/index.ts
+var router10 = (0, import_express10.Router)();
+router10.use(health_default);
+router10.use(platform_default);
+router10.use(curriculum_default);
+router10.use(storage_default);
+router10.use(study_default);
+router10.use(auth_default);
+router10.use(foundation_default);
+router10.use(organization_default);
+router10.use(report_default);
+var routes_default = router10;
 
 // src/app.ts
 init_logger();
-var app = (0, import_express10.default)();
+var app = (0, import_express11.default)();
 app.use(
   (0, import_pino_http.default)({
     logger,
@@ -38756,8 +39097,8 @@ app.use(
   })
 );
 app.use((0, import_cors.default)());
-app.use(import_express10.default.json({ limit: "25mb" }));
-app.use(import_express10.default.urlencoded({ extended: true, limit: "25mb" }));
+app.use(import_express11.default.json({ limit: "25mb" }));
+app.use(import_express11.default.urlencoded({ extended: true, limit: "25mb" }));
 app.use((0, import_cookie_parser.default)());
 app.use("/api", routes_default);
 var app_default = app;

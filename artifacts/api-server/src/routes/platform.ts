@@ -999,7 +999,9 @@ router.get("/teacher/students/report", requireAdmin, async (req, res) => {
       supabaseQuery<any[]>("course_progress?select=user_id,progress&limit=20000"),
       supabaseQuery<any[]>("assignment_submissions?select=user_id,score,status&limit=20000"),
       supabaseQuery<any[]>(
-        "assessment_attempts?select=user_id,score,total,completed_at&limit=20000",
+        // ملاحظة: لا عمود total في assessment_attempts — طُلب مرة خطأً فكسر
+        // الاستعلام كله (42703) وجعل متوسط الاختبارات فارغاً دائماً.
+        "assessment_attempts?select=user_id,score,completed_at&limit=20000",
       ),
     ]);
 
