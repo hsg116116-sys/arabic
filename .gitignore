@@ -52,8 +52,6 @@ Thumbs.db
 .env
 .env.*
 !.env.example
-# ملف متغيرات Kinde — فيه Client Secret
-3.env
 *.pem
 
 # local raw scans (not part of the deployed site)

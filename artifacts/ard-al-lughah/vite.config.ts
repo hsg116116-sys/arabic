@@ -61,10 +61,7 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:5000',
-        // نبقي ترويسة Host كما أرسلها المتصفح (localhost:3000) لا كما هي
-        // الوجهة — لأن السيرفر يشتق منها رابط العودة إلى Kinde. مع
-        // changeOrigin:true كان سيشتق المنفذ 5000 فيفشل التصريح محلياً.
-        changeOrigin: false,
+        changeOrigin: true,
       },
     },
   },

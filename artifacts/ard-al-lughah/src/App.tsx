@@ -6,6 +6,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
   useGetPlatformOverview,
+  useGetGoogleAuthUrl,
   useGetStudentDashboard,
   useGetTeacherDashboard,
   useGetTeacherSettings,
@@ -14,7 +15,11 @@ import {
   useListAssignments,
   useListCourses,
   useListStudents,
+  useLoginAccount,
+  useLogoutAccount,
+  useRequestPasswordReset,
   useUpdateTeacherSettings,
+  getGetGoogleAuthUrlQueryKey,
 } from '@workspace/api-client-react';
 import {
   ArrowDown,
@@ -162,20 +167,15 @@ async function fetchAuthMe(): Promise<any> {
   return jsonFetch('/api/auth/me');
 }
 
-/* =========================================================================
-   المصادقة عبر Kinde — كل شيء يمرّ في توجيه كامل إلى صفحة Kinde.
-   لا كلمة سر ولا كود تحقق في هذه الواجهة: Kinde يتحقق من البريد ويوثّق
-   الهوية، والسيرفر يحوّل الكود إلى جلسة في كوكيز httpOnly.
-   وضعا الدخول والإنشاء يفتحان الصفحة نفسها في Kinde، فالفرق الوحيد أن
-   الصفحة تسمح للزائر باختيار تبويب الدخول أو إنشاء حساب.
-   ========================================================================= */
-async function startKindeAuth(mode: 'login' | 'signup' = 'login'): Promise<void> {
-  const { url } = await jsonFetch('/api/auth/kinde/authorize');
-  if (!url) throw new Error('خدمة تسجيل الدخول غير مهيأة على الخادم بعد.');
-  try { sessionStorage.setItem('ard-auth-mode', mode); } catch { /* تجاهل */ }
-window.location.assign(url);
+function redirectAfterAuth(setLocation: (to: string) => void, fallback = '/student') {
+  fetchAuthMe()
+    .then((me) => {
+      if (!me.authenticated) { setLocation(fallback); return; }
+      if (me.needsSetup) { setLocation('/auth/complete'); return; }
+      setLocation(me.role === 'admin' ? '/teacher' : fallback);
+    })
+    .catch(() => setLocation(fallback));
 }
-
 const teacherImageUrl = '/teacher-ahmed.jpg';
 const APP_VERSION = 'v25.10-SRC';
 const platformLogoUrl = '/ard-al-lughah-logo-transparent.png';
@@ -1140,40 +1140,20 @@ function PublicHeader() {
   );
 }
 
-// توجيه فوري عند فتح صفحة المصادقة.
-//  · من هو مسجّل يُنقل إلى حسابه (رئيسية/دخول/تسجيل).
-//  · ومن هو زائر يُرسل إلى Kinde مباشرة بلا ضغطة زر — لم يبقَ في هذه
-//    الصفحات استمارة تُملأ، فخطوة إضافية كانت عبئاً لا معنى له.
-// kindeMode يمرّر فقط في صفحات الدخول والتسجيل؛ الصفحة الرئيسية
-// تستدعيها بلا وضع فتحً bleiben شاشة عامة.
-function useRedirectIfAuthenticated(
-  kindeMode?: 'login' | 'signup',
-  onKindeError?: (message: string) => void,
-) {
+// توجيه فوري: من دخل الموقع وهو مسجل يُنقل لحسابه علطول (رئيسية/دخول/تسجيل)
+function useRedirectIfAuthenticated() {
   const [, setLocation] = useLocation();
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      let me: any = null;
-      try { me = await fetchAuthMe(); } catch { /* غير مسجّل — نكمل */ }
-      if (cancelled) return;
-      if (me?.authenticated) {
+    fetchAuthMe()
+      .then((me) => {
+        if (cancelled || !me?.authenticated) return;
         if (me.needsSetup) { setLocation('/auth/complete'); return; }
         setLocation(me.role === 'admin' ? '/teacher' : '/student');
-        return;
-      }
-      if (!kindeMode) return;
-      try {
-        await startKindeAuth(kindeMode);
-      } catch (err: any) {
-        if (cancelled) return;
-        onKindeError?.(
-          err?.message || 'تعذر فتح صفحة تسجيل الدخول. تحقق من إعداد Kinde ثم أعد المحاولة.',
-        );
-      }
-    })();
+      })
+      .catch(() => undefined);
     return () => { cancelled = true; };
-  }, [setLocation, kindeMode]);
+  }, [setLocation]);
 }
 
 function Home() {
@@ -1710,128 +1690,306 @@ function AuthLayout({ children, title, eyebrow }: { children: ReactNode; title: 
 }
 
 function Login() {
+  const [, setLocation] = useLocation();
+  useRedirectIfAuthenticated();
+  const login = useLoginAccount();
+  const reset = useRequestPasswordReset();
+  const google = useGetGoogleAuthUrl({ query: { enabled: false, queryKey: getGetGoogleAuthUrlQueryKey() } });
   const [message, setMessage] = useState('');
-  const [busy, setBusy] = useState(true);
-  useRedirectIfAuthenticated('login', setMessage);
+  const [showForgot, setShowForgot] = useState(false);
 
-  // الزر يبقي موجوداً: إعادة المحاولة إن فشل التوجيه التلقائي
-  const go = async (mode: 'login' | 'signup') => {
+  const submit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const data = new FormData(e.currentTarget);
     setMessage('');
-    setBusy(true);
-    try {
-      await startKindeAuth(mode);
-    } catch (err: any) {
-      setBusy(false);
-      setMessage(err?.message || 'تعذر فتح صفحة تسجيل الدخول. حاول بعد قليل.');
+    login.mutate(
+      { data: { email: String(data.get('email') ?? ''), password: String(data.get('password') ?? '') } },
+      {
+        onSuccess: () => { resetAuthGate(); redirectAfterAuth(setLocation); },
+        onError: (error) => setMessage(error?.message || 'تعذر تسجيل الدخول. راجع البيانات وحاول مرة أخرى.'),
+      }
+    );
+  };
+
+  const requestReset = () => {
+    if (!showForgot) {
+      setShowForgot(true);
+      return;
     }
+    const email = document.querySelector<HTMLInputElement>('[data-testid="input-email"]')?.value;
+    if (!email) {
+      setMessage('اكتب بريدك الإلكتروني أولاً.');
+      return;
+    }
+    reset.mutate(
+      { data: { email } },
+      {
+        onSuccess: (result) => setMessage(result.message),
+        onError: () => setMessage('تعذر إرسال رسالة الاستعادة الآن.'),
+      }
+    );
+  };
+
+  const continueWithGoogle = async () => {
+    const result = await google.refetch();
+    if (result.data?.url) window.location.assign(result.data.url);
+    else setMessage('تسجيل الدخول باستخدام Google غير مفعّل حالياً.');
   };
 
   return (
     <AuthLayout title="مرحباً بعودتك" eyebrow="تسجيل الدخول">
-      <div className="mt-8 space-y-5">
-        <div className="flex items-center gap-3 rounded-2xl bg-secondary p-5 text-sm leading-7 text-muted-foreground">
-          <RefreshCw size={18} className="h-5 w-5 shrink-0 animate-spin text-primary" />
-          <span>جارٍ نقلك إلى صفحة تسجيل الدخول الآمنة…</span>
+      <form onSubmit={submit} className="mt-8 space-y-5">
+        <Field name="email" label="البريد الإلكتروني" type="email" placeholder="name@example.com" testId="input-email" />
+        <Field name="password" label="كلمة المرور" type="password" placeholder="••••••••" testId="input-password" />
+        <div className="flex items-center justify-between text-sm">
+          <label className="flex items-center gap-2 text-muted-foreground">
+            <input type="checkbox" className="accent-primary" /> تذكرني
+          </label>
+          <button type="button" onClick={requestReset} className="font-semibold text-primary hover:underline" data-testid="button-forgot">
+            نسيت كلمة المرور؟
+          </button>
         </div>
-        {message && (
-          <div className="rounded-xl bg-accent/20 px-4 py-3 text-sm leading-6 text-accent-foreground font-semibold">
-            <p>{message}</p>
-            <Button type="button" onClick={() => go('login')} disabled={busy} className="mt-3 w-full py-3" data-testid="button-login">
-              {busy ? 'جارٍ فتح صفحة الدخول...' : 'حاول مرة أخرى'} <ArrowLeft size={17} />
-            </Button>
-          </div>
-        )}
-        <p className="text-center text-xs leading-6 text-muted-foreground">
-          الدخول يتم في صفحة Kinde الآمنة — بريدك وكلمة سرّك لا تمرّان على خوادمنا إطلاقاً.
-          يمكنك الاستعاذة بكلمة السر من هناك.
-        </p>
-      </div>
+        {showForgot && <p className="rounded-xl bg-secondary px-4 py-3 text-xs leading-6 text-muted-foreground">سيتم إرسال رابط الاستعادة إلى بريدك الإلكتروني المسجل.</p>}
+        {message && <p className="rounded-xl bg-accent/20 px-4 py-3 text-sm leading-6 text-accent-foreground font-semibold">{message}</p>}
+        <Button type="submit" disabled={login.isPending} className="mt-2 w-full py-3.5" data-testid="button-login">
+          {login.isPending ? 'جارٍ الدخول...' : 'دخول إلى مساحتي'} <ArrowLeft size={17} />
+        </Button>
+      </form>
+      <button
+        type="button"
+        onClick={continueWithGoogle}
+        className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm font-semibold text-primary transition-colors hover:bg-secondary"
+        data-testid="button-google-login"
+      >
+        <span className="grid h-5 w-5 place-items-center rounded-full bg-primary text-[10px] text-primary-foreground font-bold">G</span> المتابعة باستخدام Google
+      </button>
+      <p className="mt-8 text-center text-sm text-muted-foreground">
+        ليس لديك حساب؟{' '}
+        <Link href="/register" className="font-bold text-primary hover:underline" data-testid="link-register-auth">
+          أنشئ حساباً جديداً
+        </Link>
+      </p>
     </AuthLayout>
   );
 }
 
 /* =========================================================================
-   إنشاء الحساب — لا نموذج هنا. Kinde ينشئ الحساب ويتحقق من البريد،
-   والواجهة تطلب فقط الاسم الكامل ونوع الحساب ثم تحوّل إلى صفحة Kinde.
-   ما بعد الدخول يُسأل عنه في /auth/complete.
+   إنشاء الحساب — تسجيل مباشر بلا كود تأكيد
+   — المزوّدون المسموحون (السيرفر هو المرجع، وهذا فحص مبكر لتجربة أسرع)
+   — الطلب يذهب إلى /auth/register فينشأ الحساب وتدخل الجلسة في خطوة واحدة.
    ========================================================================= */
+const ALLOWED_EMAIL_DOMAINS = ['gmail.com', 'googlemail.com', 'hotmail.com', 'outlook.com', 'live.com', 'msn.com'];
+const ALLOWED_EMAIL_FAMILIES = ['hotmail.', 'outlook.', 'live.', 'msn.'];
+
+function emailDomainProblem(raw: string): string {
+  const email = String(raw ?? '').trim().toLowerCase();
+  if (!email) return 'اكتب بريدك الإلكتروني أولاً.';
+  if (!/^[^\s@]{1,64}@[^\s@.]+(\.[^\s@.]+)+$/.test(email)) return 'صيغة البريد غير صحيحة. مثال صحيح: name@gmail.com';
+  const domain = email.slice(email.lastIndexOf('@') + 1);
+  const allowed = ALLOWED_EMAIL_DOMAINS.includes(domain) || ALLOWED_EMAIL_FAMILIES.some((prefix) => domain.startsWith(prefix));
+  if (!allowed) return 'التسجيل مسموح ببريد Gmail أو Hotmail أو Outlook فقط.';
+  return '';
+}
+
 function Register() {
+  // الصفوف والمدارس تأتي من قاعدة البيانات — يشترك هنا ليعيد الرسم فور تغيّرها
+  useCatalog();
+  const [, setLocation] = useLocation();
+  useRedirectIfAuthenticated();
+  const google = useGetGoogleAuthUrl({ query: { enabled: false, queryKey: getGetGoogleAuthUrlQueryKey() } });
   const [message, setMessage] = useState('');
-  const [busy, setBusy] = useState(true);
-  const go = async () => {
-    setMessage('');
-    setBusy(true);
-    try {
-      // لا اسم ولا بريد ولا كلمة سر هنا — كلها ملك Kinde
-      await startKindeAuth('signup');
-    } catch (err: any) {
-      setBusy(false);
-      setMessage(err?.message || 'تعذر فتح صفحة إنشاء الحساب. حاول بعد قليل.');
-    }
+  const [sending, setSending] = useState(false);
+
+  const continueWithGoogle = async () => {
+    const result = await google.refetch();
+    if (result.data?.url) window.location.assign(result.data.url);
+    else setMessage('تسجيل الدخول باستخدام Google غير مفعّل حالياً.');
   };
-  useRedirectIfAuthenticated('signup', setMessage);
+
+  // الطلب يذهب مباشرةً للسيرفر: حساب + جلسة في خطوة واحدة، بلا صفحة كود.
+  const submit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const data = new FormData(e.currentTarget);
+    const fullName = String(data.get('fullName') ?? '').trim();
+    const email = String(data.get('email') ?? '').trim();
+    setMessage('');
+    if (fullName.length < 3) {
+      setMessage('اسم المستخدم إلزامي — اكتب اسمك الثلاثي أو الرباعي (3 أحرف على الأقل).');
+      return;
+    }
+    const emailProblem = emailDomainProblem(email);
+    if (emailProblem) {
+      setMessage(emailProblem);
+      return;
+    }
+
+    setSending(true);
+    jsonFetch('/api/auth/register', {
+      method: 'POST',
+      body: {
+        fullName,
+        email,
+        password: String(data.get('password') ?? ''),
+        studentNumber: '',
+        school: String(data.get('school') ?? ''),
+        branch: 'المسار الأكاديمي',
+        grade: String(data.get('grade') ?? ''),
+        section: 'أ',
+        gender: String(data.get('gender') ?? ''),
+        phone: String(data.get('phone') ?? ''),
+      },
+    })
+      .then(() => {
+        resetAuthGate();
+        redirectAfterAuth(setLocation);
+      })
+      .catch((err: Error) => {
+        setSending(false);
+        setMessage(err?.message || 'تعذّر إنشاء الحساب. حاول بعد قليل.');
+      });
+  };
 
   return (
     <AuthLayout title="انضم لأرض اللغة" eyebrow="حساب طالب جديد">
-      <div className="mt-8 space-y-5">
-        <div className="flex items-center gap-3 rounded-2xl bg-secondary p-5 text-sm leading-7 text-muted-foreground">
-          <RefreshCw size={18} className="h-5 w-5 shrink-0 animate-spin text-primary" />
-          <span>جارٍ نقلك إلى إنشاء الحساب في صفحة Kinde الآمنة…</span>
+      <form onSubmit={submit} className="mt-8 space-y-4">
+        <Field name="fullName" label="الاسم الكامل (اسم المستخدم)" placeholder="اكتب الاسم الثلاثي أو الرباعي — إلزامي" testId="input-name" />
+        <div>
+          <Field name="email" label="البريد الإلكتروني" type="email" placeholder="name@gmail.com" testId="input-register-email" />
+          <p className="mt-2 flex items-center gap-2 px-1 text-xs font-semibold leading-5 text-muted-foreground" data-testid="hint-verify-email">
+            <Mail size={13} className="shrink-0 text-primary" /> بريد Gmail أو Hotmail أو Outlook فقط — هذا هو بريد دخولك.
+          </p>
         </div>
-        <div className="flex items-start gap-2 rounded-2xl border border-border bg-secondary/50 px-4 py-3 text-xs leading-6 text-muted-foreground">
+        <Field name="password" label="كلمة المرور (6 خانات على الأقل)" type="password" placeholder="••••••••" testId="input-register-password" />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <LiveSelectField name="school" label="المدرسة" kind="school" testId="select-school" />
+          <LiveSelectField name="grade" label="الصف الدراسي" kind="grade" testId="select-grade" />
+          <SelectField name="gender" label="الجنس" options={['طالب', 'طالبة']} testId="select-gender" />
+          <Field name="phone" label="رقم الهاتف (اختياري)" placeholder="059xxxxxxx" testId="input-phone" />
+        </div>
+        <label className="flex items-start gap-2 pt-1 text-xs leading-5 text-muted-foreground">
+          <input type="checkbox" required className="mt-1 accent-primary" /> أوافق على الالتزام بمتابعة الدروس والتكليفات وفق توجيهات الأستاذ أحمد الأسطل.
+        </label>
+        <div className="flex items-start gap-2 rounded-2xl border border-border bg-secondary/50 px-4 py-3 text-xs font-semibold leading-6 text-muted-foreground">
           <ShieldCheck size={15} className="mt-0.5 shrink-0 text-primary" />
-          في صفحة Kinde تكتب بريدك وكلمة سرّك، أو تدخل بحساب Google، وKinde يتكفّل بتأكيد بريدك. بعد الدخول يسألك عن اسمك وصفّك ومدرستك.
+          حسابك يُفتح فور ضغط زر الإنشاء — تدخل مساحتك مباشرة بكلمة المرور التي تكتبها.
         </div>
         {message && (
           <div className="rounded-xl bg-accent/20 px-4 py-3 text-sm leading-6 text-accent-foreground font-semibold">
             <p>{message}</p>
-            <Button type="button" onClick={go} disabled={busy} className="mt-3 w-full py-3" data-testid="button-register">
-              {busy ? 'جارٍ فتح صفحة إنشاء الحساب...' : 'حاول مرة أخرى'} <ArrowLeft size={17} />
-            </Button>
+            {message.includes('مسجّل') && (
+              <Link href="/login" className="mt-2 inline-flex items-center gap-1.5 font-extrabold text-primary hover:underline" data-testid="link-login-duplicate">
+                سجّل دخولك بهذا البريد <ArrowLeft size={14} />
+              </Link>
+            )}
           </div>
         )}
+        <Button type="submit" disabled={sending} className="mt-2 w-full py-3.5" data-testid="button-register">
+          {sending ? (
+            <><RefreshCw size={17} className="animate-spin" /> جارٍ إنشاء حسابك...</>
+          ) : (
+            <>إنشاء الحساب والدخول <ArrowLeft size={17} /></>
+          )}
+        </Button>
+      </form>
+      <div className="mt-5 flex items-center gap-3 text-xs text-muted-foreground">
+        <span className="h-px flex-1 bg-border" />
+        أو
+        <span className="h-px flex-1 bg-border" />
+      </div>
+      <button
+        type="button"
+        onClick={continueWithGoogle}
+        className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm font-semibold text-primary transition-colors hover:bg-secondary"
+        data-testid="button-google-register"
+      >
+        <span className="grid h-5 w-5 place-items-center rounded-full bg-primary text-[10px] text-primary-foreground font-bold">G</span> إنشاء حساب عبر Google
+      </button>
+      <p className="mt-7 text-center text-sm text-muted-foreground">
+        لديك حساب بالفعل؟{' '}
+        <Link href="/login" className="font-bold text-primary hover:underline" data-testid="link-login-auth">
+          سجل دخولك
+        </Link>
+      </p>
+    </AuthLayout>
+  );
+}
+
+/** رابط قديم من صفحة التأكيد — التسجيل صار مباشراً فنعيد الطالب لصفحة التسجيل. */
+function LegacyVerifyRedirect() {
+  const [, setLocation] = useLocation();
+  useEffect(() => { setLocation('/register', { replace: true }); }, [setLocation]);
+  return (
+    <AuthLayout title="جارٍ تحويلك" eyebrow="تسجيل حساب جديد">
+      <div className="mt-8 flex items-center gap-3 rounded-2xl bg-secondary p-5 text-sm leading-7 text-muted-foreground">
+        <RefreshCw className="h-5 w-5 shrink-0 animate-spin text-primary" /> التسجيل مباشر الآن — بلا كود تأكيد.
       </div>
     </AuthLayout>
   );
 }
 
+function Field({ name, label, type = 'text', placeholder, testId }: { name?: string; label: string; type?: string; placeholder: string; testId: string }) {
+  return (
+    <label className="block text-sm font-semibold text-foreground">
+      <span className="mb-2 block">{label}</span>
+      <input
+        name={name}
+        required={type !== 'tel' && !label.includes('اختياري')}
+        type={type}
+        placeholder={placeholder}
+        data-testid={testId}
+        className="w-full rounded-xl border border-input bg-card px-4 py-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-primary focus:ring-4 focus:ring-accent/20"
+      />
+    </label>
+  );
+}
+
+function SelectField({ name, label, options, testId, optional = false }: { name: string; label: string; options: string[]; testId: string; optional?: boolean }) {
+  return (
+    <label className="block text-sm font-semibold text-foreground">
+      <span className="mb-2 block">{label}</span>
+      <select name={name} required={!optional} data-testid={testId} className="w-full rounded-xl border border-input bg-card px-4 py-3 text-sm outline-none focus:border-primary focus:ring-4 focus:ring-accent/20">
+        <option value="">اختر</option>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function AuthCallback() {
   const [, setLocation] = useLocation();
-  const [status, setStatus] = useState('جارٍ تجهيز جلسة Kinde...');
+  const [status, setStatus] = useState('جارٍ تأكيد حسابك عبر Google...');
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const params = new URLSearchParams(window.location.search);
       const code = params.get('code');
-      const state = params.get('state') || '';
       const error = params.get('error');
-      const errorText = params.get('error_description') || '';
       if (!code || error) {
         if (!cancelled) {
           setFailed(true);
-          setStatus(
-            error === 'access_denied'
-              ? 'ألغيت تسجيل الدخول. يمكنك العودة والمحاولة في أي وقت.'
-              : errorText || 'تعذر إتمام تسجيل الدخول عبر Kinde.'
-          );
+          setStatus(error === 'access_denied' ? 'ألغيت تسجيل الدخول عبر Google. يمكنك المتابعة بالبريد وكلمة المرور.' : 'تعذر إتمام تسجيل الدخول عبر Google.');
         }
         window.setTimeout(() => { if (!cancelled) setLocation('/login'); }, 2500);
         return;
       }
       try {
-        // الكود يُبادل على السيرفر وحده — لا سرّ ولا توكن يمرّ من المتصفح
-        const result = await jsonFetch('/api/auth/kinde/exchange', { method: 'POST', body: { code, state } });
+        const result = await jsonFetch('/api/auth/exchange', { method: 'POST', body: { code } });
         if (cancelled) return;
-        try { sessionStorage.removeItem('ard-auth-mode'); sessionStorage.removeItem('ard-signup-name'); } catch { /* تجاهل */ }
-        resetAuthGate();
-        const target = result.role === 'admin' ? '/teacher' : result.needsSetup ? '/auth/complete' : '/student';
-        setStatus(result.needsSetup ? 'تم تأكيد حسابك. أكمل بياناتك لتندفع إلى مساحة التعلم!' : 'تم تأكيد حسابك بنجاح.');
-        window.setTimeout(() => { if (!cancelled) setLocation(target); }, 800);
+        setStatus(result.needsSetup ? 'تم التحقق من حسابك بنجاح. أكمل بياناتك لتندفع إلى مساحة التعلم!' : 'تم التحقق من حسابك بنجاح.');
+        window.setTimeout(() => {
+          if (cancelled) return;
+          resetAuthGate();
+          setLocation(result.needsSetup ? '/auth/complete' : '/student');
+        }, 800);
       } catch (err: any) {
         if (!cancelled) {
           setFailed(true);
-          setStatus(err?.message || 'تعذر تأكيد الجلسة عبر Kinde. أعد المحاولة.');
+          setStatus(err?.message || 'تعذر تأكيد الجلسة عبر Google. أعد المحاولة.');
           window.setTimeout(() => { if (!cancelled) setLocation('/login'); }, 2500);
         }
       }
@@ -1959,6 +2117,7 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
   });
   // إغلاق القوائم تلقائياً عند التنقل — حتى لا تغطي المحتوى والنوافذ
   useEffect(() => { setMobileMenu(false); setProfileMenu(false); setNotifOpen(false); }, [location]);
+  const logout = useLogoutAccount();
   const studentDash = useGetStudentDashboard();
   // صورة الحساب (صورة Google إن سجل بها) — للطالب والمعلم
   const [meAvatar, setMeAvatar] = useState('');
@@ -2064,20 +2223,15 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
   }, [mode, foundationCount]);
   const active = links.find((link) => location === link.href)?.label ?? links[0].label;
 
-  // الخروج: مسح كوكيز الجلسة عندنا، ثم إنهاء جلسة Kinde نفسها
-  // حتى لا يجد المستخدم حسابه ما زال مفتوحاً عند العودة من Kinde.
-  const signOut = async () => {
-    try { await jsonFetch('/api/auth/logout', { method: 'POST' }); } catch { /* نكمل */ }
-    try {
-      const { url } = await jsonFetch('/api/auth/kinde/logout');
-      resetAuthGate();
-      queryClient.clear();
-      window.location.assign(url || '/login');
-    } catch {
-      resetAuthGate();
-      queryClient.clear();
-      setLocation('/login');
-    }
+  const signOut = () => {
+    logout.mutate(undefined, {
+      onSuccess: () => {
+        resetAuthGate();
+        queryClient.clear();
+        setLocation('/login');
+      },
+      onError: () => { resetAuthGate(); setLocation('/login'); },
+    });
   };
 
   return (
@@ -4067,6 +4221,7 @@ function StudentsPage() {
       section: s.section || 'أ',
       gender: s.gender === 'طالبة' ? 'طالبة' : 'طالب',
       status: s.status || 'نشط',
+      password: '',
     });
     setEditItem(s);
   };
@@ -4075,11 +4230,15 @@ function StudentsPage() {
     if (!editItem) return;
     setSavingEdit(true);
     try {
-      // كلمة السر ليست حقلاً هنا — حسابات الدخول تديرها Kinde نفسها.
       const { password, ...profile } = editForm;
       await jsonFetch(`/api/teacher/students/${editItem.id}`, { method: 'PATCH', body: profile });
+      let pwdMsg = '';
+      if (password && String(password).trim()) {
+        const pr = await jsonFetch(`/api/teacher/students/${editItem.id}/password`, { method: 'PATCH', body: { password: String(password).trim() } });
+        pwdMsg = ' + ' + (pr.message || 'تم تغيير كلمة السر');
+      }
       setOpOk(true);
-      setOpMsg(`تم حفظ بيانات ${editForm.name} بنجاح ✓`);
+      setOpMsg(`تم حفظ بيانات ${editForm.name} بنجاح ✓${pwdMsg}`);
       setEditItem(null);
       query.refetch();
       setTimeout(() => setOpMsg(''), 4000);
@@ -4357,10 +4516,17 @@ function StudentsPage() {
                 </select>
               </Field2>
             </div>
-            <div className="flex items-start gap-2 rounded-2xl border border-border bg-secondary/50 px-4 py-3 text-[11px] font-bold leading-5 text-muted-foreground">
-              <ShieldCheck size={14} className="mt-0.5 shrink-0 text-primary" />
-              كلمة سر الطالب لا تُضبط من هنا — يحفظها في حسابه لدى Kinde ويستعيدها هناك.
-            </div>
+            <Field2 label="كلمة سر جديدة (اختياري)">
+              <input
+                type="text"
+                value={editForm.password || ''}
+                onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                placeholder="اتركها فارغة للإبقاء — 6 أحرف على الأقل للتغيير"
+                dir="ltr"
+                className={`${inputCls} text-left`}
+                data-testid="input-edit-student-password"
+              />
+            </Field2>
             <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
               <Button type="button" onClick={() => editItem && deleteStudent(editItem)} variant="ghost" className="text-destructive"><Trash2 size={15} /> حذف الطالب</Button>
               <span className="flex items-center gap-3">
@@ -5055,15 +5221,19 @@ function SettingsPage() {
 }
 
 /* =========================================================================
-   حساب دخول المعلم — كلمة السر وإعدادات الحساب عبر Kinde
-   ========================================================================= */
+   حساب دخول المعلم — كلمة السر + بريد الإدارة + ربط Google
+========================================================================= */
 function AccountSecurityCard() {
   const [info, setInfo] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+  const [cur, setCur] = useState('');
+  const [nw, setNw] = useState('');
+  const [nw2, setNw2] = useState('');
   const [adminMail, setAdminMail] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<'pwd' | 'mail' | null>(null);
   const [msg, setMsg] = useState('');
   const [ok, setOk] = useState(true);
+  const google = useGetGoogleAuthUrl({ query: { enabled: false, queryKey: getGetGoogleAuthUrlQueryKey() } });
 
   const load = async () => {
     setLoading(true);
@@ -5075,8 +5245,24 @@ function AccountSecurityCard() {
   };
   useEffect(() => { load(); }, []);
 
+  const savePwd = async (e: FormEvent) => {
+    e.preventDefault();
+    if (nw !== nw2) { setOk(false); setMsg('تأكيد كلمة السر غير مطابق'); return; }
+    setBusy('pwd');
+    setMsg('');
+    try {
+      const r = await jsonFetch('/api/teacher/account/password', { method: 'PATCH', body: { currentPassword: cur, newPassword: nw } });
+      setOk(true);
+      setMsg(r.message || 'تم تغيير كلمة سرك بنجاح!');
+      setCur(''); setNw(''); setNw2('');
+    } catch (e: any) {
+      setOk(false);
+      setMsg(e?.message || 'تعذر تغيير كلمة السر');
+    } finally { setBusy(null); }
+  };
+
   const saveMail = async () => {
-    setBusy(true);
+    setBusy('mail');
     setMsg('');
     try {
       const r = await jsonFetch('/api/teacher/account/email', { method: 'PATCH', body: { adminEmail: adminMail.trim() } });
@@ -5086,13 +5272,13 @@ function AccountSecurityCard() {
     } catch (e: any) {
       setOk(false);
       setMsg(e?.message || 'تعذر الحفظ');
-    } finally { setBusy(false); }
+    } finally { setBusy(null); }
   };
 
-  const openKindeAccount = () => {
-    const url = info?.profileUrl;
-    if (url) window.location.assign(url);
-    else { setOk(false); setMsg('رابط حساب Kinde غير متاح — تحقق من إعداد KINDE_ISSUER_URL على الخادم.'); }
+  const linkGoogle = async () => {
+    const r = await google.refetch();
+    if (r.data?.url) window.location.assign(r.data.url);
+    else { setOk(false); setMsg('تعذر بدء ربط Google الآن'); }
   };
 
   return (
@@ -5101,7 +5287,7 @@ function AccountSecurityCard() {
         <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-lg"><ShieldCheck size={22} /></span>
         <div>
           <p className="font-display text-lg font-bold text-primary">حساب الدخول والأمان 🔐</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">كلمة السر وإعدادات الحساب — لك وحدك كمعلم.</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">كلمة سرك + بريد الإدارة + ربط Google — لك وحدك كمعلم.</p>
         </div>
       </div>
       {loading ? <StateNotice type="loading" /> : (
@@ -5109,25 +5295,33 @@ function AccountSecurityCard() {
           <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-secondary/50 px-4 py-3 text-xs font-bold">
             <span className="text-muted-foreground">دخولك الحالي:</span>
             <span className="text-primary" dir="ltr">{info?.email || '—'}</span>
+            {info?.googleLinked === true ? (
+              <span className="mr-auto rounded-full bg-green-500/15 px-3 py-1 text-[11px] font-extrabold text-green-800">مربوط بـ Google ✓</span>
+            ) : info?.googleLinked === false ? (
+              <span className="mr-auto rounded-full bg-muted px-3 py-1 text-[11px] font-bold text-muted-foreground">غير مربوط بـ Google</span>
+            ) : null}
           </div>
 
-          <div className="rounded-2xl border border-border bg-background/60 p-4">
-            <p className="mb-1 text-sm font-extrabold text-primary">كلمة السر وإعدادات الحساب</p>
-            <p className="mb-3 text-[11px] leading-5 text-muted-foreground">
-              كلمة السر والبريد وطرق الدخول كلها بيد Kinde — اضغط الزر بالأسفل لفتح صفحة حسابك هناك.
-            </p>
-            <Button type="button" onClick={openKindeAccount} variant="soft" className="w-full py-2.5 text-xs">
-              <ShieldCheck size={15} /> إدارة كلمة السر في Kinde
-            </Button>
-          </div>
+          <form onSubmit={savePwd} className="rounded-2xl border border-border bg-background/60 p-4">
+            <p className="mb-3 text-sm font-extrabold text-primary">تغيير كلمة سرك</p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="block text-xs font-bold">الحالية<input type="password" value={cur} onChange={(e) => setCur(e.target.value)} required className={`${inputCls} py-2.5 text-sm`} data-testid="input-current-password" /></label>
+              <label className="block text-xs font-bold">الجديدة (6+ أحرف)<input type="password" value={nw} onChange={(e) => setNw(e.target.value)} required minLength={6} className={`${inputCls} py-2.5 text-sm`} data-testid="input-new-password" /></label>
+              <label className="block text-xs font-bold">تأكيد الجديدة<input type="password" value={nw2} onChange={(e) => setNw2(e.target.value)} required className={`${inputCls} py-2.5 text-sm`} /></label>
+            </div>
+            <Button type="submit" disabled={busy === 'pwd'} variant="soft" className="mt-3 px-5 py-2 text-xs">{busy === 'pwd' ? 'جارٍ التغيير...' : 'تغيير كلمة السر ✓'}</Button>
+          </form>
 
           <div className="rounded-2xl border border-border bg-background/60 p-4">
-            <p className="mb-1 text-sm font-extrabold text-primary">بريد الإدارة — للدخول كمعلم</p>
-            <p className="mb-3 text-[11px] leading-5 text-muted-foreground">احفظ بريدك هنا: أي حساب <b>طالب</b> سابق بنفس البريد يُحذف تلقائياً، وبعده سجّل بهذا البريد عبر Kinde لتدخل كمعلم مباشرة.</p>
+            <p className="mb-1 text-sm font-extrabold text-primary">بريد الإدارة (Gmail) — للدخول عبر Google كمعلم</p>
+            <p className="mb-3 text-[11px] leading-5 text-muted-foreground">احفظ بريدك هنا: أي حساب <b>طالب</b> سابق بنفس البريد يُحذف تلقائياً، وبعده سجّل بهذا البريد عبر Google لتدخل كمعلم مباشرة — ويُمنع إنشاء حسابات طلاب جديدة به.</p>
             <div className="flex flex-wrap items-center gap-2">
               <input value={adminMail} onChange={(e) => setAdminMail(e.target.value)} placeholder="you@gmail.com" dir="ltr" className={`${inputCls} min-w-52 flex-1 py-2.5 text-left text-sm`} data-testid="input-admin-email" />
-              <Button type="button" onClick={saveMail} disabled={busy} variant="primary" className="px-5 py-2 text-xs">{busy ? 'جارٍ الحفظ والتنظيف...' : 'اعتماد وتنظيف ✓'}</Button>
+              <Button type="button" onClick={saveMail} disabled={busy === 'mail'} variant="primary" className="px-5 py-2 text-xs">{busy === 'mail' ? 'جارٍ الحفظ والتنظيف...' : 'اعتماد وتنظيف ✓'}</Button>
             </div>
+            <Button type="button" onClick={linkGoogle} variant="soft" className="mt-3 w-full py-2.5 text-xs">
+              <span className="grid h-5 w-5 place-items-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">G</span> تسجيل الدخول بهذا البريد عبر Google للربط
+            </Button>
           </div>
 
           {msg ? <p className={`rounded-xl px-4 py-3 text-xs font-bold leading-6 ${ok ? 'bg-green-500/15 text-green-800' : 'bg-destructive/10 text-destructive'}`}>{msg}</p> : null}
@@ -11272,6 +11466,7 @@ function Router() {
         <Route path="/" component={Home} />
         <Route path="/login" component={Login} />
         <Route path="/register" component={Register} />
+        <Route path="/auth/verify" component={LegacyVerifyRedirect} />
         <Route path="/auth/callback" component={AuthCallback} />
         <Route path="/auth/complete" component={CompleteProfilePage} />
         <Route path="/student" component={StudentDashboardNew} />

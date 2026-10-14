@@ -1,7 +1,3 @@
-// ============================================================================
-//  عميل Supabase — الوصول للبيانات فقط.
-//  المصادقة انتقلت إلى Kinde (lib/kinde.ts)، فما عاد هنا أي دور للهوية.
-// ============================================================================
 import { logger } from "./logger";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co";
@@ -17,6 +13,56 @@ const baseHeaders: Record<string, string> = {
   apikey: SERVICE_ROLE,
   Authorization: `Bearer ${SERVICE_ROLE}`,
 };
+
+/** جلب المستخدم الحالي من Supabase Auth عبر رمز الوصول (auth/v1/user) */
+const userCache = new Map<string, { user: Record<string, unknown>; at: number }>();
+const USER_CACHE_TTL = 60 * 1000;
+const USER_CACHE_MAX = 2000;
+
+export function clearUserCache(): void {
+  userCache.clear();
+}
+
+export async function getSupabaseUser(
+  accessToken: string,
+): Promise<Record<string, unknown> | null> {
+  if (!accessToken) return null;
+  // تخفيف الاستهلاك: التحقق من التوكن يُحفظ 60 ثانية (الهوية لا تتغير خلالها)
+  const now = Date.now();
+  const hit = userCache.get(accessToken);
+  if (hit && now - hit.at < USER_CACHE_TTL) return hit.user;
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/user`,
+      {
+        headers: {
+          apikey: SERVICE_ROLE,
+          Authorization: `Bearer ${accessToken}`,
+        },
+      },
+    );
+    if (!res.ok) {
+      userCache.delete(accessToken);
+      return null;
+    }
+    const data = await res.json();
+    const user =
+      data && typeof data === "object"
+        ? (data as Record<string, unknown>)
+        : null;
+    if (user) {
+      if (userCache.size >= USER_CACHE_MAX) {
+        const oldest = userCache.keys().next();
+        if (!oldest.done) userCache.delete(oldest.value);
+      }
+      userCache.set(accessToken, { user, at: now });
+    }
+    return user;
+  } catch (err) {
+    logger.error({ err }, "getSupabaseUser failed");
+    return null;
+  }
+}
 
 export async function supabaseQuery<T = any>(
   endpoint: string,
