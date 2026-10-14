@@ -10554,7 +10554,7 @@ function TeacherFoundationPage() {
         stats={[
           { value: sections.length, label: 'مستوى' },
           { value: totalLessons, label: 'موضوع ودرس' },
-          { value: sections.reduce((a, s) => a + (s.memberCount || 0), 0), label: 'طالب مسجَّل' },
+          { value: sections.reduce((a, s) => a + (s.memberCount || 0), 0), label: 'عضو في المستويات' },
           { value: sections.filter((s) => s.isVisible).length, label: 'ظاهر للطالب' },
         ]}
       />
