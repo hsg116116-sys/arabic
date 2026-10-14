@@ -38958,122 +38958,158 @@ function levelOf(pct) {
 function appliesTo(item, profile, splitMap) {
   if (item.published === false) return false;
   if (item.is_visible === false) return false;
+  const ig = String(item.grade || "").trim();
+  const pg = String(profile.grade || "").trim();
+  if (ig && pg && ig !== "\u0627\u0644\u062C\u0645\u064A\u0639" && pg !== "\u0627\u0644\u062C\u0645\u064A\u0639" && ig !== pg) return false;
   return itemVisible(item.grade, item.section, profile.grade, profile.gender, splitMap, item.school, profile.school);
+}
+async function loadReportCtx() {
+  const [
+    { data: assessments },
+    { data: attempts },
+    { data: assignments },
+    { data: hwSubs },
+    { data: tasks },
+    { data: nbSubs },
+    { data: sections },
+    { data: fLessons },
+    { data: fMembers },
+    { data: fProgress },
+    splitMap
+  ] = await Promise.all([
+    supabaseQuery("assessments?order=available_date.asc&limit=500"),
+    supabaseQuery("assessment_attempts?select=user_id,assessment_id,score&limit=20000"),
+    supabaseQuery("assignments?order=due_date.asc&limit=500"),
+    supabaseQuery("assignment_submissions?select=user_id,assignment_id,score&limit=20000"),
+    supabaseQuery("notebook_tasks?order=due_date.asc&limit=500"),
+    supabaseQuery("notebook_submissions?select=user_id,task_id,score&limit=20000"),
+    supabaseQuery("foundation_sections?is_visible=eq.true&order=sort_order.asc&limit=200"),
+    supabaseQuery("foundation_lessons?is_visible=eq.true&select=id,section_id&limit=3000"),
+    supabaseQuery("foundation_members?select=section_id,user_id&limit=20000"),
+    supabaseQuery("foundation_progress?select=user_id,lesson_id&limit=20000"),
+    getSplitMap()
+  ]);
+  const attemptsByUser = {};
+  for (const a of attempts || []) {
+    if (!a.user_id) continue;
+    const cur = num(a.score);
+    const prev = attemptsByUser[a.user_id]?.[a.assessment_id];
+    if (prev === void 0 || cur > prev) {
+      (attemptsByUser[a.user_id] ||= {})[a.assessment_id] = cur;
+    }
+  }
+  const hwByUser = {};
+  for (const s of hwSubs || []) {
+    if (!s?.user_id) continue;
+    (hwByUser[s.user_id] ||= {})[s.assignment_id] = typeof s.score === "number" ? num(s.score) : null;
+  }
+  const nbByUser = {};
+  for (const s of nbSubs || []) {
+    if (!s?.user_id) continue;
+    (nbByUser[s.user_id] ||= {})[s.task_id] = typeof s.score === "number" ? num(s.score) : null;
+  }
+  const doneByUser = {};
+  for (const p of fProgress || []) {
+    if (!p.user_id) continue;
+    (doneByUser[p.user_id] ||= /* @__PURE__ */ new Set()).add(String(p.lesson_id));
+  }
+  const memberByUser = {};
+  for (const m of fMembers || []) {
+    if (!m.user_id) continue;
+    (memberByUser[m.user_id] ||= /* @__PURE__ */ new Set()).add(String(m.section_id));
+  }
+  const lessonsBySection = {};
+  for (const l of fLessons || []) (lessonsBySection[l.section_id] ||= []).push(l.id);
+  return {
+    assessments: assessments || [],
+    attemptsByUser,
+    assignments: assignments || [],
+    hwByUser,
+    tasks: tasks || [],
+    nbByUser,
+    sections: sections || [],
+    lessonsBySection,
+    memberByUser,
+    doneByUser,
+    splitMap
+  };
+}
+function computeStudentRow(p, ctx) {
+  const who = {
+    grade: String(p.grade || ""),
+    gender: p.gender || null,
+    school: String(p.school || "")
+  };
+  const myExams = ctx.assessments.filter((a) => appliesTo(a, who, ctx.splitMap));
+  const myHw = ctx.assignments.filter((a) => appliesTo(a, who, ctx.splitMap));
+  const myNb = ctx.tasks.filter((t) => appliesTo(t, who, ctx.splitMap));
+  const att = ctx.attemptsByUser[p.id] || {};
+  const takenScores = myExams.map((e) => att[e.id]).filter((v) => typeof v === "number");
+  const examAvg = takenScores.length ? Math.round(takenScores.reduce((a, b) => a + b, 0) / takenScores.length * 10) / 10 : null;
+  const hw = ctx.hwByUser[p.id] || {};
+  const hwDoneIds = myHw.filter((h) => hw[h.id] !== void 0).map((h) => h.id);
+  const hwEarned = hwDoneIds.reduce((s, id) => s + (hw[id] ?? 0), 0);
+  const hwPossible = myHw.reduce((s, h) => s + num(h.points, 20), 0);
+  const nb = ctx.nbByUser[p.id] || {};
+  const nbDoneIds = myNb.filter((t) => nb[t.id] !== void 0).map((t) => t.id);
+  const nbEarned = nbDoneIds.reduce((s, id) => s + (nb[id] ?? 0), 0);
+  const nbPossible = myNb.reduce((s, t) => s + num(t.points, 10), 0);
+  const mySections = ctx.sections.filter((s) => (ctx.memberByUser[p.id] || /* @__PURE__ */ new Set()).has(s.id));
+  const doneSet = ctx.doneByUser[p.id] || /* @__PURE__ */ new Set();
+  const fDone = mySections.reduce(
+    (s, sec) => s + (ctx.lessonsBySection[sec.id] || []).filter((id) => doneSet.has(id)).length,
+    0
+  );
+  const fTotal = mySections.reduce((s, sec) => s + (ctx.lessonsBySection[sec.id] || []).length, 0);
+  const parts = [examAvg, pctOf(hwEarned, hwPossible), pctOf(nbEarned, nbPossible), pctOf(fDone, fTotal)].filter((v) => typeof v === "number");
+  const overall = parts.length ? Math.round(parts.reduce((a, b) => a + b, 0) / parts.length) : null;
+  const missing = myExams.filter((e) => att[e.id] === void 0).length + myHw.filter((h) => hw[h.id] === void 0).length + myNb.filter((t) => nb[t.id] === void 0).length;
+  return {
+    id: p.id,
+    name: p.full_name || "",
+    school: p.school || "",
+    grade: p.grade || "",
+    section: p.section || "",
+    gender: p.gender || "",
+    avatarUrl: p.avatar_url || "",
+    status: p.status || "\u0646\u0634\u0637",
+    exams: { taken: takenScores.length, total: myExams.length, avg: examAvg },
+    homework: { done: hwDoneIds.length, total: myHw.length, earned: hwEarned, possible: hwPossible, percent: pctOf(hwEarned, hwPossible) },
+    notebook: { done: nbDoneIds.length, total: myNb.length, earned: nbEarned, possible: nbPossible, percent: pctOf(nbEarned, nbPossible) },
+    foundation: { inFoundation: mySections.length > 0, levels: mySections.length, done: fDone, total: fTotal, percent: pctOf(fDone, fTotal) },
+    missing,
+    overall,
+    level: levelOf(overall)
+  };
+}
+function cohortCompare(rows) {
+  const avg = (pick) => {
+    const vals = rows.map(pick).filter((v) => typeof v === "number");
+    return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+  };
+  return {
+    count: rows.length,
+    exams: avg((r) => r.exams.avg),
+    homework: avg((r) => r.homework.percent),
+    notebook: avg((r) => r.notebook.percent),
+    foundation: avg((r) => r.foundation.percent),
+    overall: avg((r) => r.overall)
+  };
 }
 router9.get("/teacher/report/overview", requireAdmin, async (req, res) => {
   try {
     const q = req.query || {};
     const schoolFilter = (q.school || "").trim();
     const gradeFilter = (q.grade || "").trim();
-    const [
-      { data: profiles },
-      { data: assessments },
-      { data: attempts },
-      { data: assignments },
-      { data: hwSubs },
-      { data: tasks },
-      { data: nbSubs },
-      { data: sections },
-      { data: fLessons },
-      { data: fMembers },
-      { data: fProgress },
-      splitMap,
-      { data: managedGrades },
-      { data: managedSchools }
-    ] = await Promise.all([
-      supabaseQuery("profiles?role=eq.student&order=full_name.asc&limit=2000"),
-      supabaseQuery("assessments?order=available_date.asc&limit=500"),
-      supabaseQuery("assessment_attempts?select=user_id,assessment_id,score&limit=20000"),
-      supabaseQuery("assignments?order=due_date.asc&limit=500"),
-      supabaseQuery("assignment_submissions?select=user_id,assignment_id,score&limit=20000"),
-      supabaseQuery("notebook_tasks?order=due_date.asc&limit=500"),
-      supabaseQuery("notebook_submissions?select=user_id,task_id,score&limit=20000"),
-      supabaseQuery("foundation_sections?is_visible=eq.true&order=sort_order.asc&limit=200"),
-      supabaseQuery("foundation_lessons?is_visible=eq.true&select=id,section_id&limit=3000"),
-      supabaseQuery("foundation_members?select=section_id,user_id&limit=20000"),
-      supabaseQuery("foundation_progress?select=user_id,lesson_id&limit=20000"),
-      getSplitMap(),
+    const ctx = await loadReportCtx();
+    const { data: profiles } = await supabaseQuery(
+      "profiles?role=eq.student&order=full_name.asc&limit=2000"
+    );
+    const [{ data: managedGrades }, { data: managedSchools }] = await Promise.all([
       supabaseQuery("grade_levels?order=sort_order.asc&limit=500"),
       supabaseQuery("schools?order=sort_order.asc&limit=500")
     ]);
-    const attByUser = {};
-    for (const a of attempts || []) {
-      if (!a.user_id) continue;
-      const cur = num(a.score);
-      const prev = attByUser[a.user_id]?.[a.assessment_id];
-      if (prev === void 0 || cur > prev) {
-        (attByUser[a.user_id] ||= {})[a.assessment_id] = cur;
-      }
-    }
-    const hwByUser = {};
-    for (const s of hwSubs || []) {
-      if (!s?.user_id) continue;
-      (hwByUser[s.user_id] ||= {})[s.assignment_id] = typeof s.score === "number" ? num(s.score) : null;
-    }
-    const nbByUser = {};
-    for (const s of nbSubs || []) {
-      if (!s?.user_id) continue;
-      (nbByUser[s.user_id] ||= {})[s.task_id] = typeof s.score === "number" ? num(s.score) : null;
-    }
-    const fDoneByUser = {};
-    for (const p of fProgress || []) {
-      if (!p.user_id) continue;
-      (fDoneByUser[p.user_id] ||= /* @__PURE__ */ new Set()).add(String(p.lesson_id));
-    }
-    const fMemberByUser = {};
-    for (const m of fMembers || []) {
-      if (!m.user_id) continue;
-      (fMemberByUser[m.user_id] ||= /* @__PURE__ */ new Set()).add(String(m.section_id));
-    }
-    const lessonsBySection = {};
-    for (const l of fLessons || []) (lessonsBySection[l.section_id] ||= []).push(l.id);
-    let students = (profiles || []).map((p) => {
-      const who = {
-        grade: String(p.grade || ""),
-        gender: p.gender || null,
-        school: String(p.school || "")
-      };
-      const myExams = (assessments || []).filter((a) => appliesTo(a, who, splitMap));
-      const myHw = (assignments || []).filter((a) => appliesTo(a, who, splitMap));
-      const myNb = (tasks || []).filter((t) => appliesTo(t, who, splitMap));
-      const att = attByUser[p.id] || {};
-      const takenScores = myExams.map((e) => att[e.id]).filter((v) => typeof v === "number");
-      const examAvg = takenScores.length ? Math.round(takenScores.reduce((a, b) => a + b, 0) / takenScores.length * 10) / 10 : null;
-      const hw = hwByUser[p.id] || {};
-      const hwDoneIds = myHw.filter((h) => hw[h.id] !== void 0).map((h) => h.id);
-      const hwEarned = hwDoneIds.reduce((s, id) => s + (hw[id] ?? 0), 0);
-      const hwPossible = myHw.reduce((s, h) => s + num(h.points, 20), 0);
-      const nb = nbByUser[p.id] || {};
-      const nbDoneIds = myNb.filter((t) => nb[t.id] !== void 0).map((t) => t.id);
-      const nbEarned = nbDoneIds.reduce((s, id) => s + (nb[id] ?? 0), 0);
-      const nbPossible = myNb.reduce((s, t) => s + num(t.points, 10), 0);
-      const mySections = (sections || []).filter((s) => (fMemberByUser[p.id] || /* @__PURE__ */ new Set()).has(s.id));
-      const fDone = mySections.reduce(
-        (s, sec) => s + (lessonsBySection[sec.id] || []).filter((id) => (fDoneByUser[p.id] || /* @__PURE__ */ new Set()).has(id)).length,
-        0
-      );
-      const fTotal = mySections.reduce((s, sec) => s + (lessonsBySection[sec.id] || []).length, 0);
-      const parts = [examAvg, pctOf(hwEarned, hwPossible), pctOf(nbEarned, nbPossible), pctOf(fDone, fTotal)].filter((v) => typeof v === "number");
-      const overall = parts.length ? Math.round(parts.reduce((a, b) => a + b, 0) / parts.length) : null;
-      const missing = myExams.filter((e) => att[e.id] === void 0).length + myHw.filter((h) => hw[h.id] === void 0).length + myNb.filter((t) => nb[t.id] === void 0).length;
-      return {
-        id: p.id,
-        name: p.full_name || "",
-        school: p.school || "",
-        grade: p.grade || "",
-        section: p.section || "",
-        gender: p.gender || "",
-        avatarUrl: p.avatar_url || "",
-        status: p.status || "\u0646\u0634\u0637",
-        exams: { taken: takenScores.length, total: myExams.length, avg: examAvg },
-        homework: { done: hwDoneIds.length, total: myHw.length, earned: hwEarned, possible: hwPossible, percent: pctOf(hwEarned, hwPossible) },
-        notebook: { done: nbDoneIds.length, total: myNb.length, earned: nbEarned, possible: nbPossible, percent: pctOf(nbEarned, nbPossible) },
-        foundation: { inFoundation: mySections.length > 0, levels: mySections.length, done: fDone, total: fTotal, percent: pctOf(fDone, fTotal) },
-        missing,
-        overall,
-        level: levelOf(overall)
-      };
-    });
+    let students = (profiles || []).map((p) => computeStudentRow(p, ctx));
     if (schoolFilter) students = students.filter((s) => s.school === schoolFilter);
     if (gradeFilter) students = students.filter((s) => s.grade === gradeFilter);
     const allRows = (profiles || []).map((p) => ({ school: p.school || "", grade: p.grade || "" }));
@@ -39241,6 +39277,15 @@ router9.get("/teacher/report/student/:id", requireAdmin, async (req, res) => {
       notebook: nbItems.filter((t) => t.status === "missing").map((t) => t.title)
     };
     const missingCount = missing.exams.length + missing.homework.length + missing.notebook.length;
+    let compare = { count: 0, exams: null, homework: null, notebook: null, foundation: null, overall: null };
+    try {
+      const ctx = await loadReportCtx();
+      const { data: cohort } = await supabaseQuery("profiles?role=eq.student&limit=2000");
+      const mates = (cohort || []).filter((c) => String(c.grade || "") === String(profile.grade || "") && String(c.school || "") === String(profile.school || ""));
+      compare = cohortCompare(mates.map((c) => computeStudentRow(c, ctx)));
+    } catch (err) {
+      logger.warn({ err }, "cohort compare failed, continuing without it");
+    }
     res.json({
       student: {
         id: profile.id,
@@ -39260,7 +39305,8 @@ router9.get("/teacher/report/student/:id", requireAdmin, async (req, res) => {
       notebook: { items: nbItems, done: nbDone.length, total: nbItems.length, earned: nbEarned, possible: nbPossible, percent: nbPct },
       foundation: { inFoundation: inLevels.length > 0, levels, done: fDone, total: fTotal, percent: fPct },
       missing: { ...missing, count: missingCount },
-      overall: { percent: overall, level: levelOf(overall) }
+      overall: { percent: overall, level: levelOf(overall) },
+      compare
     });
   } catch (err) {
     logger.error({ err }, "GET teacher report student failed");

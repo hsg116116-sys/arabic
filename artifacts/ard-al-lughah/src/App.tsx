@@ -5214,19 +5214,31 @@ function TeacherReportPage() {
     setFileErr('');
     setFileLoading(true);
     jsonFetch(`/api/teacher/report/student/${id}`)
-      .then((d) => setFile(d))
+      .then((d) => {
+        setFile(d);
+        // الملف يظهر أسفل القائمة — ننزل إليه فوراً وإلا ظن الأستاذ أن الزر لا يعمل
+        window.setTimeout(() => {
+          document.querySelector('[data-testid="report-student-file"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 120);
+      })
       .catch((e: Error) => setFileErr(e?.message || 'تعذر فتح ملف الطالب'))
       .finally(() => setFileLoading(false));
   };
+  const [sortBy, setSortBy] = useState<'name' | 'overall' | 'missing'>('name');
 
   const students: any[] = Array.isArray(overview?.students) ? overview.students : [];
   const schools: string[] = Array.isArray(overview?.schools) && overview.schools.length ? overview.schools : [];
   const grades: string[] = Array.isArray(overview?.grades) && overview.grades.length ? overview.grades : [];
   const shown = useMemo(() => {
     const needle = String(q || '').trim();
-    if (!needle) return students;
-    return students.filter((s) => (s.name || '').includes(needle));
-  }, [students, q]);
+    const list = !needle ? [...students] : students.filter((s) => (s.name || '').includes(needle));
+    if (sortBy === 'overall') {
+      list.sort((a, b) => (typeof b.overall === 'number' ? b.overall : -1) - (typeof a.overall === 'number' ? a.overall : -1));
+    } else if (sortBy === 'missing') {
+      list.sort((a, b) => (Number(b.missing) || 0) - (Number(a.missing) || 0));
+    }
+    return list;
+  }, [students, q, sortBy]);
 
   const classAvg = useMemo(() => {
     const vals = students.map((s) => s.overall).filter((v): v is number => typeof v === 'number');
@@ -5261,15 +5273,34 @@ function TeacherReportPage() {
             <ReportPill key={g} active={grade === g} onClick={() => setGrade(grade === g ? '' : g)} label={g} />
           ))}
         </div>
-        <div className="relative">
-          <Search size={18} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="ابحث باسم الطالب..."
-            className={`${touchCls} pr-12`}
-            data-testid="input-report-search"
-          />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[200px] flex-1">
+            <Search size={18} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="ابحث باسم الطالب..."
+              className={`${touchCls} pr-12`}
+              data-testid="input-report-search"
+            />
+          </div>
+          <div className="flex shrink-0 gap-1.5 rounded-2xl border border-border bg-card p-1.5" data-testid="report-sort">
+            {([
+              { id: 'name', label: 'بالاسم' },
+              { id: 'overall', label: 'الأعلى علامة' },
+              { id: 'missing', label: 'الأكثر نواقص' },
+            ] as const).map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => setSortBy(o.id)}
+                data-testid={`button-sort-${o.id}`}
+                className={`rounded-xl px-3.5 py-2 text-xs font-extrabold transition-colors ${sortBy === o.id ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-primary'}`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -5385,6 +5416,35 @@ function ReportMini({ label, value, sub }: { label: string; value: string; sub: 
     </span>
   );
 }
+/* خلية مقارنة: علامة الطالب مقابل متوسط زملائه — فوق/تحت/مساوٍ */
+function CompareCell({ label, mine, avg, suffix = '' }: {
+  label: string; mine: number | null; avg: number | null; suffix?: string;
+}) {
+  if (mine === null && avg === null) {
+    return (
+      <span className="rounded-xl bg-background px-2 py-2 text-center">
+        <span className="block text-[10px] font-extrabold text-muted-foreground">{label}</span>
+        <span className="mt-0.5 block text-xs font-bold text-muted-foreground">—</span>
+      </span>
+    );
+  }
+  const diff = mine !== null && avg !== null ? mine - avg : null;
+  const tone = diff === null ? 'text-muted-foreground' : diff > 0 ? 'text-green-700' : diff < 0 ? 'text-destructive' : 'text-muted-foreground';
+  return (
+    <span className="rounded-xl bg-background px-2 py-2 text-center">
+      <span className="block text-[10px] font-extrabold text-muted-foreground">{label}</span>
+      <span className="mt-0.5 block text-[13px] font-extrabold tabular-nums text-primary">
+        {mine === null ? '—' : `${mine}${suffix}`}
+        <span className="font-bold text-muted-foreground"> / {avg === null ? '—' : `${avg}${suffix}`}</span>
+      </span>
+      {diff !== null ? (
+        <span className={`mt-0.5 block text-[10px] font-extrabold tabular-nums ${tone}`}>
+          {diff > 0 ? `▲ +${diff}` : diff < 0 ? `▼ ${diff}` : '＝ مساوٍ'}
+        </span>
+      ) : null}
+    </span>
+  );
+}
 
 /* ═══════════════ ملف الطالب: كل شيء عنه في شاشة واحدة ═══════════════ */
 function ReportStudentFile({ file, onClose, onView, onReload }: {
@@ -5421,6 +5481,23 @@ function ReportStudentFile({ file, onClose, onView, onReload }: {
           </button>
         </div>
       </div>
+
+      {/* مؤشرات الأقسام الأربعة */}
+      {/* المقارنة: الطالب مقابل متوسط زملائه (نفس الصف والمدرسة) */}
+      {file.compare && file.compare.count > 1 ? (
+        <div className="border-b border-border bg-secondary/30 px-4 py-3.5 sm:px-5" data-testid="report-compare">
+          <p className="mb-2.5 flex items-center gap-1.5 text-xs font-extrabold text-muted-foreground">
+            <UsersRound size={13} /> مقارنة مع متوسط {file.compare.count} طالب من نفس الصف والمدرسة
+          </p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            <CompareCell label="المجموع" mine={file.overall.percent} avg={file.compare.overall} />
+            <CompareCell label="اختبارات" mine={file.exams.avg} avg={file.compare.exams} suffix="%" />
+            <CompareCell label="واجبات" mine={file.homework.percent} avg={file.compare.homework} suffix="%" />
+            <CompareCell label="دفتر" mine={file.notebook.percent} avg={file.compare.notebook} suffix="%" />
+            <CompareCell label="تأسيس" mine={file.foundation.percent} avg={file.compare.foundation} suffix="%" />
+          </div>
+        </div>
+      ) : null}
 
       {/* مؤشرات الأقسام الأربعة */}
       <div className="grid grid-cols-2 gap-2.5 p-4 sm:p-5 lg:grid-cols-4">
