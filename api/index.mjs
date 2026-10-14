@@ -35268,12 +35268,13 @@ async function getWeeklyActivity() {
   }
   return days.map((d, i) => ({ label: ARABIC_DAY_LABELS[d.getDay()], value: counts[keys[i]] || 0 }));
 }
-async function getCompletedLessons(userId) {
+async function getCompletedLessons(userId, grade) {
   const [{ data: lessonsData }, { data: progressData }] = await Promise.all([
-    supabaseQuery("lessons?published=eq.true&select=id&limit=1000"),
-    supabaseQuery(`lesson_progress?user_id=eq.${userId}&select=lesson_id&limit=1000`)
+    supabaseQuery("lessons?published=eq.true&select=id,grade&limit=2000"),
+    supabaseQuery(`lesson_progress?user_id=eq.${userId}&select=lesson_id&limit=2000`)
   ]);
-  const total = lessonsData?.length || 0;
+  const rows = lessonsData || [];
+  const total = grade ? rows.filter((l) => !l.grade || l.grade === grade).length : rows.length;
   const completed = progressData?.length || 0;
   return { completed, total };
 }
@@ -35414,7 +35415,7 @@ router4.get("/student/dashboard", requireAuth, async (req, res) => {
       supabaseQuery("announcements?published=eq.true&order=published_at.desc&limit=5"),
       fetchBooksSafe(),
       supabaseQuery("platform_settings?select=*&limit=1"),
-      getCompletedLessons(activeStudent.id),
+      getCompletedLessons(activeStudent.id, activeStudent.grade),
       getCourseProgressMap(activeStudent.id)
     ]);
     const semester = settingsData?.[0]?.semester || "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644";
@@ -35428,7 +35429,11 @@ router4.get("/student/dashboard", requireAuth, async (req, res) => {
       pdfUrl: termBook.pdf_url
     } : null;
     const progressPercent = total > 0 ? Math.min(Math.round(completed / total * 100), 100) : 0;
-    const nextUp = (coursesData || []).map((c) => ({
+    const nextUp = (coursesData || []).filter((c) => {
+      if (activeStudent.grade && c.grade && c.grade !== activeStudent.grade) return false;
+      if (activeStudent.school && c.school && c.school !== activeStudent.school) return false;
+      return true;
+    }).map((c) => ({
       id: c.id,
       title: c.title,
       description: c.description || "",
@@ -35748,10 +35753,26 @@ router4.get("/assessments", async (req, res) => {
         duration: ass.duration || "",
         score: attempt?.score || 0,
         status: attempt ? attempt.status || "\u0645\u0643\u062A\u0645\u0644" : "\u0645\u062A\u0627\u062D \u0627\u0644\u0622\u0646",
-        date: ass.available_date || ""
+        date: ass.available_date || "",
+        grade: ass.grade || "",
+        section: ass.section || "",
+        school: ass.school || ""
       };
     });
-    res.json(ListAssessmentsResponse.parse(parsed));
+    let visible = parsed;
+    if (activeStudent) {
+      const { getStudentProfile: getStudentProfile2, getSplitMap: getSplitMap2, itemVisible: itemVisible2 } = await Promise.resolve().then(() => (init_curriculum(), curriculum_exports));
+      const [profile, splitMap] = await Promise.all([
+        getStudentProfile2(activeStudent.id),
+        getSplitMap2()
+      ]);
+      if (profile) {
+        visible = parsed.filter(
+          (a) => itemVisible2(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school)
+        );
+      }
+    }
+    res.json(ListAssessmentsResponse.parse(visible));
   } catch (err) {
     logger.error({ err }, "Error in GET /assessments");
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u062A\u0642\u064A\u064A\u0645\u0627\u062A" });

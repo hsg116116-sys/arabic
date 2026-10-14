@@ -3418,10 +3418,13 @@ function AssessmentsPage() {
     const params = new URLSearchParams({ grade: studentGrade, student: '1' });
     if (examsStudentId) params.set('student_id', examsStudentId);
     jsonFetch(`/api/curriculum/assessments?${params.toString()}`)
-      .then((d) => { if (Array.isArray(d) && d.length) setGradeExams(d); })
-      .catch(() => undefined);
+      // القائمة الفارغة نتيجة صحيحة (لا اختبارات لهذا الصف) — تُحفظ فارغة
+      // ولا نسقط على القائمة العامة التي تحوي كل الصفوف والمدارس.
+      .then((d) => { if (Array.isArray(d)) setGradeExams(d); })
+      .catch(() => setGradeExams([]));
   }, [studentGrade, examsStudentId]);
-  const examList = gradeExams || query.data;
+  // gradeExams أولاً دائماً (ولو فارغة) — والقائمة العامة احتياط التحميل فقط.
+  const examList = gradeExams ?? query.data;
   const [activeQuiz, setActiveQuiz] = useState<any | null>(null);
 
   return (

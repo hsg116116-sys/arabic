@@ -141,13 +141,18 @@ async function getWeeklyActivity(): Promise<{ label: string; value: number }[]> 
   return days.map((d, i) => ({ label: ARABIC_DAY_LABELS[d.getDay()], value: counts[keys[i]] || 0 }));
 }
 
-/** إجمالي الدروس المكتملة لطالب معين (lesson_progress) */
-async function getCompletedLessons(userId: string): Promise<{ completed: number; total: number }> {
+/** إجمالي الدروس المكتملة لطالب معين (lesson_progress) — المقارنة على صفه
+ *  فقط: طالب الثامن يُقارَن بدروس الثامن لا بكل دروس المنصة. الدرس بلا صف
+ *  يُحتسب للكل (توافق مع بيانات قديمة). */
+async function getCompletedLessons(userId: string, grade?: string): Promise<{ completed: number; total: number }> {
   const [{ data: lessonsData }, { data: progressData }] = await Promise.all([
-    supabaseQuery<any[]>("lessons?published=eq.true&select=id&limit=1000"),
-    supabaseQuery<any[]>(`lesson_progress?user_id=eq.${userId}&select=lesson_id&limit=1000`),
+    supabaseQuery<any[]>("lessons?published=eq.true&select=id,grade&limit=2000"),
+    supabaseQuery<any[]>(`lesson_progress?user_id=eq.${userId}&select=lesson_id&limit=2000`),
   ]);
-  const total = lessonsData?.length || 0;
+  const rows = lessonsData || [];
+  const total = grade
+    ? rows.filter((l: any) => !l.grade || l.grade === grade).length
+    : rows.length;
   const completed = progressData?.length || 0;
   return { completed, total };
 }
@@ -318,7 +323,7 @@ router.get("/student/dashboard", requireAuth, async (req, res) => {
         supabaseQuery<any[]>("announcements?published=eq.true&order=published_at.desc&limit=5"),
         fetchBooksSafe(),
         supabaseQuery<any[]>("platform_settings?select=*&limit=1"),
-        getCompletedLessons(activeStudent.id),
+        getCompletedLessons(activeStudent.id, activeStudent.grade),
         getCourseProgressMap(activeStudent.id),
       ]);
 
@@ -337,16 +342,24 @@ router.get("/student/dashboard", requireAuth, async (req, res) => {
 
     const progressPercent = total > 0 ? Math.min(Math.round((completed / total) * 100), 100) : 0;
 
-    const nextUp = (coursesData || []).map((c) => ({
-      id: c.id,
-      title: c.title,
-      description: c.description || "",
-      lessons: c.lessons_count || 0,
-      duration: c.duration || "",
-      progress: courseProgressMap[c.id] || 0,
-      color: c.color || "#a85d3d",
-      icon: c.icon || "book-open",
-    }));
+    const nextUp = (coursesData || [])
+      // لوحة الطالب تعرض وحدات صفه ومدرسته فقط — لا وحدات الصفوف الأخرى.
+      // (بلا صف في الملف نعرض الكل كما كان، حتى لا تفرغ اللوحة فجأة)
+      .filter((c: any) => {
+        if (activeStudent.grade && c.grade && c.grade !== activeStudent.grade) return false;
+        if (activeStudent.school && c.school && c.school !== activeStudent.school) return false;
+        return true;
+      })
+      .map((c: any) => ({
+        id: c.id,
+        title: c.title,
+        description: c.description || "",
+        lessons: c.lessons_count || 0,
+        duration: c.duration || "",
+        progress: courseProgressMap[c.id] || 0,
+        color: c.color || "#a85d3d",
+        icon: c.icon || "book-open",
+      }));
 
     const announcements = (announcementsData || []).map((a) => ({
       id: a.id,
@@ -703,10 +716,29 @@ router.get("/assessments", async (req, res) => {
         score: attempt?.score || 0,
         status: attempt ? (attempt.status || "مكتمل") : "متاح الآن",
         date: ass.available_date || "",
+        grade: ass.grade || "",
+        section: ass.section || "",
+        school: ass.school || "",
       };
     });
 
-    res.json(ListAssessmentsResponse.parse(parsed));
+    // قائمة الطالب = اختبارات صفه ومدرسته فقط — لا اختبارات الصفوف الأخرى.
+    // (بلا ملف طالب، كالأدمن، تُعرض الكل كما كانت)
+    let visible = parsed;
+    if (activeStudent) {
+      const { getStudentProfile, getSplitMap, itemVisible } = await import("./curriculum");
+      const [profile, splitMap] = await Promise.all([
+        getStudentProfile(activeStudent.id),
+        getSplitMap(),
+      ]);
+      if (profile) {
+        visible = parsed.filter((a) =>
+          itemVisible(a.grade, a.section, profile!.grade, profile!.gender, splitMap, a.school, profile!.school),
+        );
+      }
+    }
+
+    res.json(ListAssessmentsResponse.parse(visible));
   } catch (err: any) {
     logger.error({ err }, "Error in GET /assessments");
     res.status(500).json({ error: "تعذر جلب التقييمات" });
