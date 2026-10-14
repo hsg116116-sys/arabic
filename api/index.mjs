@@ -245,7 +245,7 @@ var require_ms = __commonJS({
 // ../../node_modules/.pnpm/debug@4.4.3/node_modules/debug/src/common.js
 var require_common = __commonJS({
   "../../node_modules/.pnpm/debug@4.4.3/node_modules/debug/src/common.js"(exports, module) {
-    function setup(env) {
+    function setup(env2) {
       createDebug.debug = createDebug;
       createDebug.default = createDebug;
       createDebug.coerce = coerce;
@@ -254,8 +254,8 @@ var require_common = __commonJS({
       createDebug.enabled = enabled;
       createDebug.humanize = require_ms();
       createDebug.destroy = destroy;
-      Object.keys(env).forEach((key) => {
-        createDebug[key] = env[key];
+      Object.keys(env2).forEach((key) => {
+        createDebug[key] = env2[key];
       });
       createDebug.names = [];
       createDebug.skips = [];
@@ -18618,8 +18618,8 @@ var require_escape_html = __commonJS({
   "../../node_modules/.pnpm/escape-html@1.0.3/node_modules/escape-html/index.js"(exports, module) {
     "use strict";
     var matchHtmlRegExp = /["'&<>]/;
-    module.exports = escapeHtml2;
-    function escapeHtml2(string) {
+    module.exports = escapeHtml;
+    function escapeHtml(string) {
       var str = "" + string;
       var match = matchHtmlRegExp.exec(str);
       if (!match) {
@@ -18750,19 +18750,19 @@ var require_finalhandler = __commonJS({
     "use strict";
     var debug = require_src()("finalhandler");
     var encodeUrl = require_encodeurl();
-    var escapeHtml2 = require_escape_html();
+    var escapeHtml = require_escape_html();
     var onFinished = require_on_finished();
     var parseUrl = require_parseurl();
     var statuses = require_statuses();
     var isFinished = onFinished.isFinished;
     function createHtmlDocument(message) {
-      var body = escapeHtml2(message).replaceAll("\n", "<br>").replaceAll("  ", " &nbsp;");
+      var body = escapeHtml(message).replaceAll("\n", "<br>").replaceAll("  ", " &nbsp;");
       return '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>Error</title>\n</head>\n<body>\n<pre>' + body + "</pre>\n</body>\n</html>\n";
     }
     module.exports = finalhandler;
     function finalhandler(req, res, options) {
       var opts = options || {};
-      var env = opts.env || process.env.NODE_ENV || "development";
+      var env2 = opts.env || process.env.NODE_ENV || "development";
       var onerror = opts.onerror;
       return function(err) {
         var headers;
@@ -18779,7 +18779,7 @@ var require_finalhandler = __commonJS({
           } else {
             headers = getErrorHeaders(err);
           }
-          msg = getErrorMessage(err, status, env);
+          msg = getErrorMessage(err, status, env2);
         } else {
           status = 404;
           msg = "Cannot " + req.method + " " + encodeUrl(getResourceName(req));
@@ -18804,9 +18804,9 @@ var require_finalhandler = __commonJS({
       }
       return { ...err.headers };
     }
-    function getErrorMessage(err, status, env) {
+    function getErrorMessage(err, status, env2) {
       var msg;
-      if (env !== "production") {
+      if (env2 !== "production") {
         msg = err.stack;
         if (!msg && typeof err.toString === "function") {
           msg = err.toString();
@@ -21228,10 +21228,10 @@ var require_application = __commonJS({
       });
     };
     app2.defaultConfiguration = function defaultConfiguration() {
-      var env = process.env.NODE_ENV || "development";
+      var env2 = process.env.NODE_ENV || "development";
       this.enable("x-powered-by");
       this.set("etag", "weak");
-      this.set("env", env);
+      this.set("env", env2);
       this.set("query parser", "simple");
       this.set("subdomain offset", 2);
       this.set("trust proxy", false);
@@ -21239,7 +21239,7 @@ var require_application = __commonJS({
         configurable: true,
         value: true
       });
-      debug("booting in %s mode", env);
+      debug("booting in %s mode", env2);
       this.on("mount", function onmount(parent) {
         if (this.settings[trustProxyDefaultSymbol] === true && typeof parent.settings["trust proxy fn"] === "function") {
           delete this.settings["trust proxy"];
@@ -21256,7 +21256,7 @@ var require_application = __commonJS({
       this.set("view", View);
       this.set("views", resolve2("views"));
       this.set("jsonp callback name", "callback");
-      if (env === "production") {
+      if (env2 === "production") {
         this.enable("view cache");
       }
     };
@@ -22224,10 +22224,10 @@ var require_request = __commonJS({
       return addrs;
     });
     defineGetter(req, "subdomains", function subdomains() {
-      var hostname2 = this.hostname;
-      if (!hostname2) return [];
+      var hostname = this.hostname;
+      if (!hostname) return [];
       var offset = this.app.get("subdomain offset");
-      var subdomains2 = !isIP(hostname2) ? hostname2.split(".").reverse() : [hostname2];
+      var subdomains2 = !isIP(hostname) ? hostname.split(".").reverse() : [hostname];
       return subdomains2.slice(offset);
     });
     defineGetter(req, "path", function path() {
@@ -22243,7 +22243,7 @@ var require_request = __commonJS({
       }
       return val || void 0;
     });
-    defineGetter(req, "hostname", function hostname2() {
+    defineGetter(req, "hostname", function hostname() {
       var host = this.host;
       if (!host) return;
       var offset = host[0] === "[" ? host.indexOf("]") + 1 : 0;
@@ -22680,7 +22680,7 @@ var require_send = __commonJS({
     var createError = require_http_errors();
     var debug = require_src()("send");
     var encodeUrl = require_encodeurl();
-    var escapeHtml2 = require_escape_html();
+    var escapeHtml = require_escape_html();
     var etag = require_etag();
     var fresh = require_fresh();
     var fs = __require("fs");
@@ -22733,7 +22733,7 @@ var require_send = __commonJS({
       }
       var res = this.res;
       var msg = statuses.message[status] || String(status);
-      var doc = createHtmlDocument("Error", escapeHtml2(msg));
+      var doc = createHtmlDocument("Error", escapeHtml(msg));
       clearHeaders(res);
       if (err && err.headers) {
         setHeaders(res, err.headers);
@@ -22833,7 +22833,7 @@ var require_send = __commonJS({
         return;
       }
       var loc = encodeUrl(collapseLeadingSlashes(this.path + "/"));
-      var doc = createHtmlDocument("Redirecting", "Redirecting to " + escapeHtml2(loc));
+      var doc = createHtmlDocument("Redirecting", "Redirecting to " + escapeHtml(loc));
       res.statusCode = 301;
       res.setHeader("Content-Type", "text/html; charset=UTF-8");
       res.setHeader("Content-Length", Buffer.byteLength(doc));
@@ -23237,7 +23237,7 @@ var require_response = __commonJS({
     var createError = require_http_errors();
     var deprecate = require_depd()("express");
     var encodeUrl = require_encodeurl();
-    var escapeHtml2 = require_escape_html();
+    var escapeHtml = require_escape_html();
     var http = __require("node:http");
     var onFinished = require_on_finished();
     var mime = require_mime_types();
@@ -23576,7 +23576,7 @@ var require_response = __commonJS({
           body = statuses.message[status] + ". Redirecting to " + address;
         },
         html: function() {
-          var u = escapeHtml2(address);
+          var u = escapeHtml(address);
           body = "<p>" + statuses.message[status] + ". Redirecting to " + u + "</p>";
         },
         default: function() {
@@ -23704,7 +23704,7 @@ var require_serve_static = __commonJS({
   "../../node_modules/.pnpm/serve-static@2.2.1/node_modules/serve-static/index.js"(exports, module) {
     "use strict";
     var encodeUrl = require_encodeurl();
-    var escapeHtml2 = require_escape_html();
+    var escapeHtml = require_escape_html();
     var parseUrl = require_parseurl();
     var resolve2 = __require("path").resolve;
     var send = require_send();
@@ -23790,7 +23790,7 @@ var require_serve_static = __commonJS({
         originalUrl.path = null;
         originalUrl.pathname = collapseLeadingSlashes(originalUrl.pathname + "/");
         var loc = encodeUrl(url.format(originalUrl));
-        var doc = createHtmlDocument("Redirecting", "Redirecting to " + escapeHtml2(loc));
+        var doc = createHtmlDocument("Redirecting", "Redirecting to " + escapeHtml(loc));
         res.statusCode = 301;
         res.setHeader("Content-Type", "text/html; charset=UTF-8");
         res.setHeader("Content-Length", Buffer.byteLength(doc));
@@ -23954,7 +23954,7 @@ var require_lib3 = __commonJS({
         }
       }
       function configureOrigin(options, req) {
-        var requestOrigin = req.headers.origin, headers = [], isAllowed;
+        var requestOrigin2 = req.headers.origin, headers = [], isAllowed;
         if (!options.origin || options.origin === "*") {
           headers.push([{
             key: "Access-Control-Allow-Origin",
@@ -23970,10 +23970,10 @@ var require_lib3 = __commonJS({
             value: "Origin"
           }]);
         } else {
-          isAllowed = isOriginAllowed(requestOrigin, options.origin);
+          isAllowed = isOriginAllowed(requestOrigin2, options.origin);
           headers.push([{
             key: "Access-Control-Allow-Origin",
-            value: isAllowed ? requestOrigin : false
+            value: isAllowed ? requestOrigin2 : false
           }]);
           headers.push([{
             key: "Vary",
@@ -28398,7 +28398,7 @@ var require_pino = __commonJS({
     } = symbols;
     var { epochTime, nullTime } = time;
     var { pid } = process;
-    var hostname2 = os.hostname();
+    var hostname = os.hostname();
     var defaultErrorSerializer = stdSerializers.err;
     var defaultOptions = {
       level: "info",
@@ -28408,7 +28408,7 @@ var require_pino = __commonJS({
       errorKey: "err",
       nestedKey: null,
       enabled: true,
-      base: { pid, hostname: hostname2 },
+      base: { pid, hostname },
       serializers: Object.assign(/* @__PURE__ */ Object.create(null), {
         err: defaultErrorSerializer
       }),
@@ -28830,40 +28830,6 @@ var init_logger = __esm({
 });
 
 // src/lib/supabase.ts
-async function getSupabaseUser(accessToken) {
-  if (!accessToken) return null;
-  const now = Date.now();
-  const hit = userCache.get(accessToken);
-  if (hit && now - hit.at < USER_CACHE_TTL) return hit.user;
-  try {
-    const res = await fetch(
-      `${SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/user`,
-      {
-        headers: {
-          apikey: SERVICE_ROLE,
-          Authorization: `Bearer ${accessToken}`
-        }
-      }
-    );
-    if (!res.ok) {
-      userCache.delete(accessToken);
-      return null;
-    }
-    const data = await res.json();
-    const user = data && typeof data === "object" ? data : null;
-    if (user) {
-      if (userCache.size >= USER_CACHE_MAX) {
-        const oldest = userCache.keys().next();
-        if (!oldest.done) userCache.delete(oldest.value);
-      }
-      userCache.set(accessToken, { user, at: now });
-    }
-    return user;
-  } catch (err) {
-    logger.error({ err }, "getSupabaseUser failed");
-    return null;
-  }
-}
 async function supabaseQuery(endpoint, options = {}) {
   try {
     const url = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/${endpoint.replace(/^\/+/, "")}`;
@@ -28899,7 +28865,7 @@ async function supabaseQuery(endpoint, options = {}) {
     return { data: null, error: err.message };
   }
 }
-var SUPABASE_URL, SERVICE_ROLE, baseHeaders, userCache, USER_CACHE_TTL, USER_CACHE_MAX;
+var SUPABASE_URL, SERVICE_ROLE, baseHeaders;
 var init_supabase = __esm({
   "src/lib/supabase.ts"() {
     "use strict";
@@ -28911,101 +28877,396 @@ var init_supabase = __esm({
       apikey: SERVICE_ROLE,
       Authorization: `Bearer ${SERVICE_ROLE}`
     };
+  }
+});
+
+// src/lib/kinde.ts
+import {
+  createHash,
+  createPublicKey,
+  createVerify,
+  randomBytes
+} from "node:crypto";
+function env(...names) {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value && value.trim()) return value.trim();
+  }
+  return "";
+}
+function kindeIssuer() {
+  return (env("KINDE_ISSUER_URL", "KINDE_DOMAIN") || "https://arabic.kinde.com").replace(/\/+$/, "");
+}
+function readKindeConfig(req) {
+  const issuer = kindeIssuer();
+  const origin = requestOrigin(req);
+  const redirectUri = env("KINDE_REDIRECT_URI") || `${origin}/callback`;
+  const siteUrl = env("KINDE_SITE_URL") || origin;
+  const logoutRedirectUri = env("KINDE_LOGOUT_REDIRECT_URI", "KINDE_POST_LOGOUT_REDIRECT_URL") || siteUrl;
+  return {
+    issuer,
+    domain: issuer,
+    clientId: env("KINDE_CLIENT_ID"),
+    clientSecret: env("KINDE_CLIENT_SECRET"),
+    redirectUri,
+    siteUrl,
+    logoutRedirectUri
+  };
+}
+function isKindeConfigured(cfg) {
+  return Boolean(cfg.clientId && cfg.clientSecret && cfg.redirectUri);
+}
+function requestOrigin(req) {
+  const fallback = env("KINDE_SITE_URL") || "http://localhost:3000";
+  if (!req) return fallback.replace(/\/+$/, "");
+  const headers = req.headers || {};
+  const origin = String(headers.origin || "").trim();
+  if (/^https?:\/\//i.test(origin)) return origin.replace(/\/+$/, "");
+  const xfProto = String(headers["x-forwarded-proto"] || "").split(",")[0].trim();
+  const xfHost = String(headers["x-forwarded-host"] || "").split(",")[0].trim();
+  const host = xfHost || String(headers.host || "");
+  if (!host) return fallback.replace(/\/+$/, "");
+  const proto = xfProto || req.protocol || "http";
+  return `${proto}://${host}`;
+}
+function base64Url(input) {
+  return input.toString("base64url");
+}
+function createPkce() {
+  const verifier = base64Url(randomBytes(48));
+  const challenge = createHash("sha256").update(verifier).digest("base64url");
+  return { verifier, challenge };
+}
+function createState() {
+  return base64Url(randomBytes(24));
+}
+function cookieBase() {
+  return {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/"
+  };
+}
+function setSessionCookies(res, tokens) {
+  res.cookie(ACCESS_COOKIE, tokens.accessToken, {
+    ...cookieBase(),
+    maxAge: ACCESS_MAX_AGE_MS
+  });
+  if (tokens.refreshToken) {
+    res.cookie(REFRESH_COOKIE, tokens.refreshToken, {
+      ...cookieBase(),
+      maxAge: REFRESH_MAX_AGE_MS
+    });
+  }
+}
+function clearSessionCookies(res) {
+  res.clearCookie(ACCESS_COOKIE, { path: "/" });
+  res.clearCookie(REFRESH_COOKIE, { path: "/" });
+  res.clearCookie(VERIFIER_COOKIE, { path: "/" });
+  res.clearCookie(STATE_COOKIE, { path: "/" });
+}
+function setPkceCookies(res, verifier, state) {
+  res.cookie(VERIFIER_COOKIE, verifier, { ...cookieBase(), maxAge: VERIFIER_MAX_AGE_MS });
+  res.cookie(STATE_COOKIE, state, { ...cookieBase(), maxAge: VERIFIER_MAX_AGE_MS });
+}
+function readPkceCookies(req) {
+  const cookies = req.cookies || {};
+  return {
+    verifier: String(cookies[VERIFIER_COOKIE] || ""),
+    state: String(cookies[STATE_COOKIE] || "")
+  };
+}
+async function tokenRequest(cfg, body) {
+  const payload = new URLSearchParams({
+    client_id: cfg.clientId,
+    client_secret: cfg.clientSecret,
+    ...body
+  });
+  const response = await fetch(`${cfg.issuer}/oauth2/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: payload.toString()
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.access_token) {
+    throw new KindeError(
+      `\u062A\u0639\u0630\u0651\u0631 \u0627\u0644\u062D\u0635\u0648\u0644 \u0639\u0644\u0649 \u062A\u0648\u0643\u0646 \u0645\u0646 Kinde (${response.status}): ${data.error_description || data.error || response.statusText}`,
+      502
+    );
+  }
+  return {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token,
+    idToken: data.id_token,
+    expiresIn: data.expires_in
+  };
+}
+async function exchangeCode(cfg, code, verifier) {
+  return tokenRequest(cfg, {
+    grant_type: "authorization_code",
+    code,
+    code_verifier: verifier,
+    redirect_uri: cfg.redirectUri
+  });
+}
+async function refreshSession(cfg, refreshToken) {
+  return tokenRequest(cfg, {
+    grant_type: "refresh_token",
+    refresh_token: refreshToken
+  });
+}
+async function loadJwks(cfg, force = false) {
+  const now = Date.now();
+  if (!force && jwksCache && now - jwksCache.at < JWKS_TTL_MS) return jwksCache.keys;
+  const response = await fetch(`${cfg.issuer}/.well-known/jwks`, {
+    headers: { Accept: "application/json" }
+  });
+  if (!response.ok) {
+    throw new KindeError(`\u062A\u0639\u0630\u0651\u0631 \u062A\u062D\u0645\u064A\u0644 \u0645\u0641\u0627\u062A\u064A\u062D \u062A\u0648\u0642\u064A\u0639 Kinde (${response.status})`, 502);
+  }
+  const body = await response.json().catch(() => ({}));
+  const keys = /* @__PURE__ */ new Map();
+  for (const jwk of body.keys || []) {
+    if (jwk.kty !== "RSA" || !jwk.kid || !jwk.n || !jwk.e) continue;
+    try {
+      keys.set(jwk.kid, createPublicKey({ key: { ...jwk, alg: "RS256" }, format: "jwk" }));
+    } catch {
+    }
+  }
+  if (!keys.size) throw new KindeError("\u0644\u0645 \u064A\u0637\u0651\u0644\u0639 Kinde \u0639\u0644\u0649 \u0623\u064A \u0645\u0641\u062A\u0627\u062D \u062A\u0648\u0642\u064A\u0639 \u0635\u0627\u0644\u062D", 502);
+  jwksCache = { keys, at: now };
+  return keys;
+}
+function decodeSegment(segment) {
+  try {
+    const json = Buffer.from(segment, "base64url").toString("utf8");
+    const parsed = JSON.parse(json);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+async function verifyAccessToken(token, cfg) {
+  if (!token || typeof token !== "string") return null;
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [rawHeader, rawPayload, rawSignature] = parts;
+  const header = decodeSegment(rawHeader);
+  const claims = decodeSegment(rawPayload);
+  if (!header || !claims) return null;
+  if (String(header.alg || "") !== "RS256") return null;
+  const config = cfg || readKindeConfig();
+  if (!config.clientId) return null;
+  const kid = String(header.kid || "");
+  let keys = await loadJwks(config);
+  let key = kid ? keys.get(kid) : void 0;
+  if (!key) {
+    keys = await loadJwks(config, true);
+    key = kid ? keys.get(kid) : void 0;
+  }
+  if (!key) return null;
+  try {
+    const valid = createVerify("RSA-SHA256").update(`${rawHeader}.${rawPayload}`).verify(key, Buffer.from(rawSignature, "base64url"));
+    if (!valid) return null;
+  } catch (err) {
+    logger.warn({ err }, "Kinde token signature check failed");
+    return null;
+  }
+  const issuer = config.issuer.replace(/\/+$/, "");
+  if (claims.iss && String(claims.iss).replace(/\/+$/, "") !== issuer) return null;
+  const aud = claims.aud;
+  const audMatches = Array.isArray(aud) ? aud.some((a) => String(a) === config.clientId) : String(aud || "") === config.clientId;
+  if (aud !== void 0 && !audMatches) return null;
+  if (typeof claims.exp === "number" && claims.exp * 1e3 <= Date.now()) return null;
+  const sub = String(claims.sub || "");
+  return sub ? { ...claims, sub } : null;
+}
+async function fetchKindeUser(accessToken, cfg) {
+  if (!accessToken) return null;
+  const now = Date.now();
+  const hit = userCache.get(accessToken);
+  if (hit && now - hit.at < USER_CACHE_TTL_MS) return hit.user;
+  const config = cfg || readKindeConfig();
+  try {
+    const response = await fetch(`${config.issuer}/oauth2/v2/user_profile`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json"
+      }
+    });
+    if (!response.ok) return null;
+    const raw = await response.json().catch(() => ({}));
+    const id = String(raw.id || raw.sub || "");
+    if (!id) return null;
+    const givenName = String(raw.given_name || "");
+    const familyName = String(raw.family_name || "");
+    const fullName = String(raw.name || `${givenName} ${familyName}`.trim()).trim();
+    const user = {
+      id,
+      email: String(raw.email || "").trim().toLowerCase(),
+      fullName,
+      givenName,
+      familyName,
+      picture: String(raw.picture || "")
+    };
+    if (userCache.size >= USER_CACHE_MAX) {
+      const oldest = userCache.keys().next();
+      if (!oldest.done) userCache.delete(oldest.value);
+    }
+    userCache.set(accessToken, { user, at: now });
+    return user;
+  } catch (err) {
+    logger.warn({ err }, "fetchKindeUser failed");
+    return null;
+  }
+}
+async function resolveKindeIdentity(accessToken, cfg) {
+  const config = cfg || readKindeConfig();
+  const claims = await verifyAccessToken(accessToken, config);
+  if (!claims) return null;
+  const user = await fetchKindeUser(accessToken, config);
+  if (!user) return null;
+  return { claims, user };
+}
+function buildAuthorizeUrl(cfg, challenge, state) {
+  const url = new URL(`${cfg.issuer}/oauth2/auth`);
+  url.searchParams.set("client_id", cfg.clientId);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("redirect_uri", cfg.redirectUri);
+  url.searchParams.set("scope", "openid profile email offline");
+  url.searchParams.set("code_challenge", challenge);
+  url.searchParams.set("code_challenge_method", "S256");
+  url.searchParams.set("state", state);
+  return url.toString();
+}
+function buildLogoutUrl(cfg) {
+  const url = new URL(`${cfg.issuer}/logout`);
+  url.searchParams.set("redirect", cfg.logoutRedirectUri);
+  return url.toString();
+}
+function describeKindeSetup() {
+  const cfg = readKindeConfig();
+  return `issuer=${cfg.issuer || "-"} client=${cfg.clientId ? "\u0645\u0648\u062C\u0648\u062F" : "\u0645\u0641\u0642\u0648\u062F"} secret=${cfg.clientSecret ? "\u0645\u0648\u062C\u0648\u062F" : "\u0645\u0641\u0642\u0648\u062F"} redirect=${cfg.redirectUri || "-"}`;
+}
+var ACCESS_COOKIE, REFRESH_COOKIE, VERIFIER_COOKIE, STATE_COOKIE, ACCESS_MAX_AGE_MS, REFRESH_MAX_AGE_MS, VERIFIER_MAX_AGE_MS, KindeError, jwksCache, JWKS_TTL_MS, userCache, USER_CACHE_TTL_MS, USER_CACHE_MAX;
+var init_kinde = __esm({
+  "src/lib/kinde.ts"() {
+    "use strict";
+    init_logger();
+    ACCESS_COOKIE = "kinde_access_token";
+    REFRESH_COOKIE = "kinde_refresh_token";
+    VERIFIER_COOKIE = "kinde_pkce_verifier";
+    STATE_COOKIE = "kinde_oauth_state";
+    ACCESS_MAX_AGE_MS = 60 * 60 * 1e3;
+    REFRESH_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1e3;
+    VERIFIER_MAX_AGE_MS = 10 * 60 * 1e3;
+    KindeError = class extends Error {
+      status;
+      constructor(message, status = 502) {
+        super(message);
+        this.name = "KindeError";
+        this.status = status;
+      }
+    };
+    jwksCache = null;
+    JWKS_TTL_MS = 60 * 60 * 1e3;
     userCache = /* @__PURE__ */ new Map();
-    USER_CACHE_TTL = 60 * 1e3;
+    USER_CACHE_TTL_MS = 60 * 1e3;
     USER_CACHE_MAX = 2e3;
   }
 });
 
 // src/middlewares/auth.ts
+function cookiesOf(req) {
+  return req.cookies || {};
+}
 async function trySilentRefresh(req, res) {
   try {
-    const refreshToken = req?.cookies?.supabase_refresh_token;
-    if (typeof refreshToken !== "string" || !refreshToken) return null;
-    const base = (process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co").replace(/\/+$/, "");
-    const key = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SECRET_KEY || "sb_publishable_kPG7zfG0FFZpRTkNnHhO1Q_oXoOq8fg";
-    const response = await fetch(`${base}/auth/v1/token?grant_type=refresh_token`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: key,
-        Authorization: `Bearer ${key}`
-      },
-      body: JSON.stringify({ refresh_token: refreshToken })
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || typeof data.access_token !== "string") return null;
-    const secure = process.env.NODE_ENV === "production";
-    if (typeof data.access_token === "string") {
-      res.cookie("supabase_access_token", data.access_token, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure,
-        path: "/",
-        maxAge: 60 * 60 * 1e3
-      });
-    }
-    if (typeof data.refresh_token === "string") {
-      res.cookie("supabase_refresh_token", data.refresh_token, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure,
-        path: "/",
-        maxAge: 30 * 24 * 60 * 60 * 1e3
-      });
-    }
-    return data.access_token;
+    const refreshToken = String(cookiesOf(req)[REFRESH_COOKIE] || "");
+    if (!refreshToken) return null;
+    const cfg = readKindeConfig(req);
+    if (!cfg.clientId || !cfg.clientSecret) return null;
+    const tokens = await refreshSession(cfg, refreshToken);
+    if (res) setSessionCookies(res, tokens);
+    return tokens.accessToken;
   } catch (err) {
-    logger.warn({ err }, "Middleware silent refresh failed");
+    logger.warn({ err }, "Kinde silent refresh failed");
     return null;
   }
 }
+async function findProfileByAuthId(authId, email) {
+  if (!authId) return null;
+  const byAuth = await supabaseQuery(
+    `profiles?auth_id=eq.${encodeURIComponent(authId)}&select=${PROFILE_COLUMNS}&limit=1`
+  );
+  if (byAuth.data?.[0]) return byAuth.data[0];
+  if (!email) return null;
+  const byEmail = await supabaseQuery(
+    `profiles?email=eq.${encodeURIComponent(email)}&select=${PROFILE_COLUMNS}&limit=1`
+  );
+  const match = byEmail.data?.[0];
+  if (!match) return null;
+  const linked = await supabaseQuery(
+    `profiles?id=eq.${encodeURIComponent(match.id)}`,
+    { method: "PATCH", body: { auth_id: authId } }
+  );
+  if (linked.error) {
+    logger.warn({ error: linked.error }, "Failed to link auth_id to existing profile");
+    return match;
+  }
+  return { ...match, auth_id: authId };
+}
+function toAuthInfo(profile, authId) {
+  const gender = profile.gender === "\u0637\u0627\u0644\u0628" || profile.gender === "\u0637\u0627\u0644\u0628\u0629" ? profile.gender : null;
+  return {
+    userId: String(profile.id),
+    authId,
+    email: profile.email || "",
+    role: profile.role || "student",
+    grade: profile.grade || "",
+    gender
+  };
+}
 async function resolveAuth(req, res) {
   try {
-    let token = req?.cookies?.supabase_access_token;
-    if (!token && res) {
-      const refreshed = await trySilentRefresh(req, res);
-      if (refreshed) token = refreshed;
-    }
+    let token = String(cookiesOf(req)[ACCESS_COOKIE] || "");
+    if (!token && res) token = await trySilentRefresh(req, res) || "";
     if (!token) return null;
-    const user = await getSupabaseUser(token);
-    if ((!user || !user?.id) && res) {
+    let identity = await resolveKindeIdentity(token);
+    if (!identity && res) {
       const refreshed = await trySilentRefresh(req, res);
       if (refreshed) {
-        const retry = await getSupabaseUser(refreshed);
-        if (retry?.id) {
-          req.cookies = { ...req?.cookies || {}, supabase_access_token: refreshed };
-          return await resolveAuth(req);
+        identity = await resolveKindeIdentity(refreshed);
+        if (identity) {
+          req.cookies = {
+            ...cookiesOf(req),
+            [ACCESS_COOKIE]: refreshed
+          };
+          token = refreshed;
         }
       }
+    }
+    if (!identity) {
+      if (res) clearSessionCookies(res);
       return null;
     }
-    const userId = String(user?.id || "");
-    if (!userId) return null;
-    const { data } = await supabaseQuery(
-      `profiles?id=eq.${encodeURIComponent(userId)}&select=id,email,role,grade,gender&limit=1`
-    );
-    const profile = data?.[0];
+    const profile = await findProfileByAuthId(identity.claims.sub, identity.user.email);
     if (!profile) return null;
-    const gender = profile.gender === "\u0637\u0627\u0644\u0628" || profile.gender === "\u0637\u0627\u0644\u0628\u0629" ? profile.gender : null;
-    return {
-      userId: profile.id,
-      email: profile.email || "",
-      role: profile.role || "student",
-      grade: profile.grade || "",
-      gender
-    };
+    return toAuthInfo(profile, identity.claims.sub);
   } catch (err) {
     logger.warn({ err }, "resolveAuth failed");
     return null;
   }
 }
-var requireAuth, requireAdmin;
+var PROFILE_COLUMNS, requireAuth, requireAdmin;
 var init_auth = __esm({
   "src/middlewares/auth.ts"() {
     "use strict";
     init_supabase();
+    init_kinde();
     init_logger();
+    PROFILE_COLUMNS = "id,auth_id,email,role,grade,gender,full_name,avatar_url";
     requireAuth = async (req, res, next) => {
       const auth = await resolveAuth(req, res);
       if (!auth) {
@@ -35170,22 +35431,19 @@ var health_default = router;
 // src/routes/platform.ts
 var import_express4 = __toESM(require_express2(), 1);
 init_supabase();
+init_kinde();
 init_auth();
 init_logger();
 init_study();
 var router4 = (0, import_express4.Router)();
-var SUPABASE_URL2 = process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co";
-function serviceKey() {
-  return process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || "";
-}
 async function getAdminEmails() {
   const list = [];
   const push = (v) => {
     const s = String(v || "").trim().toLowerCase();
     if (s && s.includes("@") && !list.includes(s)) list.push(s);
   };
-  const env = process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || "";
-  for (const e of env.split(",")) push(e);
+  const env2 = process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || "";
+  for (const e of env2.split(",")) push(e);
   try {
     const { data } = await supabaseQuery("platform_settings?select=admin_email&limit=1");
     push(data?.[0]?.admin_email);
@@ -35196,14 +35454,9 @@ async function getAdminEmails() {
 async function resolveProfileFromSession(accessToken) {
   if (!accessToken) return null;
   try {
-    const user = await getSupabaseUser(accessToken);
+    const user = await fetchKindeUser(String(accessToken));
     if (!user) return null;
-    const userId = String(user.id ?? "");
-    if (!userId) return null;
-    const { data } = await supabaseQuery(
-      `profiles?select=*&id=eq.${userId}&limit=1`
-    );
-    return data?.[0] || null;
+    return await findProfileByAuthId(user.id, user.email) || null;
   } catch (err) {
     logger.error({ err }, "resolveProfileFromSession failed");
     return null;
@@ -35220,9 +35473,7 @@ async function getActiveStudent(req) {
     } catch {
     }
   }
-  const sessionProfile = await resolveProfileFromSession(
-    req?.cookies?.supabase_access_token
-  );
+  const sessionProfile = await resolveProfileFromSession(req?.cookies?.[ACCESS_COOKIE]);
   return sessionProfile || null;
 }
 var DEFAULT_SCHOOL = "\u0645\u062F\u0631\u0633\u0629 \u0648\u0627\u064A\u0644\u062F";
@@ -36210,60 +36461,16 @@ router4.delete("/teacher/students/:id", requireAdmin, async (req, res) => {
     }
     const { error } = await supabaseQuery(`profiles?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
     if (error) throw new Error(String(error));
-    try {
-      const base = SUPABASE_URL2.replace(/\/+$/, "");
-      const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || "";
-      if (key) {
-        await fetch(`${base}/auth/v1/admin/users/${encodeURIComponent(id)}`, {
-          method: "DELETE",
-          headers: { apikey: key, Authorization: `Bearer ${key}` }
-        });
-      }
-    } catch {
-    }
     res.json({ success: true, message: "\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u0637\u0627\u0644\u0628 \u0648\u0628\u064A\u0627\u0646\u0627\u062A\u0647!" });
   } catch (err) {
     logger.error({ err }, "Error in DELETE /teacher/students/:id");
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0630\u0641 \u0627\u0644\u0637\u0627\u0644\u0628" });
   }
 });
-router4.patch("/teacher/students/:id/password", requireAdmin, async (req, res) => {
-  try {
-    const id = String(req.params.id);
-    const password = String(req.body?.password || "");
-    if (password.length < 6) {
-      res.status(400).json({ error: "\u0643\u0644\u0645\u0629 \u0627\u0644\u0633\u0631 6 \u0623\u062D\u0631\u0641 \u0639\u0644\u0649 \u0627\u0644\u0623\u0642\u0644" });
-      return;
-    }
-    const { data: exists } = await supabaseQuery(`profiles?id=eq.${encodeURIComponent(id)}&select=id&limit=1`);
-    if (!exists?.[0]) {
-      res.status(404).json({ error: "\u0627\u0644\u0637\u0627\u0644\u0628 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F \u0641\u064A \u0627\u0644\u0642\u0627\u0639\u062F\u0629" });
-      return;
-    }
-    const base = SUPABASE_URL2.replace(/\/+$/, "");
-    const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || "";
-    if (!key) {
-      res.status(500).json({ error: "\u0645\u0641\u062A\u0627\u062D \u0627\u0644\u062E\u062F\u0645\u0629 \u063A\u064A\u0631 \u0645\u0647\u064A\u0623 \u0641\u064A \u0627\u0644\u0633\u064A\u0631\u0641\u0631 (SUPABASE_SECRET_KEY) \u2014 \u0623\u0636\u0641\u0647 \u062B\u0645 \u0623\u0639\u062F \u0627\u0644\u062A\u0634\u063A\u064A\u0644" });
-      return;
-    }
-    const response = await fetch(`${base}/auth/v1/admin/users/${encodeURIComponent(id)}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: key,
-        Authorization: `Bearer ${key}`
-      },
-      body: JSON.stringify({ password })
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(String(data?.msg ?? data?.message ?? `Auth error ${response.status}`));
-    }
-    res.json({ success: true, message: "\u062A\u0645 \u062A\u063A\u064A\u064A\u0631 \u0643\u0644\u0645\u0629 \u0633\u0631 \u0627\u0644\u0637\u0627\u0644\u0628 \u0628\u0646\u062C\u0627\u062D!" });
-  } catch (err) {
-    logger.error({ err }, "Error in PATCH /teacher/students/:id/password");
-    res.status(500).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u062A\u063A\u064A\u064A\u0631 \u0643\u0644\u0645\u0629 \u0627\u0644\u0633\u0631" });
-  }
+router4.patch("/teacher/students/:id/password", requireAdmin, async (_req, res) => {
+  res.status(501).json({
+    error: "\u0643\u0644\u0645\u0629 \u0627\u0644\u0633\u0631 \u062A\u064F\u062F\u0627\u0631 \u0645\u0646 \u062D\u0633\u0627\u0628 Kinde \u0644\u062F\u0649 \u0627\u0644\u0637\u0627\u0644\u0628 \u0646\u0641\u0633\u0647 \u2014 \u0644\u0627 \u064A\u0633\u062A\u0637\u064A\u0639 \u0627\u0644\u0645\u0639\u0644\u0645 \u062A\u0639\u064A\u064A\u0646\u0647\u0627."
+  });
 });
 router4.get("/teacher/account", requireAdmin, async (req, res) => {
   try {
@@ -36274,76 +36481,26 @@ router4.get("/teacher/account", requireAdmin, async (req, res) => {
       adminEmail = String(data?.[0]?.admin_email || "").trim();
     } catch {
     }
-    let googleLinked = null;
-    try {
-      const key = serviceKey();
-      if (key) {
-        const r = await fetch(`${SUPABASE_URL2.replace(/\/+$/, "")}/auth/v1/admin/users/${encodeURIComponent(auth.userId)}`, {
-          headers: { apikey: key, Authorization: `Bearer ${key}` }
-        });
-        if (r.ok) {
-          const u = await r.json().catch(() => ({}));
-          const ids = Array.isArray(u?.identities) ? u.identities : [];
-          googleLinked = ids.some((i) => String(i?.provider || "").toLowerCase() === "google");
-        }
-      }
-    } catch {
-    }
-    res.json({ email: auth.email || "", adminEmail, googleLinked });
+    const profileUrl = `${(process.env.KINDE_ISSUER_URL || process.env.KINDE_DOMAIN || "").replace(/\/+$/, "")}/account/profile`;
+    res.json({ email: auth.email || "", adminEmail, profileUrl });
   } catch (err) {
     logger.error({ err }, "Error in GET /teacher/account");
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u062D\u0633\u0627\u0628" });
   }
 });
-router4.patch("/teacher/account/password", requireAdmin, async (req, res) => {
-  try {
-    const auth = req.auth;
-    const currentPassword = String(req.body?.currentPassword || "");
-    const newPassword = String(req.body?.newPassword || "");
-    if (newPassword.length < 6) {
-      res.status(400).json({ error: "\u0643\u0644\u0645\u0629 \u0627\u0644\u0633\u0631 \u0627\u0644\u062C\u062F\u064A\u062F\u0629 6 \u0623\u062D\u0631\u0641 \u0639\u0644\u0649 \u0627\u0644\u0623\u0642\u0644" });
-      return;
-    }
-    if (!auth.email) {
-      res.status(400).json({ error: "\u0644\u0627 \u064A\u0648\u062C\u062F \u0628\u0631\u064A\u062F \u0645\u0631\u062A\u0628\u0637 \u0628\u062D\u0633\u0627\u0628\u0643" });
-      return;
-    }
-    const anon = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SECRET_KEY || "";
-    const verify = await fetch(`${SUPABASE_URL2.replace(/\/+$/, "")}/auth/v1/token?grant_type=password`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", apikey: anon, Authorization: `Bearer ${anon}` },
-      body: JSON.stringify({ email: auth.email, password: currentPassword })
-    });
-    if (!verify.ok) {
-      res.status(401).json({ error: "\u0643\u0644\u0645\u0629 \u0627\u0644\u0633\u0631 \u0627\u0644\u062D\u0627\u0644\u064A\u0629 \u063A\u064A\u0631 \u0635\u062D\u064A\u062D\u0629" });
-      return;
-    }
-    const key = serviceKey();
-    if (!key) {
-      res.status(500).json({ error: "\u0645\u0641\u062A\u0627\u062D \u0627\u0644\u062E\u062F\u0645\u0629 \u063A\u064A\u0631 \u0645\u0647\u064A\u0623 \u0641\u064A \u0627\u0644\u0633\u064A\u0631\u0641\u0631 (SUPABASE_SECRET_KEY)" });
-      return;
-    }
-    const upd = await fetch(`${SUPABASE_URL2.replace(/\/+$/, "")}/auth/v1/admin/users/${encodeURIComponent(auth.userId)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", apikey: key, Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ password: newPassword })
-    });
-    if (!upd.ok) throw new Error(`Auth error ${upd.status}`);
-    res.json({ success: true, message: "\u062A\u0645 \u062A\u063A\u064A\u064A\u0631 \u0643\u0644\u0645\u0629 \u0633\u0631\u0643 \u0628\u0646\u062C\u0627\u062D!" });
-  } catch (err) {
-    logger.error({ err }, "Error in PATCH /teacher/account/password");
-    res.status(500).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u062A\u063A\u064A\u064A\u0631 \u0643\u0644\u0645\u0629 \u0627\u0644\u0633\u0631" });
-  }
+router4.patch("/teacher/account/password", requireAdmin, async (_req, res) => {
+  res.status(501).json({
+    error: "\u063A\u064A\u0651\u0631 \u0643\u0644\u0645\u0629 \u0627\u0644\u0633\u0631 \u0645\u0646 \u0635\u0641\u062D\u0629 \u062D\u0633\u0627\u0628\u0643 \u0641\u064A Kinde \u2014 \u0627\u0644\u0631\u0627\u0628\u0637 \u0641\u064A \u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u062D\u0633\u0627\u0628."
+  });
 });
 router4.patch("/teacher/account/email", requireAdmin, async (req, res) => {
   try {
     const adminEmail = String(req.body?.adminEmail || "").trim().toLowerCase();
     if (!adminEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) {
-      res.status(400).json({ error: "\u0627\u0643\u062A\u0628 \u0628\u0631\u064A\u062F Gmail \u0635\u062D\u064A\u062D\u0627\u064B" });
+      res.status(400).json({ error: "\u0627\u0643\u062A\u0628 \u0628\u0631\u064A\u062F\u0627\u064B \u0635\u062D\u064A\u062D\u0627\u064B" });
       return;
     }
     let cleanedProfiles = 0;
-    let cleanedAuth = 0;
     try {
       const { data: dupes } = await supabaseQuery(
         `profiles?email=eq.${encodeURIComponent(adminEmail)}&select=id,role&limit=50`
@@ -36352,29 +36509,6 @@ router4.patch("/teacher/account/email", requireAdmin, async (req, res) => {
         if (String(d.role || "").toLowerCase() === "student") {
           const r = await supabaseQuery(`profiles?id=eq.${encodeURIComponent(d.id)}`, { method: "DELETE" });
           if (!r.error) cleanedProfiles++;
-        }
-      }
-      const key = serviceKey();
-      if (key) {
-        try {
-          const lr = await fetch(
-            `${SUPABASE_URL2.replace(/\/+$/, "")}/auth/v1/admin/users?per_page=200`,
-            { headers: { apikey: key, Authorization: `Bearer ${key}` } }
-          );
-          if (lr.ok) {
-            const lu = await lr.json().catch(() => ({}));
-            const users = Array.isArray(lu?.users) ? lu.users : [];
-            for (const u of users) {
-              if (String(u?.email || "").toLowerCase() === adminEmail) {
-                const dr = await fetch(
-                  `${SUPABASE_URL2.replace(/\/+$/, "")}/auth/v1/admin/users/${encodeURIComponent(String(u.id))}`,
-                  { method: "DELETE", headers: { apikey: key, Authorization: `Bearer ${key}` } }
-                );
-                if (dr.ok) cleanedAuth++;
-              }
-            }
-          }
-        } catch {
         }
       }
     } catch (err) {
@@ -36396,9 +36530,8 @@ router4.patch("/teacher/account/email", requireAdmin, async (req, res) => {
     }
     res.json({
       success: true,
-      message: `\u062A\u0645 \u0627\u0639\u062A\u0645\u0627\u062F ${adminEmail} \u0628\u0631\u064A\u062F\u0627\u064B \u0644\u0644\u0625\u062F\u0627\u0631\u0629 \u2713 \u0648\u062D\u064F\u0630\u0641 ${cleanedProfiles} \u062D\u0633\u0627\u0628 \u0637\u0627\u0644\u0628 \u0648${cleanedAuth} \u062D\u0633\u0627\u0628 \u062F\u062E\u0648\u0644 \u0628\u0646\u0641\u0633 \u0627\u0644\u0628\u0631\u064A\u062F \u2014 \u0633\u062C\u0651\u0644 \u0628\u0647 \u0639\u0628\u0631 Google \u0644\u062A\u062F\u062E\u0644 \u0643\u0645\u0639\u0644\u0645 \u0645\u0628\u0627\u0634\u0631\u0629.`,
-      cleanedProfiles,
-      cleanedAuth
+      message: `\u062A\u0645 \u0627\u0639\u062A\u0645\u0627\u062F ${adminEmail} \u0628\u0631\u064A\u062F\u0627\u064B \u0644\u0644\u0625\u062F\u0627\u0631\u0629 \u2713 \u0648\u062D\u064F\u0630\u0641 ${cleanedProfiles} \u062D\u0633\u0627\u0628 \u0637\u0627\u0644\u0628 \u0628\u0646\u0641\u0633 \u0627\u0644\u0628\u0631\u064A\u062F \u2014 \u0633\u062C\u0651\u0644 \u0628\u0647 \u0639\u0646\u062F \u062F\u062E\u0648\u0644\u0643 \u0644\u064A\u064F\u0631\u0642\u0651\u0649 \u0625\u0644\u0649 \u0645\u0639\u0644\u0645.`,
+      cleanedProfiles
     });
   } catch (err) {
     logger.error({ err }, "Error in PATCH /teacher/account/email");
@@ -36637,1154 +36770,237 @@ init_study();
 
 // src/routes/auth.ts
 var import_express6 = __toESM(require_express2(), 1);
-import { createHash as createHash2, randomBytes as randomBytes3 } from "node:crypto";
 init_logger();
 init_supabase();
-
-// src/lib/email-verification.ts
-init_env();
-init_logger();
-import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
-loadLocalEnvOnce();
-var ALLOWED_EMAIL_DOMAINS = [
-  "gmail.com",
-  "googlemail.com",
-  "hotmail.com",
-  "outlook.com",
-  "live.com",
-  "msn.com"
-];
-var ALLOWED_PROVIDERS_LABEL = "Gmail \u0623\u0648 Hotmail \u0623\u0648 Outlook";
-var VERIFY_COOKIE = "ard_verify";
-var VERIFY_TTL_MS = 10 * 60 * 1e3;
-var RESEND_COOLDOWN_MS = 60 * 1e3;
-var MAX_CODE_TRIES = 5;
-var EMAIL_SHAPE = /^[^\s@]{1,64}@[^\s@.]+(\.[^\s@.]+)+$/;
-function normalizeEmail(raw) {
-  return String(raw ?? "").trim().toLowerCase();
-}
-function emailDomain(email) {
-  const at = email.lastIndexOf("@");
-  return at === -1 ? "" : email.slice(at + 1);
-}
-function isAllowedDomain(domain) {
-  if (ALLOWED_EMAIL_DOMAINS.includes(domain)) return true;
-  return ["hotmail.", "outlook.", "live.", "msn."].some((prefix) => domain.startsWith(prefix));
-}
-function checkEmailAllowed(raw) {
-  const email = normalizeEmail(raw);
-  if (!email) return { ok: false, error: "\u0627\u0643\u062A\u0628 \u0628\u0631\u064A\u062F\u0643 \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A \u0623\u0648\u0644\u0627\u064B." };
-  if (!EMAIL_SHAPE.test(email)) {
-    return { ok: false, error: "\u0635\u064A\u063A\u0629 \u0627\u0644\u0628\u0631\u064A\u062F \u063A\u064A\u0631 \u0635\u062D\u064A\u062D\u0629. \u0645\u062B\u0627\u0644 \u0635\u062D\u064A\u062D: name@gmail.com" };
-  }
-  const domain = emailDomain(email);
-  if (!isAllowedDomain(domain)) {
-    return {
-      ok: false,
-      error: `\u0647\u0630\u0627 \u0627\u0644\u0646\u0637\u0627\u0642 \u063A\u064A\u0631 \u0645\u0633\u0645\u0648\u062D \u0628\u0627\u0644\u062A\u0633\u062C\u064A\u0644. \u0627\u0633\u062A\u062E\u062F\u0645 \u0628\u0631\u064A\u062F ${ALLOWED_PROVIDERS_LABEL} \u0641\u0642\u0637.`
-    };
-  }
-  return { ok: true, email };
-}
-function maskEmail(email) {
-  const [name = "", domain = ""] = email.split("@");
-  if (!domain) return email;
-  const head = name.slice(0, 1);
-  const tail = name.length > 2 ? name.slice(-1) : "";
-  return `${head}${"*".repeat(Math.max(3, Math.min(6, name.length - 2)))}${tail}@${domain}`;
-}
-function sealingKey() {
-  const secret = process.env.EMAIL_VERIFY_SECRET || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || "ard-al-lughah-verify-fallback-secret";
-  return createHash("sha256").update(String(secret)).digest();
-}
-function sealState(state) {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", sealingKey(), iv);
-  const body = Buffer.concat([cipher.update(JSON.stringify(state), "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return Buffer.concat([iv, tag, body]).toString("base64url");
-}
-function openState(token) {
-  if (typeof token !== "string" || !token) return null;
-  try {
-    const raw = Buffer.from(token, "base64url");
-    if (raw.length <= 28) return null;
-    const iv = raw.subarray(0, 12);
-    const tag = raw.subarray(12, 28);
-    const body = raw.subarray(28);
-    const decipher = createDecipheriv("aes-256-gcm", sealingKey(), iv);
-    decipher.setAuthTag(tag);
-    const text = Buffer.concat([decipher.update(body), decipher.final()]).toString("utf8");
-    const parsed = JSON.parse(text);
-    if (!parsed?.email || !parsed?.code) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-function newCode() {
-  return String(randomInt(0, 1e6)).padStart(6, "0");
-}
-function codeMatches(expected, given) {
-  const a = Buffer.from(String(expected ?? ""), "utf8");
-  const b = Buffer.from(String(given ?? ""), "utf8");
-  if (a.length !== b.length || a.length === 0) return false;
-  return timingSafeEqual(a, b);
-}
-function createState(email, name) {
-  const now = Date.now();
-  return {
-    email,
-    code: newCode(),
-    sentAt: now,
-    expiresAt: now + VERIFY_TTL_MS,
-    tries: 0,
-    name: name ? String(name).slice(0, 80) : void 0
-  };
-}
-function resendWaitSeconds(state) {
-  if (!state) return 0;
-  return Math.max(0, Math.ceil((RESEND_COOLDOWN_MS - (Date.now() - state.sentAt)) / 1e3));
-}
-var BRAND = {
-  primary: "#255055",
-  primaryDark: "#16383c",
-  accent: "#e7b55f",
-  cream: "#fbf8f1",
-  border: "#e7dfd0",
-  muted: "#6b7c7a"
-};
-function verificationEmailContent(input) {
-  const code = input.code;
-  const platform = input.platformName;
-  const who = input.name?.trim() ? input.name.trim() : "\u0637\u0627\u0644\u0628\u0646\u0627 \u0627\u0644\u0639\u0632\u064A\u0632";
-  const subject = `${code} \u0647\u0648 \u0643\u0648\u062F \u062A\u0623\u0643\u064A\u062F \u062D\u0633\u0627\u0628\u0643 \u0641\u064A ${platform}`;
-  const text = [
-    `\u0645\u0631\u062D\u0628\u0627\u064B ${who}\u060C`,
-    "",
-    `\u0631\u0645\u0632\u0643 \u0644\u062A\u0623\u0643\u064A\u062F \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u062D\u0633\u0627\u0628 \u0641\u064A ${platform}:`,
-    code,
-    "",
-    `\u0627\u0644\u0631\u0645\u0632 \u0635\u0627\u0644\u062D \u0644\u0645\u062F\u0629 ${input.minutes} \u062F\u0642\u0627\u0626\u0642 \u0648\u0644\u0627 \u064A\u064F\u0646\u0634\u0623 \u0627\u0644\u062D\u0633\u0627\u0628 \u0625\u0644\u0627 \u0628\u0639\u062F \u0625\u062F\u062E\u0627\u0644\u0647.`,
-    "\u0625\u0630\u0627 \u0644\u0645 \u062A\u0637\u0644\u0628 \u0647\u0630\u0627 \u0627\u0644\u0631\u0645\u0632 \u0641\u062A\u062C\u0627\u0647\u0644\u0647 \u062A\u0645\u0627\u0645\u0627\u064B."
-  ].join("\n");
-  const html = `<!doctype html>
-<html lang="ar" dir="rtl">
-<body style="margin:0;padding:0;background:${BRAND.cream};font-family:'Segoe UI',Tahoma,Arial,sans-serif;color:${BRAND.primaryDark};">
-  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">\u0631\u0645\u0632\u0643 \u0647\u0648 ${code} \u2014 \u0635\u0627\u0644\u062D ${input.minutes} \u062F\u0642\u0627\u0626\u0642 \u0641\u0642\u0637</div>
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${BRAND.cream};padding:28px 12px;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid ${BRAND.border};border-radius:24px;overflow:hidden;">
-          <tr>
-            <td style="background:linear-gradient(135deg,${BRAND.primary},${BRAND.primaryDark});padding:28px 28px 24px;text-align:center;">
-              <div style="display:inline-block;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:6px 16px;font-size:13px;color:${BRAND.accent};letter-spacing:.5px;">
-                \u062A\u0623\u0643\u064A\u062F \u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A
-              </div>
-              <h1 style="margin:14px 0 6px;font-size:26px;color:#ffffff;">${platform}</h1>
-              <p style="margin:0;font-size:15px;color:rgba(255,255,255,.82);">\u0645\u0646\u0635\u0629 \u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0644\u0644\u062A\u0639\u0644\u064A\u0645 \u0627\u0644\u0631\u0642\u0645\u064A</p>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:32px 28px 8px;text-align:center;">
-              <p style="margin:0 0 6px;font-size:17px;font-weight:700;">\u0645\u0631\u062D\u0628\u0627\u064B ${escapeHtml(who)} \u{1F44B}</p>
-              <p style="margin:0;font-size:15px;line-height:2;color:${BRAND.muted};">
-                \u0623\u0631\u0633\u0644\u0646\u0627 \u0625\u0644\u064A\u0643 \u0631\u0645\u0632\u0627\u064B \u0645\u0646 <strong style="color:${BRAND.primaryDark};">${code.length} \u0623\u0631\u0642\u0627\u0645</strong>
-                \u0644\u062A\u0623\u0643\u064A\u062F \u0628\u0631\u064A\u062F\u0643 \u0648\u0625\u0646\u0634\u0627\u0621 \u062D\u0633\u0627\u0628\u0643.
-              </p>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:18px 28px 4px;">
-              <div style="background:${BRAND.cream};border:2px dashed ${BRAND.border};border-radius:20px;padding:22px 16px;text-align:center;">
-                <div style="font-size:44px;font-weight:800;letter-spacing:16px;direction:ltr;color:${BRAND.primary};font-family:Consolas,'Courier New',monospace;">
-                  ${code}
-                </div>
-              </div>
-              <p style="margin:16px 0 0;text-align:center;font-size:13px;color:${BRAND.muted};">
-                \u0635\u0627\u0644\u062D \u0644\u0645\u062F\u0629 <strong style="color:${BRAND.primaryDark};">${input.minutes} \u062F\u0642\u0627\u0626\u0642</strong> \u2014 \u0648\u0644\u0627 \u064A\u064F\u0646\u0634\u0623 \u062D\u0633\u0627\u0628\u0643 \u0625\u0644\u0627 \u0628\u0639\u062F \u0625\u062F\u062E\u0627\u0644\u0647.
-              </p>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:26px 28px 0;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f1e6;border-radius:16px;">
-                <tr>
-                  <td style="padding:16px 18px;font-size:13px;line-height:2;color:${BRAND.muted};">
-                    <strong style="color:${BRAND.primaryDark};">\u0644\u0645 \u062A\u0637\u0644\u0628 \u0647\u0630\u0627 \u0627\u0644\u0631\u0645\u0632\u061F</strong><br />
-                    \u062A\u062C\u0627\u0647\u0644 \u0647\u0630\u0647 \u0627\u0644\u0631\u0633\u0627\u0644\u0629 \u0648\u0644\u0627 \u062A\u0641\u0639\u0644 \u0634\u064A\u0626\u0627\u064B \u2014 \u0644\u0646 \u064A\u064F\u0646\u0634\u0623 \u0623\u064A \u062D\u0633\u0627\u0628 \u0642\u0628\u0644 \u0625\u062F\u062E\u0627\u0644 \u0627\u0644\u0631\u0645\u0632.
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:26px 28px 30px;text-align:center;">
-              <p style="margin:0;font-size:12px;line-height:1.9;color:${BRAND.muted};">
-                \u0647\u0630\u0647 \u0631\u0633\u0627\u0644\u0629 \u0622\u0644\u064A\u0629 \u0645\u0646 ${platform} \u2014 \u0644\u0627 \u062A\u0631\u062F \u0639\u0644\u064A\u0647\u0627.<br />
-                \u0631\u0627\u0628\u0637 \u0627\u0644\u0645\u0648\u0642\u0639: ${escapeHtml(input.platformName)}
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
-  return { subject, html, text };
-}
-function escapeHtml(value) {
-  return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
-
-// src/lib/smtp.ts
-init_env();
-init_logger();
-import { connect as tcpConnect } from "node:net";
-import { connect as tlsConnect } from "node:tls";
-import { randomBytes as randomBytes2 } from "node:crypto";
-import { hostname } from "node:os";
-loadLocalEnvOnce();
-var MailNotConfiguredError = class extends Error {
-  constructor(message) {
-    super(message);
-    this.name = "MailNotConfiguredError";
-  }
-};
-var MailSendError = class extends Error {
-  constructor(message) {
-    super(message);
-    this.name = "MailSendError";
-  }
-};
-var DEFAULT_HOST = "smtp-relay.brevo.com";
-var DEFAULT_PORT = 587;
-var REPLY_TIMEOUT_MS = 25e3;
-function firstEnv(...names) {
-  for (const name of names) {
-    const raw = process.env[name];
-    const value = typeof raw === "string" ? raw.trim() : "";
-    if (value) return value;
-  }
-  return "";
-}
-function readMailConfig() {
-  const host = firstEnv("BREVO_SMTP_HOST", "SMTP_HOST") || DEFAULT_HOST;
-  const rawPort2 = firstEnv("BREVO_SMTP_PORT", "SMTP_PORT");
-  const parsedPort = rawPort2 ? Number(rawPort2) : Number.NaN;
-  const port2 = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : DEFAULT_PORT;
-  const rawLogin = firstEnv("BREVO_SMTP_LOGIN", "SMTP_LOGIN", "SMTP_USER", "SMTP_USERNAME");
-  const rawFrom = firstEnv("BREVO_MAIL_FROM", "SMTP_FROM", "MAIL_FROM");
-  const login = rawLogin || rawFrom;
-  const from = rawFrom || rawLogin;
-  return {
-    host,
-    port: port2,
-    secure: firstEnv("BREVO_SMTP_SECURE", "SMTP_SECURE").toLowerCase() === "true" || port2 === 465,
-    login,
-    pass: firstEnv(
-      "BREVO_SMTP_KEY",
-      "SMTP_KEY",
-      "BREVO_SMTP_PASSWORD",
-      "SMTP_PASSWORD",
-      "SMTP_PASS"
-    ),
-    from,
-    fromName: firstEnv("BREVO_MAIL_FROM_NAME", "MAIL_FROM_NAME", "SMTP_FROM_NAME") || "\u0623\u0631\u0636 \u0627\u0644\u0644\u063A\u0629",
-    helo: firstEnv("BREVO_SMTP_HELO", "SMTP_HELO") || "ard-al-lughah"
-  };
-}
-function isMailConfigured() {
-  const cfg = readMailConfig();
-  return Boolean(cfg.pass && cfg.from && cfg.login);
-}
-function describeMailSetup() {
-  const cfg = readMailConfig();
-  const resend = firstEnv("RESEND_API_KEY", "RESEND_KEY");
-  return `resend=${resend ? "\u0645\u0648\u062C\u0648\u062F" : "\u0645\u0641\u0642\u0648\u062F"}${firstEnv("RESEND_FROM") ? ` from=${firstEnv("RESEND_FROM")}` : ""} | smtp=${cfg.host}:${cfg.port} from=${cfg.from || "-"} key=${cfg.pass ? "\u0645\u0648\u062C\u0648\u062F" : "\u0645\u0641\u0642\u0648\u062F"}`;
-}
-function withTimeout(promise, ms, label) {
-  return new Promise((resolve2, reject) => {
-    const timer = setTimeout(
-      () => reject(new MailSendError(`\u0627\u0646\u062A\u0647\u062A \u0645\u0647\u0644\u0629 \u0627\u0644\u0631\u062F \u0645\u0646 \u0633\u064A\u0631\u0641\u0631 \u0627\u0644\u0628\u0631\u064A\u062F \u0623\u062B\u0646\u0627\u0621 ${label}.`)),
-      ms
-    );
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve2(value);
-      },
-      (err) => {
-        clearTimeout(timer);
-        reject(err instanceof Error ? err : new Error(String(err)));
-      }
-    );
-  });
-}
-function attachReader(socket) {
-  let buffer = "";
-  const lines = [];
-  const waiters = [];
-  const pump = () => {
-    while (lines.length > 0 && waiters.length > 0) {
-      const waiter = waiters.shift();
-      waiter.resolve(lines.shift());
-    }
-  };
-  const onData = (chunk) => {
-    buffer += typeof chunk === "string" ? chunk : chunk.toString("utf8");
-    let index = buffer.indexOf("\r\n");
-    while (index !== -1) {
-      lines.push(buffer.slice(0, index));
-      buffer = buffer.slice(index + 2);
-      index = buffer.indexOf("\r\n");
-    }
-    pump();
-  };
-  const onError = (err) => {
-    const waiter = waiters.shift();
-    if (waiter) waiter.reject(err);
-  };
-  socket.on("data", onData);
-  socket.on("error", onError);
-  return {
-    read: () => new Promise((resolve2, reject) => {
-      waiters.push({ resolve: resolve2, reject });
-      pump();
-    }),
-    // يفكّ المستمعين دون إغلاق المقبس — لازم قبل ترقية STARTTLS
-    release: () => {
-      socket.off("data", onData);
-      socket.off("error", onError);
-      for (const waiter of waiters.splice(0)) waiter.reject(new MailSendError("\u0623\u064F\u063A\u0644\u0642\u062A \u062C\u0644\u0633\u0629 \u0627\u0644\u0628\u0631\u064A\u062F."));
-    }
-  };
-}
-async function expectCode(reader, expected, label) {
-  const collected = [];
-  for (let guard = 0; guard < 64; guard += 1) {
-    const line = await withTimeout(reader.read(), REPLY_TIMEOUT_MS, label);
-    collected.push(line);
-    const status = Number.parseInt(line.slice(0, 3), 10);
-    if (!Number.isFinite(status)) {
-      throw new MailSendError(`\u0631\u062F \u063A\u064A\u0631 \u0645\u0641\u0647\u0648\u0645 \u0645\u0646 \u0633\u064A\u0631\u0641\u0631 \u0627\u0644\u0628\u0631\u064A\u062F \u0623\u062B\u0646\u0627\u0621 ${label}: ${line}`);
-    }
-    if (line.length > 3 && line[3] === "-") continue;
-    if (status !== expected) {
-      const detail = line.slice(4).trim() || line;
-      throw new MailSendError(`\u0641\u0634\u0644 ${label} \u0639\u0646\u062F \u0633\u064A\u0631\u0641\u0631 \u0627\u0644\u0628\u0631\u064A\u062F (${status}): ${detail}`);
-    }
-    return collected;
-  }
-  throw new MailSendError(`\u0631\u062F \u0637\u0648\u064A\u0644 \u0628\u0634\u0643\u0644 \u063A\u064A\u0631 \u0645\u062A\u0648\u0642\u0639 \u0645\u0646 \u0633\u064A\u0631\u0641\u0631 \u0627\u0644\u0628\u0631\u064A\u062F \u0623\u062B\u0646\u0627\u0621 ${label}.`);
-}
-function openSocket(cfg) {
-  return new Promise((resolve2, reject) => {
-    const socket = cfg.secure ? tlsConnect({ host: cfg.host, port: cfg.port, servername: cfg.host, rejectUnauthorized: true }) : tcpConnect({ host: cfg.host, port: cfg.port });
-    const onError = (err) => {
-      socket.destroy();
-      reject(new MailSendError(`\u062A\u0639\u0630\u0651\u0631 \u0627\u0644\u0648\u0635\u0648\u0644 \u0625\u0644\u0649 \u0633\u064A\u0631\u0641\u0631 \u0627\u0644\u0628\u0631\u064A\u062F (${cfg.host}:${cfg.port}): ${err.message}`));
-    };
-    socket.once("error", onError);
-    socket.once(cfg.secure ? "secureConnect" : "connect", () => {
-      socket.off("error", onError);
-      socket.setTimeout(REPLY_TIMEOUT_MS, () => {
-        socket.destroy();
-        reject(new MailSendError("\u0627\u0646\u062A\u0647\u062A \u0645\u0647\u0644\u0629 \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0628\u0633\u064A\u0631\u0641\u0631 \u0627\u0644\u0628\u0631\u064A\u062F."));
-      });
-      resolve2(socket);
-    });
-  });
-}
-function upgradeToTls(socket, host) {
-  return new Promise((resolve2, reject) => {
-    const secure = tlsConnect({ socket, servername: host, rejectUnauthorized: true });
-    const onError = (err) => {
-      secure.destroy();
-      reject(new MailSendError(`\u062A\u0639\u0630\u0651\u0631 \u062A\u0634\u0641\u064A\u0631 \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0628\u0633\u064A\u0631\u0641\u0631 \u0627\u0644\u0628\u0631\u064A\u062F: ${err.message}`));
-    };
-    secure.once("error", onError);
-    secure.once("secureConnect", () => {
-      secure.off("error", onError);
-      resolve2(secure);
-    });
-  });
-}
-function encodeHeaderValue(value) {
-  if (/^[\x20-\x7e]*$/.test(value)) return value;
-  return `=?UTF-8?B?${Buffer.from(value, "utf8").toString("base64")}?=`;
-}
-function buildMessage(cfg, msg, boundary) {
-  const headers = [
-    `Date: ${(/* @__PURE__ */ new Date()).toUTCString()}`,
-    `From: ${encodeHeaderValue(cfg.fromName)} <${cfg.from}>`,
-    `To: <${msg.to}>`,
-    `Subject: ${encodeHeaderValue(msg.subject)}`,
-    `Message-ID: <${randomBytes2(16).toString("hex")}@${hostname()}>`,
-    "MIME-Version: 1.0",
-    `Content-Type: multipart/alternative; boundary="${boundary}"`
-  ];
-  const parts = [
-    `--${boundary}`,
-    'Content-Type: text/plain; charset="UTF-8"',
-    "Content-Transfer-Encoding: base64",
-    "",
-    Buffer.from(msg.text ?? "", "utf8").toString("base64"),
-    `--${boundary}`,
-    'Content-Type: text/html; charset="UTF-8"',
-    "Content-Transfer-Encoding: base64",
-    "",
-    Buffer.from(msg.html, "utf8").toString("base64"),
-    `--${boundary}--`
-  ];
-  return `${headers.join("\r\n")}\r
-\r
-${parts.join("\r\n")}\r
-`;
-}
-function dotStuff(payload) {
-  return payload.replace(/(^|\r\n)\./g, "$1..");
-}
-async function sendMail(msg) {
-  const failures = [];
-  const providers = [];
-  const resendKey = firstEnv("RESEND_API_KEY", "RESEND_KEY");
-  if (resendKey) {
-    providers.push("resend");
-    try {
-      await sendViaResend(msg, resendKey);
-      return;
-    } catch (err) {
-      failures.push(`resend: ${err?.message || "\u0641\u0634\u0644 \u063A\u064A\u0631 \u0645\u0639\u0631\u0648\u0641"}`);
-      logger.warn({ err }, "Resend send failed \u2014 trying the next provider");
-    }
-  }
-  if (isMailConfigured()) {
-    providers.push("brevo");
-    try {
-      await sendViaBrevo(msg);
-      return;
-    } catch (err) {
-      if (err instanceof MailNotConfiguredError) throw err;
-      failures.push(`brevo: ${err?.message || "\u0641\u0634\u0644 \u063A\u064A\u0631 \u0645\u0639\u0631\u0648\u0641"}`);
-      logger.warn({ err }, "Brevo send failed \u2014 trying the next provider");
-    }
-  }
-  const birdKey = firstEnv("BIRD_API_KEY", "MESSAGEBIRD_API_KEY");
-  if (birdKey) {
-    providers.push("messagebird");
-    try {
-      await sendViaMessageBird(msg, birdKey);
-      return;
-    } catch (err) {
-      failures.push(`messagebird: ${err?.message || "\u0641\u0634\u0644 \u063A\u064A\u0631 \u0645\u0639\u0631\u0648\u0641"}`);
-      logger.warn({ err }, "MessageBird send failed");
-    }
-  }
-  if (providers.length === 0) {
-    throw new MailNotConfiguredError("\u0644\u0645 \u062A\u064F\u0636\u0628\u0637 \u0623\u064A \u062E\u062F\u0645\u0629 \u0628\u0631\u064A\u062F \u0639\u0644\u0649 \u0627\u0644\u062E\u0627\u062F\u0645 (RESEND_API_KEY / BREVO_SMTP_KEY / BIRD_API_KEY).");
-  }
-  logger.error({ failures }, "Every mail provider failed");
-  throw new MailSendError(failures.join(" | "));
-}
-async function sendViaResend(msg, key) {
-  const from = firstEnv("RESEND_FROM", "RESEND_MAIL_FROM") || "onboarding@resend.dev";
-  const fromName = firstEnv("RESEND_FROM_NAME", "RESEND_MAIL_FROM_NAME") || "\u0623\u0631\u0636 \u0627\u0644\u0644\u063A\u0629";
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      from: `${fromName} <${from}>`,
-      to: [msg.to],
-      subject: msg.subject,
-      html: msg.html,
-      text: msg.text ?? ""
-    })
-  });
-  const text = await response.text().catch(() => "");
-  if (!response.ok) {
-    throw new MailSendError(`Resend \u0631\u0641\u0636 \u0627\u0644\u0625\u0631\u0633\u0627\u0644 (${response.status}): ${text.slice(0, 220)}`);
-  }
-}
-async function sendViaMessageBird(msg, key) {
-  const from = firstEnv("BIRD_FROM", "MESSAGEBIRD_FROM") || "messagebird@messagebird.com";
-  const response = await fetch("https://rest.messagebird.com/messages", {
-    method: "POST",
-    headers: {
-      Authorization: `AccessKey ${key}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      from,
-      to: [msg.to],
-      subject: msg.subject,
-      html: msg.html,
-      body: msg.text ?? ""
-    })
-  });
-  const text = await response.text().catch(() => "");
-  if (!response.ok) {
-    throw new MailSendError(`MessageBird \u0631\u0641\u0636 \u0627\u0644\u0625\u0631\u0633\u0627\u0644 (${response.status}): ${text.slice(0, 200)}`);
-  }
-}
-async function sendViaBrevo(msg) {
-  const cfg = readMailConfig();
-  if (!cfg.pass) {
-    throw new MailNotConfiguredError("\u0644\u0645 \u064A\u064F\u0636\u0628\u0637 \u0645\u0641\u062A\u0627\u062D \u0628\u0631\u064A\u062F Brevo (BREVO_SMTP_KEY) \u0639\u0644\u0649 \u0627\u0644\u062E\u0627\u062F\u0645.");
-  }
-  if (!cfg.from || !cfg.login) {
-    throw new MailNotConfiguredError("\u0644\u0645 \u062A\u064F\u0636\u0628\u0637 \u0628\u064A\u0627\u0646\u0627\u062A \u062F\u062E\u0648\u0644 \u0627\u0644\u0628\u0631\u064A\u062F (BREVO_SMTP_LOGIN / BREVO_MAIL_FROM) \u0639\u0644\u0649 \u0627\u0644\u062E\u0627\u062F\u0645.");
-  }
-  const boundary = `----=_ard_${randomBytes2(12).toString("hex")}`;
-  const payload = dotStuff(buildMessage(cfg, msg, boundary));
-  let socket = await openSocket(cfg);
-  let reader = attachReader(socket);
-  const write = (line) => socket.write(`${line}\r
-`);
-  try {
-    await expectCode(reader, 220, "\u0627\u0644\u062A\u0631\u062D\u064A\u0628");
-    write(`EHLO ${cfg.helo}`);
-    let caps = (await expectCode(reader, 250, "\u062A\u0639\u0631\u064A\u0641 \u0627\u0644\u062E\u0627\u062F\u0645")).join("\n").toUpperCase();
-    if (!cfg.secure) {
-      if (!caps.includes("STARTTLS")) {
-        throw new MailSendError("\u0633\u064A\u0631\u0641\u0631 \u0627\u0644\u0628\u0631\u064A\u062F \u0644\u0627 \u064A\u062F\u0639\u0645 STARTTLS \u2014 \u0644\u0627 \u0646\u0631\u0633\u0644 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u0628\u0644\u0627 \u062A\u0634\u0641\u064A\u0631.");
-      }
-      write("STARTTLS");
-      await expectCode(reader, 220, "\u062A\u0641\u0639\u064A\u0644 \u0627\u0644\u062A\u0634\u0641\u064A\u0631");
-      reader.release();
-      socket = await upgradeToTls(socket, cfg.host);
-      reader = attachReader(socket);
-      write(`EHLO ${cfg.helo}`);
-      caps = (await expectCode(reader, 250, "\u062A\u0639\u0631\u064A\u0641 \u0627\u0644\u062E\u0627\u062F\u0645 \u0628\u0639\u062F \u0627\u0644\u062A\u0634\u0641\u064A\u0631")).join("\n").toUpperCase();
-    }
-    if (caps.includes("AUTH") && caps.includes("PLAIN") && !caps.includes("LOGIN")) {
-      write(`AUTH PLAIN ${Buffer.from(`\0${cfg.login}\0${cfg.pass}`, "utf8").toString("base64")}`);
-    } else {
-      write("AUTH LOGIN");
-      await expectCode(reader, 334, "\u0627\u0633\u0645 \u0627\u0644\u0645\u0633\u062A\u062E\u062F\u0645");
-      write(Buffer.from(cfg.login, "utf8").toString("base64"));
-      await expectCode(reader, 334, "\u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631");
-      write(Buffer.from(cfg.pass, "utf8").toString("base64"));
-    }
-    await expectCode(reader, 235, "\u0645\u0635\u0627\u062F\u0642\u0629 \u0627\u0644\u0628\u0631\u064A\u062F");
-    write(`MAIL FROM:<${cfg.from}>`);
-    await expectCode(reader, 250, "\u0645\u0631\u0633\u0644 \u0627\u0644\u0631\u0633\u0627\u0644\u0629");
-    write(`RCPT TO:<${msg.to}>`);
-    await expectCode(reader, 250, "\u0645\u0633\u062A\u0644\u0645 \u0627\u0644\u0631\u0633\u0627\u0644\u0629");
-    write("DATA");
-    await expectCode(reader, 354, "\u0628\u062F\u0627\u064A\u0629 \u0627\u0644\u0645\u062D\u062A\u0648\u0649");
-    write(`${payload}\r
-.`);
-    await expectCode(reader, 250, "\u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0645\u062D\u062A\u0648\u0649");
-    write("QUIT");
-  } catch (err) {
-    logger.error({ err }, "SMTP send failed");
-    throw err instanceof MailSendError || err instanceof MailNotConfiguredError ? err : new MailSendError(err?.message || "\u062A\u0639\u0630\u0651\u0631 \u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0628\u0631\u064A\u062F.");
-  } finally {
-    socket.destroy();
-  }
-}
-
-// src/routes/auth.ts
+init_kinde();
+init_auth();
 var router6 = (0, import_express6.Router)();
-var authUnavailableMessage = "\u062E\u062F\u0645\u0629 \u0627\u0644\u0645\u0635\u0627\u062F\u0642\u0629 \u063A\u064A\u0631 \u0645\u062A\u0627\u062D\u0629 \u0645\u0624\u0642\u062A\u064B\u0627. \u062D\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649 \u0628\u0639\u062F \u0642\u0644\u064A\u0644.";
-function writeVerifyCookie(res, state) {
-  res.cookie(VERIFY_COOKIE, sealState(state), {
-    httpOnly: true,
-    sameSite: "strict",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: VERIFY_TTL_MS
-  });
-}
-function clearVerifyCookie(res) {
-  res.clearCookie(VERIFY_COOKIE, { path: "/" });
-}
-function readVerifyState(req) {
-  const state = openState(req.cookies?.[VERIFY_COOKIE]);
-  if (!state) return null;
-  if (!state.expiresAt || state.expiresAt < Date.now()) return null;
-  return state;
-}
-var SUPABASE_URL3 = process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co";
-var SUPABASE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SECRET_KEY || "sb_publishable_kPG7zfG0FFZpRTkNnHhO1Q_oXoOq8fg";
-async function supabaseRequest(path, body) {
-  let response;
-  try {
-    const targetUrl = `${SUPABASE_URL3.replace(/\/+$/, "")}/auth/v1/${path}`;
-    response = await fetch(targetUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`
-      },
-      body: body ? JSON.stringify(body) : void 0
-    });
-  } catch (err) {
-    logger.error({ err }, "Supabase request failed");
-    response = new Response(
-      JSON.stringify({ message: authUnavailableMessage }),
-      {
-        status: 503,
-        headers: { "Content-Type": "application/json" }
-      }
-    );
-  }
-  const data = await response.json().catch(() => ({}));
-  return { response, data };
-}
-function authUser(data) {
-  const user = data.user ?? {};
-  const metadata = user.user_metadata ?? {};
-  return {
-    id: String(user.id ?? ""),
-    email: String(user.email ?? ""),
-    fullName: String(metadata.full_name ?? metadata.name ?? ""),
-    avatarUrl: String(metadata.avatar_url ?? metadata.picture ?? "")
-  };
-}
-async function syncGoogleAvatar(userId, metadata) {
-  const pic = String(metadata.avatar_url ?? metadata.picture ?? "");
-  if (!userId || !pic) return pic;
-  try {
-    const { data } = await supabaseQuery(`profiles?id=eq.${userId}&select=avatar_url&limit=1`);
-    if (!data?.[0]?.avatar_url) {
-      await supabaseQuery(`profiles?id=eq.${userId}`, {
-        method: "PATCH",
-        body: { avatar_url: pic }
-      });
-    }
-  } catch (err) {
-    logger.warn({ err }, "Failed to sync Google avatar");
-  }
-  return pic;
-}
-function base64url(input) {
-  return input.toString("base64url");
-}
-function generateCodeVerifier() {
-  return base64url(randomBytes3(48));
-}
-function generateCodeChallenge(verifier) {
-  return base64url(createHash2("sha256").update(verifier).digest());
-}
-function callbackUrlFromRequest(req) {
-  const headers = req.headers;
-  let origin = null;
-  if (headers.origin) {
-    origin = String(headers.origin).trim().replace(/\/+$/, "");
-  } else if (headers.referer) {
-    try {
-      origin = new URL(String(headers.referer)).origin;
-    } catch {
-      origin = null;
-    }
-  }
-  if (origin) return `${origin}/auth/callback`;
-  const forwardedProto = headers["x-forwarded-proto"];
-  const proto = typeof forwardedProto === "string" ? forwardedProto.split(",")[0].trim() : "http";
-  const host = headers.host || "localhost:5173";
-  return `${proto}://${host}/auth/callback`;
-}
+var authUnavailableMessage = "\u062E\u062F\u0645\u0629 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u063A\u064A\u0631 \u0645\u0647\u064A\u0623\u0629 \u0639\u0644\u0649 \u0627\u0644\u062E\u0627\u062F\u0645 \u0628\u0639\u062F.";
+var NEW_STUDENT_DEFAULTS = {
+  school: "",
+  grade: "",
+  section: "",
+  gender: "",
+  branch: "\u0627\u0644\u0645\u0633\u0627\u0631 \u0627\u0644\u0623\u0643\u0627\u062F\u064A\u0645\u064A",
+  status: "\u0646\u0634\u0637"
+};
 function profileNeedsSetup(profile) {
   if (!profile) return true;
   return !profile.full_name || !profile.gender || !profile.grade || !profile.school;
 }
-async function fetchProfileById(userId) {
-  const { data } = await supabaseQuery(
-    `profiles?select=*&id=eq.${userId}&limit=1`
+function livePlatformName() {
+  return supabaseQuery("platform_settings?select=platform_name&limit=1").then(
+    ({ data }) => String(data?.[0]?.platform_name || "\u0623\u0631\u0636 \u0627\u0644\u0644\u063A\u0629")
   );
-  return data?.[0] || null;
 }
-function setSessionCookies(res, data) {
-  const accessToken = data.access_token;
-  const refreshToken = data.refresh_token;
-  if (typeof accessToken === "string") {
-    res.cookie("supabase_access_token", accessToken, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 60 * 60 * 1e3
-    });
-  }
-  if (typeof refreshToken === "string") {
-    res.cookie("supabase_refresh_token", refreshToken, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 30 * 24 * 60 * 60 * 1e3
-    });
-  }
-}
-async function trySilentRefresh2(req, res) {
-  try {
-    const refreshToken = req.cookies?.supabase_refresh_token;
-    if (typeof refreshToken !== "string" || !refreshToken) return null;
-    const { response, data } = await supabaseRequest("token?grant_type=refresh_token", {
-      refresh_token: refreshToken
-    });
-    if (!response.ok || typeof data.access_token !== "string") return null;
-    setSessionCookies(res, data);
-    return data.access_token;
-  } catch (err) {
-    logger.warn({ err }, "Silent session refresh failed");
-    return null;
-  }
-}
-async function livePlatformName() {
-  try {
-    const { data } = await supabaseQuery("platform_settings?select=platform_name&limit=1");
-    return String(data?.[0]?.platform_name || "\u0623\u0631\u0636 \u0627\u0644\u0644\u063A\u0629");
-  } catch {
-    return "\u0623\u0631\u0636 \u0627\u0644\u0644\u063A\u0629";
-  }
-}
-async function emailAlreadyRegistered(email) {
-  try {
-    const { data } = await supabaseQuery(
-      `profiles?select=id&email=eq.${encodeURIComponent(email)}&limit=1`
-    );
-    return Array.isArray(data) && data.length > 0;
-  } catch {
-    return false;
-  }
-}
-router6.get("/auth/verify/status", (req, res) => {
-  const state = readVerifyState(req);
-  res.json({
-    pending: Boolean(state),
-    providers: ALLOWED_EMAIL_DOMAINS.slice(0, 3),
-    providersLabel: ALLOWED_PROVIDERS_LABEL,
-    ...state ? {
-      email: maskEmail(state.email),
-      resendIn: resendWaitSeconds(state),
-      expiresIn: Math.max(0, Math.round((state.expiresAt - Date.now()) / 1e3))
-    } : {}
-  });
-});
-router6.post("/auth/verify/send", async (req, res) => {
-  const body = req.body ?? {};
-  const allowed = checkEmailAllowed(body.email);
-  if (!allowed.ok) {
-    res.status(400).json({ error: allowed.error });
-    return;
-  }
-  try {
-    const adminList = await getAdminEmails().catch(() => []);
-    if (adminList.includes(allowed.email)) {
-      res.status(400).json({ error: "\u0647\u0630\u0627 \u0627\u0644\u0628\u0631\u064A\u062F \u0645\u062D\u062C\u0648\u0632 \u0644\u062D\u0633\u0627\u0628 \u0627\u0644\u0625\u062F\u0627\u0631\u0629 \u2014 \u0633\u062C\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0628\u0647 \u0639\u0628\u0631 Google." });
-      return;
+async function provisionProfile(user) {
+  const authId = user.id;
+  const existing = await findProfileByAuthId(authId, user.email);
+  const adminEmails = await getAdminEmails();
+  const isAdmin = Boolean(user.email && adminEmails.includes(user.email));
+  if (existing) {
+    if (isAdmin && existing.role !== "admin") {
+      const promoted = await supabaseQuery(
+        `profiles?id=eq.${encodeURIComponent(existing.id)}`,
+        { method: "PATCH", body: { role: "admin", status: "\u0646\u0634\u0637", updated_at: (/* @__PURE__ */ new Date()).toISOString() } }
+      );
+      if (promoted.error) logger.warn({ error: promoted.error }, "Admin promotion failed");
+      return { profile: { ...existing, role: "admin" }, created: false, promoted: true };
     }
-  } catch {
-  }
-  if (await emailAlreadyRegistered(allowed.email)) {
-    res.status(409).json({
-      error: "\u0647\u0630\u0627 \u0627\u0644\u0628\u0631\u064A\u062F \u0645\u0633\u062C\u0651\u0644 \u0639\u0646\u062F\u0646\u0627 \u0645\u0633\u0628\u0642\u0627\u064B \u2014 \u0644\u0627 \u064A\u0645\u0643\u0646 \u0625\u0646\u0634\u0627\u0621 \u062D\u0633\u0627\u0628 \u062B\u0627\u0646\u064D \u0644\u0646\u0641\u0633 \u0627\u0644\u0625\u064A\u0645\u064A\u0644.",
-      hasAccount: true
-    });
-    return;
-  }
-  const existing = readVerifyState(req);
-  if (existing && existing.email === allowed.email) {
-    const wait = resendWaitSeconds(existing);
-    if (wait > 0) {
-      res.status(429).json({ error: `\u0627\u0646\u062A\u0638\u0631 ${wait} \u062B\u0627\u0646\u064A\u0629 \u0642\u0628\u0644 \u0637\u0644\u0628 \u0643\u0648\u062F \u062C\u062F\u064A\u062F.`, resendIn: wait });
-      return;
+    if (!existing.avatar_url && user.picture) {
+      await supabaseQuery(`profiles?id=eq.${encodeURIComponent(existing.id)}`, {
+        method: "PATCH",
+        body: { avatar_url: user.picture }
+      });
+      existing.avatar_url = user.picture;
     }
+    return { profile: existing, created: false, promoted: false };
   }
-  const name = String(body.name ?? "").trim();
-  const state = existing && existing.email === allowed.email ? { ...createState(allowed.email, name || existing.name), tries: 0 } : createState(allowed.email, name);
-  try {
-    const content = verificationEmailContent({
-      code: state.code,
-      name: state.name,
-      minutes: Math.round(VERIFY_TTL_MS / 6e4),
-      platformName: await livePlatformName()
-    });
-    await sendMail({ to: state.email, ...content });
-  } catch (err) {
-    if (err instanceof MailNotConfiguredError) {
-      logger.error({ err, mail: describeMailSetup() }, "Verification email is not configured");
-      res.status(503).json({ error: `${err.message} (${describeMailSetup()})` });
-      return;
-    }
-    logger.error({ err, mail: describeMailSetup() }, "Failed to send the verification code");
-    const detail = err?.message ?? "";
-    res.status(502).json({
-      error: /only send testing emails|403/i.test(detail) ? "\u062D\u0633\u0627\u0628 Resend \u0645\u0627 \u064A\u0633\u0645\u062D \u0628\u0627\u0644\u0625\u0631\u0633\u0627\u0644 \u0644\u063A\u064A\u0631 \u0628\u0631\u064A\u062F\u0643 \u0625\u0644\u0627 \u0628\u0639\u062F \u0625\u0636\u0627\u0641\u0629 \u0646\u0637\u0627\u0642\u0643 \u2014 \u0623\u0636\u0641 \u0646\u0637\u0627\u0642\u0643 \u0641\u064A Resend \u062B\u0645 \u062D\u062F\u0651\u062B RESEND_FROM." : /unauthorized ip/i.test(detail) ? "\u062A\u0645 \u0631\u0641\u0636 \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0645\u0646 Brevo \u2014 \u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u062E\u0627\u062F\u0645 \u063A\u064A\u0631 \u0645\u064F\u0635\u0631\u0651\u062D \u0628\u0647. \u0623\u0636\u0641 0.0.0.0/0 \u0641\u064A Brevo \u2190 Senders, domains, IPs." : /sender|not verified|550/i.test(detail) ? "Brevo \u0631\u0641\u0636 \u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0645\u0631\u0633\u0644 \u2014 \u0636\u0639 \u0628\u0631\u064A\u062F\u0627\u064B \u0645\u0648\u062B\u0651\u0642\u0627\u064B \u0641\u064A \u0627\u0644\u0645\u062A\u063A\u064A\u0631 BREVO_MAIL_FROM." : /incorrect access_key|401/i.test(detail) ? "\u0645\u0641\u062A\u0627\u062D \u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0627\u062D\u062A\u064A\u0627\u0637\u064A (MessageBird) \u063A\u064A\u0631 \u0635\u0627\u0644\u062D." : "\u062A\u0639\u0630\u0651\u0631 \u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0643\u0648\u062F \u0625\u0644\u0649 \u0628\u0631\u064A\u062F\u0643 \u0627\u0644\u0622\u0646. \u062A\u0623\u0643\u062F \u0645\u0646 \u0627\u0644\u0639\u0646\u0648\u0627\u0646 \u0623\u0648 \u062D\u0627\u0648\u0644 \u0628\u0639\u062F \u0642\u0644\u064A\u0644."
-    });
-    return;
-  }
-  writeVerifyCookie(res, state);
-  res.json({
-    ok: true,
-    email: maskEmail(state.email),
-    resendIn: Math.round(RESEND_COOLDOWN_MS / 1e3),
-    expiresIn: Math.round(VERIFY_TTL_MS / 1e3),
-    message: `\u0623\u0631\u0633\u0644\u0646\u0627 \u0643\u0648\u062F\u0627\u064B \u0625\u0644\u0649 ${maskEmail(state.email)} \u2014 \u0623\u062F\u062E\u0644\u0647 \u0644\u0625\u0646\u0634\u0627\u0621 \u062D\u0633\u0627\u0628\u0643.`
-  });
-});
-router6.post("/auth/verify/cancel", (_req, res) => {
-  clearVerifyCookie(res);
-  res.json({ ok: true, message: "\u062A\u0645 \u0625\u0644\u063A\u0627\u0621 \u0637\u0644\u0628 \u0627\u0644\u062A\u0623\u0643\u064A\u062F." });
-});
-async function confirmVerifiedEmail(email, password, userId) {
-  const secretKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_KEY;
-  if (!secretKey) return null;
-  try {
-    await fetch(`${SUPABASE_URL3.replace(/\/+$/, "")}/auth/v1/admin/users/${userId}`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: secretKey,
-        Authorization: `Bearer ${secretKey}`
-      },
-      body: JSON.stringify({ email_confirm: true })
-    });
-    const { response, data } = await supabaseRequest("token?grant_type=password", { email, password });
-    return response.ok && typeof data.access_token === "string" ? data : null;
-  } catch (err) {
-    logger.warn({ err }, "Could not open a session right after email verification");
-    return null;
-  }
-}
-router6.post("/auth/register", async (req, res) => {
-  const parsed = RegisterAccountBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
-    return;
-  }
-  const emailCheck = checkEmailAllowed(parsed.data.email);
-  if (!emailCheck.ok) {
-    res.status(400).json({ error: emailCheck.error });
-    return;
-  }
-  const state = readVerifyState(req);
-  if (!state) {
-    res.status(400).json({
-      error: "\u0627\u0646\u062A\u0647\u062A \u0635\u0644\u0627\u062D\u064A\u0629 \u0637\u0644\u0628 \u0627\u0644\u062A\u0623\u0643\u064A\u062F \u0623\u0648 \u0644\u0645 \u064A\u0628\u062F\u0623 \u0628\u0639\u062F. \u0639\u064F\u062F \u0625\u0644\u0649 \u0635\u0641\u062D\u0629 \u0627\u0644\u062A\u0633\u062C\u064A\u0644 \u0644\u0637\u0644\u0628 \u0643\u0648\u062F \u062C\u062F\u064A\u062F."
-    });
-    return;
-  }
-  if (state.email !== emailCheck.email) {
-    res.status(400).json({ error: "\u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0645\u0624\u0643\u064E\u0651\u062F \u0644\u0627 \u064A\u0637\u0627\u0628\u0642 \u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0645\u0637\u0644\u0648\u0628 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u062D\u0633\u0627\u0628 \u0628\u0647." });
-    return;
-  }
-  const submittedCode = String((req.body ?? {}).code ?? "").trim();
-  if (!codeMatches(state.code, submittedCode)) {
-    state.tries += 1;
-    writeVerifyCookie(res, state);
-    const triesLeft = Math.max(0, MAX_CODE_TRIES - state.tries);
-    res.status(400).json({
-      error: triesLeft > 0 ? `\u0627\u0644\u0643\u0648\u062F \u063A\u064A\u0631 \u0635\u062D\u064A\u062D. \u0628\u0642\u064A\u062A \u0644\u0643 ${triesLeft} \u0645\u062D\u0627\u0648\u0644\u0627\u062A.` : "\u0627\u0646\u062A\u0647\u062A \u0645\u062D\u0627\u0648\u0644\u0627\u062A \u0627\u0644\u062A\u062D\u0642\u0642. \u0627\u0628\u062F\u0623 \u0627\u0644\u062A\u0633\u062C\u064A\u0644 \u0645\u0646 \u062C\u062F\u064A\u062F \u0644\u0644\u062D\u0635\u0648\u0644 \u0639\u0644\u0649 \u0643\u0648\u062F \u062C\u062F\u064A\u062F.",
-      triesLeft
-    });
-    return;
-  }
-  clearVerifyCookie(res);
-  try {
-    const adminList = await getAdminEmails().catch(() => []);
-    if (adminList.includes(emailCheck.email)) {
-      res.status(400).json({ error: "\u0647\u0630\u0627 \u0627\u0644\u0628\u0631\u064A\u062F \u0645\u062D\u062C\u0648\u0632 \u0644\u062D\u0633\u0627\u0628 \u0627\u0644\u0625\u062F\u0627\u0631\u0629 \u2014 \u0633\u062C\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0628\u0647 \u0639\u0628\u0631 Google." });
-      return;
-    }
-  } catch {
-  }
-  const { fullName } = parsed.data;
-  const email = emailCheck.email;
-  const { response, data } = await supabaseRequest("signup", {
-    email,
-    password: parsed.data.password,
-    data: {
-      full_name: fullName,
-      student_number: parsed.data.studentNumber,
-      school: parsed.data.school,
-      branch: parsed.data.branch,
-      grade: parsed.data.grade,
-      section: parsed.data.section,
-      gender: parsed.data.gender,
-      phone: parsed.data.phone
-    }
-  });
-  if (!response.ok) {
-    const supabaseMessage = String(data.msg ?? data.error_description ?? data.message ?? "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u062D\u0633\u0627\u0628");
-    const alreadyThere = /already|registered|exists/i.test(supabaseMessage);
-    res.status(alreadyThere ? 409 : response.status === 422 ? 400 : response.status).json({
-      error: alreadyThere ? "\u0647\u0630\u0627 \u0627\u0644\u0628\u0631\u064A\u062F \u0645\u0633\u062C\u0651\u0644 \u0639\u0646\u062F\u0646\u0627 \u0645\u0633\u0628\u0642\u0627\u064B \u2014 \u0644\u0627 \u064A\u0645\u0643\u0646 \u0625\u0646\u0634\u0627\u0621 \u062D\u0633\u0627\u0628 \u062B\u0627\u0646\u064D \u0644\u0646\u0641\u0633 \u0627\u0644\u0625\u064A\u0645\u064A\u0644." : supabaseMessage,
-      ...alreadyThere ? { hasAccount: true } : {}
-    });
-    return;
-  }
-  const newUserId = typeof data.user === "object" && data.user !== null ? String(data.user.id ?? "") : "";
-  const profilePayload = {
-    id: newUserId,
-    email,
-    full_name: fullName,
-    role: "student",
-    student_number: parsed.data.studentNumber || "",
-    school: parsed.data.school || "\u0645\u062F\u0631\u0633\u0629 \u0648\u0627\u064A\u0644\u062F",
-    branch: parsed.data.branch || "\u0627\u0644\u0645\u0633\u0627\u0631 \u0627\u0644\u0623\u0643\u0627\u062F\u064A\u0645\u064A",
-    grade: parsed.data.grade || "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
-    section: parsed.data.section || "\u0623",
-    gender: parsed.data.gender || "\u0637\u0627\u0644\u0628",
-    phone: parsed.data.phone || "",
-    status: "\u0646\u0634\u0637"
+  const body = {
+    auth_id: authId,
+    email: user.email,
+    full_name: user.fullName || "",
+    role: isAdmin ? "admin" : "student",
+    student_number: "",
+    phone: "",
+    avatar_url: user.picture || "",
+    ...isAdmin ? { grade: "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631", school: "", gender: "\u0637\u0627\u0644\u0628", section: "\u0623", status: "\u0646\u0634\u0637" } : NEW_STUDENT_DEFAULTS
   };
-  if (newUserId) {
-    try {
-      await supabaseQuery("profiles", {
-        method: "POST",
-        body: [profilePayload],
-        headers: { Prefer: "resolution=merge-duplicates" }
-      });
-    } catch (err) {
-      logger.error({ err }, "Failed to create profile after signup");
-    }
+  const created = await supabaseQuery("profiles", { method: "POST", body: [body] });
+  if (created.error) {
+    logger.error({ error: created.error }, "Failed to create profile for Kinde user");
+    return null;
   }
-  let session = data;
-  if (!session.access_token && newUserId) {
-    const forced = await confirmVerifiedEmail(email, parsed.data.password, newUserId);
-    if (forced) session = forced;
-  }
-  setSessionCookies(res, session);
-  res.json(
-    RegisterAccountResponse.parse({
-      message: session.access_token ? "\u062A\u0645 \u062A\u0623\u0643\u064A\u062F \u0628\u0631\u064A\u062F\u0643 \u0648\u0625\u0646\u0634\u0627\u0621 \u062D\u0633\u0627\u0628\u0643 \u0628\u0646\u062C\u0627\u062D." : "\u062A\u0645 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u062D\u0633\u0627\u0628 \u0628\u0639\u062F \u062A\u0623\u0643\u064A\u062F \u0628\u0631\u064A\u062F\u0643. \u0633\u062C\u0651\u0644 \u062F\u062E\u0648\u0644\u0643 \u0628\u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631.",
-      user: authUser(session)
-    })
-  );
-});
-router6.post("/auth/login", async (req, res) => {
-  const parsed = LoginAccountBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+  const profile = Array.isArray(created.data) ? created.data[0] : body;
+  return { profile, created: true, promoted: isAdmin };
+}
+router6.get("/auth/kinde/authorize", (req, res) => {
+  const cfg = readKindeConfig(req);
+  if (!isKindeConfigured(cfg)) {
+    logger.error({ kinde: describeKindeSetup() }, "Kinde is not configured");
+    res.status(503).json({ error: authUnavailableMessage, setup: describeKindeSetup() });
     return;
   }
-  const { response, data } = await supabaseRequest(
-    "token?grant_type=password",
-    parsed.data
-  );
-  if (!response.ok) {
-    res.status(response.status === 400 ? 401 : response.status).json({
-      error: String(data.error_description ?? data.msg ?? data.message ?? "\u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u062F\u062E\u0648\u0644 \u063A\u064A\u0631 \u0635\u062D\u064A\u062D\u0629")
-    });
-    return;
-  }
-  setSessionCookies(res, data);
-  res.json(
-    LoginAccountResponse.parse({
-      message: "\u062A\u0645 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0628\u0646\u062C\u0627\u062D.",
-      user: authUser(data)
-    })
-  );
-});
-router6.post("/auth/forgot-password", async (req, res) => {
-  const parsed = RequestPasswordResetBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
-    return;
-  }
-  const { response, data } = await supabaseRequest("recover", {
-    email: parsed.data.email
-  });
-  if (!response.ok) {
-    res.status(response.status).json({
-      error: String(data.msg ?? data.error_description ?? data.message ?? "\u062A\u0639\u0630\u0631 \u0625\u0631\u0633\u0627\u0644 \u0631\u0633\u0627\u0644\u0629 \u0627\u0644\u0627\u0633\u062A\u0639\u0627\u062F\u0629")
-    });
-    return;
-  }
-  res.json(
-    RequestPasswordResetResponse.parse({
-      message: "\u0625\u0630\u0627 \u0643\u0627\u0646 \u0627\u0644\u0628\u0631\u064A\u062F \u0645\u0633\u062C\u0644\u0627\u064B\u060C \u0633\u062A\u0635\u0644\u0643 \u0631\u0633\u0627\u0644\u0629 \u0644\u0627\u0633\u062A\u0639\u0627\u062F\u0629 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631."
-    })
-  );
-});
-router6.get("/auth/google", (req, res) => {
   try {
-    const verifier = generateCodeVerifier();
-    const challenge = generateCodeChallenge(verifier);
-    const callbackUrl = callbackUrlFromRequest(req);
-    res.cookie("supabase_pkce_verifier", verifier, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 10 * 60 * 1e3
-    });
-    const params = new URLSearchParams({
-      provider: "google",
-      redirect_to: callbackUrl,
-      flow_type: "pkce",
-      code_challenge: challenge,
-      code_challenge_method: "s256",
-      access_type: "offline"
-    });
-    const url = `${SUPABASE_URL3.replace(/\/+$/, "")}/auth/v1/authorize?${params.toString()}`;
-    res.json({ url });
+    const { verifier, challenge } = createPkce();
+    const state = createState();
+    setPkceCookies(res, verifier, state);
+    res.json({ url: buildAuthorizeUrl(cfg, challenge, state) });
   } catch (err) {
-    logger.error({ err }, "Google OAuth URL generation failed");
-    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0631\u0627\u0628\u0637 \u0627\u0644\u062F\u062E\u0648\u0644 \u0639\u0628\u0631 Google. \u062D\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649." });
+    logger.error({ err }, "Failed to build the Kinde authorize URL");
+    res.status(500).json({ error: authUnavailableMessage });
   }
 });
-router6.post("/auth/exchange", async (req, res) => {
-  const code = typeof req.body?.code === "string" ? req.body.code : "";
+router6.post("/auth/kinde/exchange", async (req, res) => {
+  const code = String(req.body?.code || "");
   if (!code) {
-    res.status(400).json({ error: "\u0631\u0645\u0632 \u0627\u0644\u062A\u0623\u0643\u064A\u062F \u0645\u0641\u0642\u0648\u062F. \u0623\u0639\u062F \u0627\u0644\u0645\u062D\u0627\u0648\u0644\u0629." });
+    res.status(400).json({ error: "\u0631\u0645\u0632 \u0627\u0644\u062F\u062E\u0648\u0644 \u0645\u0641\u0642\u0648\u062F. \u0623\u0639\u062F \u0627\u0644\u0645\u062D\u0627\u0648\u0644\u0629." });
     return;
   }
-  const verifier = typeof req.cookies?.supabase_pkce_verifier === "string" ? req.cookies.supabase_pkce_verifier : "";
-  res.clearCookie("supabase_pkce_verifier", { path: "/" });
-  const callbackUrl = callbackUrlFromRequest(req);
+  const cfg = readKindeConfig(req);
+  if (!isKindeConfigured(cfg)) {
+    res.status(503).json({ error: authUnavailableMessage, setup: describeKindeSetup() });
+    return;
+  }
+  const { verifier, state } = readPkceCookies(req);
+  if (!verifier) {
+    res.status(400).json({ error: "\u0627\u0646\u062A\u0647\u062A \u0635\u0644\u0627\u062D\u064A\u0629 \u0645\u062D\u0627\u0648\u0644\u0629 \u0627\u0644\u062F\u062E\u0648\u0644. \u0627\u0628\u062F\u0623 \u0645\u0646 \u062C\u062F\u064A\u062F." });
+    return;
+  }
+  const returnedState = String(req.body?.state || "");
+  if (returnedState && state && returnedState !== state) {
+    logger.warn({ kinde: "oauth state mismatch" }, "Rejected an OAuth state mismatch");
+    res.status(400).json({ error: "\u062A\u0639\u0630\u0651\u0631 \u062A\u0623\u0643\u064A\u062F \u0645\u0635\u062F\u0631 \u0627\u0644\u0637\u0644\u0628. \u0627\u0628\u062F\u0623 \u0645\u0646 \u062C\u062F\u064A\u062F." });
+    return;
+  }
   try {
-    const response = await fetch(
-      `${SUPABASE_URL3.replace(/\/+$/, "")}/auth/v1/token?grant_type=pkce`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`
-        },
-        body: JSON.stringify({
-          auth_code: code,
-          code_verifier: verifier,
-          redirect_to: callbackUrl,
-          gotrue_meta_security: {}
-        })
-      }
-    );
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.access_token) {
-      res.status(response.status).json({
-        error: String(
-          data.msg ?? data.error_description ?? data.message ?? "\u062A\u0639\u0630\u0631 \u062A\u0623\u0643\u064A\u062F \u0627\u0644\u062C\u0644\u0633\u0629 \u0639\u0628\u0631 Google. \u0623\u0639\u062F \u0627\u0644\u0645\u062D\u0627\u0648\u0644\u0629."
-        )
-      });
+    const tokens = await exchangeCode(cfg, code, verifier);
+    clearSessionCookies(res);
+    setSessionCookies(res, tokens);
+    const identity = await resolveKindeIdentity(tokens.accessToken, cfg);
+    if (!identity) {
+      clearSessionCookies(res);
+      res.status(401).json({ error: "\u062A\u0639\u0630\u0651\u0631 \u0642\u0631\u0627\u0621\u0629 \u062D\u0633\u0627\u0628\u0643 \u0645\u0646 Kinde. \u0623\u0639\u062F \u0627\u0644\u0645\u062D\u0627\u0648\u0644\u0629." });
       return;
     }
-    setSessionCookies(res, data);
-    const userId = String(data.user?.id ?? "");
-    const userEmail = String(data.user?.email ?? "").trim().toLowerCase();
-    const adminList = await getAdminEmails().catch(() => []);
-    const isAdminEmail = !!userEmail && adminList.includes(userEmail);
-    if (userId) {
-      const profile = await fetchProfileById(userId);
-      const meta = data.user?.user_metadata ?? {};
-      await syncGoogleAvatar(userId, meta);
-      if (isAdminEmail && profile?.role !== "admin") {
-        if (profile) {
-          await supabaseQuery(`profiles?id=eq.${encodeURIComponent(userId)}`, {
-            method: "PATCH",
-            body: { role: "admin", status: "\u0646\u0634\u0637", updated_at: (/* @__PURE__ */ new Date()).toISOString() }
-          });
-        } else {
-          await supabaseQuery("profiles", {
-            method: "POST",
-            body: [{
-              id: userId,
-              email: userEmail,
-              full_name: String(meta.full_name ?? meta.name ?? "\u0627\u0644\u0645\u0639\u0644\u0645"),
-              role: "admin",
-              grade: "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
-              school: "",
-              status: "\u0646\u0634\u0637"
-            }],
-            headers: { Prefer: "resolution=merge-duplicates" }
-          });
-        }
-        res.json({ authenticated: true, needsSetup: false, user: authUser(data) });
-        return;
-      }
-      res.json({
-        authenticated: true,
-        needsSetup: isAdminEmail ? false : profileNeedsSetup(profile),
-        user: authUser(data)
-      });
-    } else {
-      res.json({
-        authenticated: true,
-        needsSetup: true,
-        user: authUser(data)
-      });
+    const provisioned = await provisionProfile(identity.user);
+    if (!provisioned) {
+      clearSessionCookies(res);
+      res.status(500).json({ error: "\u062A\u0639\u0630\u0651\u0631 \u062A\u062C\u0647\u064A\u0632 \u0645\u0644\u0641\u0643 \u0627\u0644\u0634\u062E\u0635\u064A. \u0631\u0627\u062C\u0639 \u0627\u0644\u0625\u0639\u062F\u0627\u062F." });
+      return;
     }
+    const auth = toAuthInfo(provisioned.profile, identity.claims.sub);
+    res.json({
+      authenticated: true,
+      needsSetup: !auth.role || auth.role === "student" ? profileNeedsSetup(provisioned.profile) : false,
+      role: auth.role,
+      user: {
+        id: auth.userId,
+        email: auth.email || identity.user.email,
+        fullName: provisioned.profile.full_name || identity.user.fullName,
+        avatarUrl: provisioned.profile.avatar_url || identity.user.picture || "",
+        role: auth.role
+      }
+    });
   } catch (err) {
-    logger.error({ err }, "Google OAuth exchange failed");
-    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u0623\u0643\u064A\u062F \u0627\u0644\u062C\u0644\u0633\u0629 \u0639\u0628\u0631 Google. \u062D\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649." });
+    clearSessionCookies(res);
+    logger.error({ err, kinde: describeKindeSetup() }, "Kinde code exchange failed");
+    res.status(502).json({
+      error: err instanceof Error && /redirect_uri|invalid_grant|invalid_request/i.test(err.message) ? "\u0631\u0627\u0628\u0637 \u0627\u0644\u0639\u0648\u062F\u0629 \u0627\u0644\u0645\u0633\u062C\u0651\u0644 \u0641\u064A Kinde \u0644\u0627 \u064A\u0637\u0627\u0628\u0642 \u0647\u0630\u0627 \u0627\u0644\u0633\u064A\u0631\u0641\u0631. \u0631\u0627\u062C\u0639 Allowed callback URLs." : "\u062A\u0639\u0630\u0651\u0631 \u0625\u0643\u0645\u0627\u0644 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062F\u062E\u0648\u0644. \u062D\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649."
+    });
   }
 });
 router6.get("/auth/me", async (req, res) => {
-  let accessToken = req.cookies?.supabase_access_token;
-  if (!accessToken) {
-    accessToken = await trySilentRefresh2(req, res);
-    if (!accessToken) {
+  try {
+    const accessToken = req.cookies?.[ACCESS_COOKIE];
+    const user = accessToken ? await fetchKindeUser(String(accessToken)) : null;
+    const auth = await resolveAuth(req, res);
+    if (!auth || !user) {
+      if (res.headersSent) return;
+      clearSessionCookies(res);
       res.json({ authenticated: false });
       return;
     }
+    const { data } = await supabaseQuery(
+      `profiles?id=eq.${encodeURIComponent(auth.userId)}&select=full_name,gender,grade,school,avatar_url&limit=1`
+    );
+    const profile = data?.[0];
+    res.json({
+      authenticated: true,
+      needsSetup: auth.role === "student" && profileNeedsSetup(profile),
+      role: auth.role,
+      user: {
+        id: auth.userId,
+        email: auth.email || user.email,
+        fullName: profile?.full_name || user.fullName,
+        avatarUrl: profile?.avatar_url || user.picture || "",
+        role: auth.role
+      }
+    });
+  } catch (err) {
+    logger.error({ err }, "GET /auth/me failed");
+    res.status(500).json({ authenticated: false });
   }
-  let user = await getSupabaseUser(accessToken);
-  if (!user) {
-    const refreshed = await trySilentRefresh2(req, res);
-    if (refreshed) {
-      accessToken = refreshed;
-      user = await getSupabaseUser(accessToken);
+});
+router6.post("/auth/refresh", async (req, res) => {
+  try {
+    const token = await trySilentRefresh(req, res);
+    if (!token) {
+      clearSessionCookies(res);
+      res.status(401).json({ authenticated: false });
+      return;
     }
+    res.json({ authenticated: true });
+  } catch (err) {
+    logger.warn({ err }, "POST /auth/refresh failed");
+    clearSessionCookies(res);
+    res.status(401).json({ authenticated: false });
   }
-  if (!user) {
-    res.clearCookie("supabase_access_token", { path: "/" });
-    res.clearCookie("supabase_refresh_token", { path: "/" });
-    res.json({ authenticated: false });
-    return;
+});
+router6.post("/auth/logout", async (_req, res) => {
+  try {
+    clearSessionCookies(res);
+    res.json({ message: "\u062A\u0645 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062E\u0631\u0648\u062C." });
+  } catch (err) {
+    logger.error({ err }, "POST /auth/logout failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0651\u0631 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062E\u0631\u0648\u062C." });
   }
-  const userId = String(user.id ?? "");
-  const metadata = user.user_metadata ?? {};
-  const profile = userId ? await fetchProfileById(userId) : null;
-  const syncedPic = await syncGoogleAvatar(userId, metadata);
-  res.json({
-    authenticated: true,
-    needsSetup: profileNeedsSetup(profile),
-    role: String(profile?.role || metadata.role || "student"),
-    user: {
-      id: userId,
-      email: String(user.email ?? ""),
-      fullName: String(metadata.full_name ?? metadata.name ?? profile?.full_name ?? ""),
-      avatarUrl: syncedPic || String(profile?.avatar_url ?? ""),
-      role: String(profile?.role || metadata.role || "student")
-    }
-  });
+});
+router6.get("/auth/kinde/logout", (req, res) => {
+  clearSessionCookies(res);
+  res.json({ url: buildLogoutUrl(readKindeConfig(req)) });
 });
 router6.post("/auth/complete-profile", async (req, res) => {
-  const accessToken = req.cookies?.supabase_access_token;
-  const user = accessToken ? await getSupabaseUser(accessToken) : null;
-  if (!user) {
+  const auth = await resolveAuth(req, res);
+  if (!auth) {
     res.status(401).json({ error: "\u0627\u0646\u062A\u0647\u062A \u0635\u0644\u0627\u062D\u064A\u0629 \u0627\u0644\u062C\u0644\u0633\u0629. \u0633\u062C\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0645\u0646 \u062C\u062F\u064A\u062F." });
     return;
   }
   const body = req.body ?? {};
-  const profile = {
-    id: String(user.id ?? ""),
-    email: String(user.email ?? ""),
-    full_name: String(body.fullName ?? "").trim(),
-    role: "student",
-    student_number: String(body.studentNumber ?? ""),
-    school: String(body.school ?? "").trim(),
-    branch: String(body.branch ?? "\u0627\u0644\u0645\u0633\u0627\u0631 \u0627\u0644\u0623\u0643\u0627\u062F\u064A\u0645\u064A"),
-    grade: String(body.grade ?? "").trim(),
-    section: String(body.section ?? "\u0623"),
-    gender: String(body.gender ?? ""),
-    phone: String(body.phone ?? ""),
-    status: "\u0646\u0634\u0637"
-  };
-  if (!profile.full_name || !profile.grade || !profile.school || !profile.gender) {
+  const fullName = String(body.fullName ?? "").trim();
+  const grade = String(body.grade ?? "").trim();
+  const school = String(body.school ?? "").trim();
+  const gender = String(body.gender ?? "").trim();
+  if (!fullName || !grade || !school || !gender) {
     res.status(400).json({ error: "\u0627\u0644\u0627\u0633\u0645 \u0627\u0644\u0643\u0627\u0645\u0644 \u0648\u0627\u0644\u062C\u0646\u0633 \u0648\u0627\u0644\u0635\u0641 \u0648\u0627\u0644\u0645\u062F\u0631\u0633\u0629 \u062D\u0642\u0648\u0644 \u0645\u0637\u0644\u0648\u0628\u0629." });
     return;
   }
+  const profile = {
+    id: auth.userId,
+    auth_id: auth.authId,
+    email: auth.email,
+    full_name: fullName,
+    role: auth.role,
+    student_number: String(body.studentNumber ?? ""),
+    school,
+    branch: String(body.branch ?? NEW_STUDENT_DEFAULTS.branch),
+    grade,
+    section: String(body.section ?? "\u0623"),
+    gender,
+    phone: String(body.phone ?? ""),
+    status: "\u0646\u0634\u0637",
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
   const { error } = await supabaseQuery("profiles", {
     method: "POST",
     body: [profile],
@@ -37795,49 +37011,25 @@ router6.post("/auth/complete-profile", async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u062D\u0633\u0627\u0628. \u062D\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649." });
     return;
   }
-  try {
-    await fetch(`${SUPABASE_URL3.replace(/\/+$/, "")}/auth/v1/user`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${accessToken}`
-      },
-      body: JSON.stringify({
-        data: {
-          full_name: profile.full_name,
-          gender: profile.gender,
-          grade: profile.grade,
-          school: profile.school,
-          section: profile.section,
-          branch: profile.branch,
-          phone: profile.phone
-        }
-      })
-    });
-  } catch (err) {
-    logger.warn({ err }, "Failed to sync auth user_metadata after completing profile");
-  }
   res.json({
     authenticated: true,
     needsSetup: false,
-    message: "\u062A\u0645 \u062D\u0641\u0638 \u0628\u064A\u0627\u0646\u0627\u062A\u0643 \u0628\u0646\u062C\u0627\u062D\u060C \u0623\u0647\u0644\u0627\u064B \u0628\u0643 \u0641\u064A \u0645\u0633\u0627\u062D\u062A\u0643!",
-    user: { id: profile.id, email: profile.email, fullName: profile.full_name, avatarUrl: "" }
+    message: "\u062A\u0645 \u062D\u0641\u0638 \u0628\u064A\u0627\u0646\u0627\u062A\u0643. \u0623\u0647\u0644\u0627\u064B \u0628\u0643 \u0641\u064A \u0627\u0644\u0645\u0646\u0635\u0629.",
+    user: {
+      id: auth.userId,
+      email: auth.email,
+      fullName,
+      avatarUrl: "",
+      role: auth.role
+    }
   });
 });
-router6.post("/auth/refresh", async (req, res) => {
-  const accessToken = await trySilentRefresh2(req, res);
-  if (!accessToken) {
-    res.status(401).json({ authenticated: false, error: "\u0627\u0646\u062A\u0647\u062A \u0627\u0644\u062C\u0644\u0633\u0629. \u0633\u062C\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0645\u0646 \u062C\u062F\u064A\u062F." });
-    return;
+router6.get("/auth/platform-name", async (_req, res) => {
+  try {
+    res.json({ platformName: await livePlatformName() });
+  } catch {
+    res.json({ platformName: "\u0623\u0631\u0636 \u0627\u0644\u0644\u063A\u0629" });
   }
-  res.json({ authenticated: true });
-});
-router6.post("/auth/logout", (_req, res) => {
-  res.clearCookie("supabase_access_token", { path: "/" });
-  res.clearCookie("supabase_refresh_token", { path: "/" });
-  res.clearCookie("supabase_pkce_verifier", { path: "/" });
-  res.json(LogoutAccountResponse.parse({ message: "\u062A\u0645 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062E\u0631\u0648\u062C." }));
 });
 var auth_default = router6;
 

@@ -1,13 +1,27 @@
-import type { Request, RequestHandler } from "express";
-import { supabaseQuery, getSupabaseUser } from "../lib/supabase";
+import type { Request, RequestHandler, Response } from "express";
+import { supabaseQuery } from "../lib/supabase";
+import {
+  ACCESS_COOKIE,
+  REFRESH_COOKIE,
+  clearSessionCookies,
+  fetchKindeUser,
+  readKindeConfig,
+  refreshSession,
+  resolveKindeIdentity,
+  setSessionCookies,
+} from "../lib/kinde";
 import { logger } from "../lib/logger";
 
 // ============================================================================
-// بوابة الحماية — موقع حقيقي: لا وصول إداري دون جلسة معلم، ولا كتابة دون دخول
+//  بوابة الحماية — هوية Kinde تُترجم إلى ملف شخصي في Supabase.
+//  لا وصول إداري دون دور admin مخزّن، ولا كتابة دون جلسة صالحة.
 // ============================================================================
 
 export type AuthInfo = {
+  /** معرّف الملف الشخصي الداخلي (UUID) — هو ما تستخدمه كل الجداول الأخرى */
   userId: string;
+  /** معرّف Kinde — للمتابعة وربط الحسابات */
+  authId: string;
   email: string;
   role: string;
   grade: string;
@@ -16,101 +30,128 @@ export type AuthInfo = {
 
 export type AuthedRequest = Request & { auth?: AuthInfo };
 
-async function trySilentRefresh(
+type ProfileRow = {
+  id: string;
+  auth_id?: string | null;
+  email?: string | null;
+  role?: string | null;
+  grade?: string | null;
+  gender?: string | null;
+  full_name?: string | null;
+  avatar_url?: string | null;
+};
+
+const PROFILE_COLUMNS = "id,auth_id,email,role,grade,gender,full_name,avatar_url";
+
+function cookiesOf(req: Request): Record<string, unknown> {
+  return (req as Request & { cookies?: Record<string, unknown> }).cookies || {};
+}
+
+/** يجدّد الجلسة صامتاً ويكتب الكوكيز الجديدة. يُرجع التوكن أو null. */
+export async function trySilentRefresh(
   req: Request,
-  res: Parameters<RequestHandler>[1],
+  res?: Response,
 ): Promise<string | null> {
   try {
-    const refreshToken = (req as any)?.cookies?.supabase_refresh_token;
-    if (typeof refreshToken !== "string" || !refreshToken) return null;
-    const base = (
-      process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co"
-    ).replace(/\/+$/, "");
-    const key =
-      process.env.SUPABASE_PUBLISHABLE_KEY ||
-      process.env.SUPABASE_ANON_KEY ||
-      process.env.SUPABASE_SECRET_KEY ||
-      "sb_publishable_kPG7zfG0FFZpRTkNnHhO1Q_oXoOq8fg";
-    const response = await fetch(`${base}/auth/v1/token?grant_type=refresh_token`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
-    const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-    if (!response.ok || typeof data.access_token !== "string") return null;
-    const secure = process.env.NODE_ENV === "production";
-    if (typeof data.access_token === "string") {
-      res.cookie("supabase_access_token", data.access_token, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure,
-        path: "/",
-        maxAge: 60 * 60 * 1000,
-      });
-    }
-    if (typeof data.refresh_token === "string") {
-      res.cookie("supabase_refresh_token", data.refresh_token, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure,
-        path: "/",
-        maxAge: 30 * 24 * 60 * 60 * 1000,
-      });
-    }
-    return data.access_token as string;
+    const refreshToken = String(cookiesOf(req)[REFRESH_COOKIE] || "");
+    if (!refreshToken) return null;
+    const cfg = readKindeConfig(req);
+    if (!cfg.clientId || !cfg.clientSecret) return null;
+    const tokens = await refreshSession(cfg, refreshToken);
+    if (res) setSessionCookies(res, tokens);
+    return tokens.accessToken;
   } catch (err) {
-    logger.warn({ err }, "Middleware silent refresh failed");
+    logger.warn({ err }, "Kinde silent refresh failed");
     return null;
   }
 }
 
-async function resolveAuth(req: Request, res?: Parameters<RequestHandler>[1]): Promise<AuthInfo | null> {
+/**
+ * يربط هوية Kinde بملف شخصي:
+ *   1) بحث مباشر بمعرّف Kinde (auth_id) — المسار الساخن بعد أول دخول.
+ *   2) بحث بالبريد ثم ربط auth_id — ينقل الحسابات المنشأة قبل التبديل
+ *      أو التي أنشأها المعلم يدوياً، فلا تضيع بياناتها.
+ *   3) لا ملف ولا سجل — يُرجع null ويتحول الطلب إلى 401.
+ */
+export async function findProfileByAuthId(
+  authId: string,
+  email: string,
+): Promise<ProfileRow | null> {
+  if (!authId) return null;
+  const byAuth = await supabaseQuery<ProfileRow[]>(
+    `profiles?auth_id=eq.${encodeURIComponent(authId)}&select=${PROFILE_COLUMNS}&limit=1`,
+  );
+  if (byAuth.data?.[0]) return byAuth.data[0];
+
+  if (!email) return null;
+  const byEmail = await supabaseQuery<ProfileRow[]>(
+    `profiles?email=eq.${encodeURIComponent(email)}&select=${PROFILE_COLUMNS}&limit=1`,
+  );
+  const match = byEmail.data?.[0];
+  if (!match) return null;
+
+  const linked = await supabaseQuery<ProfileRow[]>(
+    `profiles?id=eq.${encodeURIComponent(match.id)}`,
+    { method: "PATCH", body: { auth_id: authId } },
+  );
+  if (linked.error) {
+    logger.warn({ error: linked.error }, "Failed to link auth_id to existing profile");
+    return match;
+  }
+  return { ...match, auth_id: authId };
+}
+
+/** يبني معلومات البوابة من صف الملف الشخصي. */
+export function toAuthInfo(profile: ProfileRow, authId: string): AuthInfo {
+  const gender =
+    profile.gender === "طالب" || profile.gender === "طالبة" ? profile.gender : null;
+  return {
+    userId: String(profile.id),
+    authId,
+    email: profile.email || "",
+    role: profile.role || "student",
+    grade: profile.grade || "",
+    gender,
+  };
+}
+
+/** يحل الجلسة الكاملة: كوكي ← تجديد صامت ← تحقق من التوكن ← ملف الشخصي. */
+export async function resolveAuth(req: Request, res?: Response): Promise<AuthInfo | null> {
   try {
-    let token = (req as any)?.cookies?.supabase_access_token;
-    if (!token && res) {
-      const refreshed = await trySilentRefresh(req, res);
-      if (refreshed) token = refreshed;
-    }
+    let token = String(cookiesOf(req)[ACCESS_COOKIE] || "");
+    if (!token && res) token = (await trySilentRefresh(req, res)) || "";
     if (!token) return null;
-    const user = (await getSupabaseUser(token)) as Record<string, unknown> | null;
-    if ((!user || !(user as any)?.id) && res) {
+
+    let identity = await resolveKindeIdentity(token);
+    if (!identity && res) {
       // التوكن منتهٍ؟ جدّد صامتاً وأعد المحاولة بدل رمي المستخدم لصفحة الدخول
       const refreshed = await trySilentRefresh(req, res);
       if (refreshed) {
-        const retry = (await getSupabaseUser(refreshed)) as Record<string, unknown> | null;
-        if (retry?.id) {
-          (req as any).cookies = { ...((req as any)?.cookies || {}), supabase_access_token: refreshed };
-          return await resolveAuth(req);
+        identity = await resolveKindeIdentity(refreshed);
+        if (identity) {
+          (req as Request & { cookies?: Record<string, unknown> }).cookies = {
+            ...cookiesOf(req),
+            [ACCESS_COOKIE]: refreshed,
+          };
+          token = refreshed;
         }
       }
+    }
+    if (!identity) {
+      if (res) clearSessionCookies(res);
       return null;
     }
-    const userId = String((user as any)?.id || "");
-    if (!userId) return null;
-    const { data } = await supabaseQuery<any[]>(
-      `profiles?id=eq.${encodeURIComponent(userId)}&select=id,email,role,grade,gender&limit=1`,
-    );
-    const profile = data?.[0];
+
+    const profile = await findProfileByAuthId(identity.claims.sub, identity.user.email);
     if (!profile) return null;
-    const gender = profile.gender === "طالب" || profile.gender === "طالبة" ? profile.gender : null;
-    return {
-      userId: profile.id,
-      email: profile.email || "",
-      role: profile.role || "student",
-      grade: profile.grade || "",
-      gender,
-    };
+    return toAuthInfo(profile, identity.claims.sub);
   } catch (err) {
     logger.warn({ err }, "resolveAuth failed");
     return null;
   }
 }
 
-/** أي مستخدم مسجل (طالب أو معلم) */
+/** أي مستخدم مسجّل (طالب أو معلم) */
 export const requireAuth: RequestHandler = async (req, res, next) => {
   const auth = await resolveAuth(req, res);
   if (!auth) {
@@ -135,3 +176,22 @@ export const requireAdmin: RequestHandler = async (req, res, next) => {
   (req as AuthedRequest).auth = auth;
   next();
 };
+
+/** الهوية الخام من توكن.Kinde — للإداري الذي يحتاج بيانات الحساب لا الملف. */
+export async function kindeIdentityOf(req: Request): Promise<{
+  sub: string;
+  email: string;
+  fullName: string;
+  picture: string;
+} | null> {
+  const token = String(cookiesOf(req)[ACCESS_COOKIE] || "");
+  if (!token) return null;
+  const user = await fetchKindeUser(token);
+  if (!user) return null;
+  return {
+    sub: user.id,
+    email: user.email,
+    fullName: user.fullName,
+    picture: user.picture,
+  };
+}

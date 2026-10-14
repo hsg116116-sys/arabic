@@ -4,10 +4,8 @@ import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tan
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import {
   useGetPlatformOverview,
-  useGetGoogleAuthUrl,
   useGetStudentDashboard,
   useGetTeacherDashboard,
   useGetTeacherSettings,
@@ -16,11 +14,7 @@ import {
   useListAssignments,
   useListCourses,
   useListStudents,
-  useLoginAccount,
-  useLogoutAccount,
-  useRequestPasswordReset,
   useUpdateTeacherSettings,
-  getGetGoogleAuthUrlQueryKey,
 } from '@workspace/api-client-react';
 import {
   ArrowDown,
@@ -168,15 +162,20 @@ async function fetchAuthMe(): Promise<any> {
   return jsonFetch('/api/auth/me');
 }
 
-function redirectAfterAuth(setLocation: (to: string) => void, fallback = '/student') {
-  fetchAuthMe()
-    .then((me) => {
-      if (!me.authenticated) { setLocation(fallback); return; }
-      if (me.needsSetup) { setLocation('/auth/complete'); return; }
-      setLocation(me.role === 'admin' ? '/teacher' : fallback);
-    })
-    .catch(() => setLocation(fallback));
+/* =========================================================================
+   المصادقة عبر Kinde — كل شيء يمرّ في توجيه كامل إلى صفحة Kinde.
+   لا كلمة سر ولا كود تحقق في هذه الواجهة: Kinde يتحقق من البريد ويوثّق
+   الهوية، والسيرفر يحوّل الكود إلى جلسة في كوكيز httpOnly.
+   وضعا الدخول والإنشاء يفتحان الصفحة نفسها في Kinde، فالفرق الوحيد أن
+   الصفحة تسمح للزائر باختيار تبويب الدخول أو إنشاء حساب.
+   ========================================================================= */
+async function startKindeAuth(mode: 'login' | 'signup' = 'login'): Promise<void> {
+  const { url } = await jsonFetch('/api/auth/kinde/authorize');
+  if (!url) throw new Error('خدمة تسجيل الدخول غير مهيأة على الخادم بعد.');
+  try { sessionStorage.setItem('ard-auth-mode', mode); } catch { /* تجاهل */ }
+window.location.assign(url);
 }
+
 const teacherImageUrl = '/teacher-ahmed.jpg';
 const APP_VERSION = 'v25.10-SRC';
 const platformLogoUrl = '/ard-al-lughah-logo-transparent.png';
@@ -1141,20 +1140,40 @@ function PublicHeader() {
   );
 }
 
-// توجيه فوري: من دخل الموقع وهو مسجل يُنقل لحسابه علطول (رئيسية/دخول/تسجيل)
-function useRedirectIfAuthenticated() {
+// توجيه فوري عند فتح صفحة المصادقة.
+//  · من هو مسجّل يُنقل إلى حسابه (رئيسية/دخول/تسجيل).
+//  · ومن هو زائر يُرسل إلى Kinde مباشرة بلا ضغطة زر — لم يبقَ في هذه
+//    الصفحات استمارة تُملأ، فخطوة إضافية كانت عبئاً لا معنى له.
+// kindeMode يمرّر فقط في صفحات الدخول والتسجيل؛ الصفحة الرئيسية
+// تستدعيها بلا وضع فتحً bleiben شاشة عامة.
+function useRedirectIfAuthenticated(
+  kindeMode?: 'login' | 'signup',
+  onKindeError?: (message: string) => void,
+) {
   const [, setLocation] = useLocation();
   useEffect(() => {
     let cancelled = false;
-    fetchAuthMe()
-      .then((me) => {
-        if (cancelled || !me?.authenticated) return;
+    (async () => {
+      let me: any = null;
+      try { me = await fetchAuthMe(); } catch { /* غير مسجّل — نكمل */ }
+      if (cancelled) return;
+      if (me?.authenticated) {
         if (me.needsSetup) { setLocation('/auth/complete'); return; }
         setLocation(me.role === 'admin' ? '/teacher' : '/student');
-      })
-      .catch(() => undefined);
+        return;
+      }
+      if (!kindeMode) return;
+      try {
+        await startKindeAuth(kindeMode);
+      } catch (err: any) {
+        if (cancelled) return;
+        onKindeError?.(
+          err?.message || 'تعذر فتح صفحة تسجيل الدخول. تحقق من إعداد Kinde ثم أعد المحاولة.',
+        );
+      }
+    })();
     return () => { cancelled = true; };
-  }, [setLocation]);
+  }, [setLocation, kindeMode]);
 }
 
 function Home() {
@@ -1691,594 +1710,128 @@ function AuthLayout({ children, title, eyebrow }: { children: ReactNode; title: 
 }
 
 function Login() {
-  const [, setLocation] = useLocation();
-  useRedirectIfAuthenticated();
-  const login = useLoginAccount();
-  const reset = useRequestPasswordReset();
-  const google = useGetGoogleAuthUrl({ query: { enabled: false, queryKey: getGetGoogleAuthUrlQueryKey() } });
   const [message, setMessage] = useState('');
-  const [showForgot, setShowForgot] = useState(false);
+  const [busy, setBusy] = useState(true);
+  useRedirectIfAuthenticated('login', setMessage);
 
-  const submit = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const data = new FormData(e.currentTarget);
+  // الزر يبقي موجوداً: إعادة المحاولة إن فشل التوجيه التلقائي
+  const go = async (mode: 'login' | 'signup') => {
     setMessage('');
-    login.mutate(
-      { data: { email: String(data.get('email') ?? ''), password: String(data.get('password') ?? '') } },
-      {
-        onSuccess: () => { resetAuthGate(); redirectAfterAuth(setLocation); },
-        onError: (error) => setMessage(error?.message || 'تعذر تسجيل الدخول. راجع البيانات وحاول مرة أخرى.'),
-      }
-    );
-  };
-
-  const requestReset = () => {
-    if (!showForgot) {
-      setShowForgot(true);
-      return;
+    setBusy(true);
+    try {
+      await startKindeAuth(mode);
+    } catch (err: any) {
+      setBusy(false);
+      setMessage(err?.message || 'تعذر فتح صفحة تسجيل الدخول. حاول بعد قليل.');
     }
-    const email = document.querySelector<HTMLInputElement>('[data-testid="input-email"]')?.value;
-    if (!email) {
-      setMessage('اكتب بريدك الإلكتروني أولاً.');
-      return;
-    }
-    reset.mutate(
-      { data: { email } },
-      {
-        onSuccess: (result) => setMessage(result.message),
-        onError: () => setMessage('تعذر إرسال رسالة الاستعادة الآن.'),
-      }
-    );
-  };
-
-  const continueWithGoogle = async () => {
-    const result = await google.refetch();
-    if (result.data?.url) window.location.assign(result.data.url);
-    else setMessage('تسجيل الدخول باستخدام Google غير مفعّل حالياً.');
   };
 
   return (
     <AuthLayout title="مرحباً بعودتك" eyebrow="تسجيل الدخول">
-      <form onSubmit={submit} className="mt-8 space-y-5">
-        <Field name="email" label="البريد الإلكتروني" type="email" placeholder="name@example.com" testId="input-email" />
-        <Field name="password" label="كلمة المرور" type="password" placeholder="••••••••" testId="input-password" />
-        <div className="flex items-center justify-between text-sm">
-          <label className="flex items-center gap-2 text-muted-foreground">
-            <input type="checkbox" className="accent-primary" /> تذكرني
-          </label>
-          <button type="button" onClick={requestReset} className="font-semibold text-primary hover:underline" data-testid="button-forgot">
-            نسيت كلمة المرور؟
-          </button>
-        </div>
-        {showForgot && <p className="rounded-xl bg-secondary px-4 py-3 text-xs leading-6 text-muted-foreground">سيتم إرسال رابط الاستعادة إلى بريدك الإلكتروني المسجل.</p>}
-        {message && <p className="rounded-xl bg-accent/20 px-4 py-3 text-sm leading-6 text-accent-foreground font-semibold">{message}</p>}
-        <Button type="submit" disabled={login.isPending} className="mt-2 w-full py-3.5" data-testid="button-login">
-          {login.isPending ? 'جارٍ الدخول...' : 'دخول إلى مساحتي'} <ArrowLeft size={17} />
-        </Button>
-      </form>
-      <button
-        type="button"
-        onClick={continueWithGoogle}
-        className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm font-semibold text-primary transition-colors hover:bg-secondary"
-        data-testid="button-google-login"
-      >
-        <span className="grid h-5 w-5 place-items-center rounded-full bg-primary text-[10px] text-primary-foreground font-bold">G</span> المتابعة باستخدام Google
-      </button>
-      <p className="mt-8 text-center text-sm text-muted-foreground">
-        ليس لديك حساب؟{' '}
-        <Link href="/register" className="font-bold text-primary hover:underline" data-testid="link-register-auth">
-          أنشئ حساباً جديداً
-        </Link>
-      </p>
-    </AuthLayout>
-  );
-}
-
-/* =========================================================================
-   تأكيد البريد قبل إنشاء الحساب
-   — المزوّدون المسموحون (السيرفر هو المرجع، وهذا فحص مبكر لتجربة أسرع)
-   — بيانات التسجيل تُحفظ في sessionStorage حتى تستطيع صفحة التأكيد إنشاء
-     الحساب بعد إدخال الكود؛ تخرج من الصفحة ولا تُدخل الكود ⇒ لا حساب.
-   ========================================================================= */
-const ALLOWED_EMAIL_DOMAINS = ['gmail.com', 'googlemail.com', 'hotmail.com', 'outlook.com', 'live.com', 'msn.com'];
-const ALLOWED_EMAIL_FAMILIES = ['hotmail.', 'outlook.', 'live.', 'msn.'];
-const PENDING_REGISTRATION_KEY = 'ard-verify-pending';
-
-function emailDomainProblem(raw: string): string {
-  const email = String(raw ?? '').trim().toLowerCase();
-  if (!email) return 'اكتب بريدك الإلكتروني أولاً.';
-  if (!/^[^\s@]{1,64}@[^\s@.]+(\.[^\s@.]+)+$/.test(email)) return 'صيغة البريد غير صحيحة. مثال صحيح: name@gmail.com';
-  const domain = email.slice(email.lastIndexOf('@') + 1);
-  const allowed = ALLOWED_EMAIL_DOMAINS.includes(domain) || ALLOWED_EMAIL_FAMILIES.some((prefix) => domain.startsWith(prefix));
-  if (!allowed) return 'التسجيل مسموح ببريد Gmail أو Hotmail أو Outlook فقط.';
-  return '';
-}
-
-type PendingRegistration = {
-  fullName: string; email: string; password: string; studentNumber: string;
-  school: string; branch: string; grade: string; section: string; gender: string; phone: string;
-};
-
-function savePendingRegistration(payload: PendingRegistration) {
-  try { sessionStorage.setItem(PENDING_REGISTRATION_KEY, JSON.stringify(payload)); } catch { /* تجاهل */ }
-}
-
-function readPendingRegistration(): PendingRegistration | null {
-  try {
-    const parsed = JSON.parse(sessionStorage.getItem(PENDING_REGISTRATION_KEY) || 'null');
-    return parsed?.email ? (parsed as PendingRegistration) : null;
-  } catch { return null; }
-}
-
-function clearPendingRegistration() {
-  try { sessionStorage.removeItem(PENDING_REGISTRATION_KEY); } catch { /* تجاهل */ }
-}
-
-/** 01:05 — عدّاد إعادة الإرسال */
-function formatClock(total: number): string {
-  const safe = Math.max(0, Math.floor(total));
-  return `${String(Math.floor(safe / 60)).padStart(2, '0')}:${String(safe % 60).padStart(2, '0')}`;
-}
-
-/** حلقة العدّاد النازلة حتى تُسمح إعادة الإرسال */
-function CountdownRing({ seconds, total = 60 }: { seconds: number; total?: number }) {
-  const radius = 16;
-  const circumference = 2 * Math.PI * radius;
-  const ratio = Math.max(0, Math.min(1, seconds / total));
-  return (
-    <span className="relative grid h-9 w-9 shrink-0 place-items-center">
-      <svg viewBox="0 0 40 40" className="h-9 w-9 -rotate-90">
-        <circle cx="20" cy="20" r={radius} fill="none" stroke="hsl(var(--border))" strokeWidth="4" />
-        <circle
-          cx="20" cy="20" r={radius} fill="none" stroke="hsl(var(--primary))" strokeWidth="4"
-          strokeLinecap="round" strokeDasharray={circumference}
-          strokeDashoffset={circumference * (1 - ratio)} className="transition-[stroke-dashoffset] duration-1000 ease-linear"
-        />
-      </svg>
-      <span className="absolute text-[11px] font-extrabold tabular-nums text-primary">{seconds}</span>
-    </span>
-  );
-}
-
-function Register() {
-  // الصفوف والمدارس تأتي من قاعدة البيانات — يشترك هنا ليعيد الرسم فور تغيّرها
-  useCatalog();
-  const [, setLocation] = useLocation();
-  useRedirectIfAuthenticated();
-  const google = useGetGoogleAuthUrl({ query: { enabled: false, queryKey: getGetGoogleAuthUrlQueryKey() } });
-  const [message, setMessage] = useState('');
-  const [sending, setSending] = useState(false);
-
-  const continueWithGoogle = async () => {
-    const result = await google.refetch();
-    if (result.data?.url) window.location.assign(result.data.url);
-    else setMessage('تسجيل الدخول باستخدام Google غير مفعّل حالياً.');
-  };
-
-  // الخطوة الأولى: يتحقق السيرفر من نطاق البريد ثم يرسل الكود.
-  // الحساب نفسه لا يُنشأ هنا أبداً.
-  const submit = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const data = new FormData(e.currentTarget);
-    const fullName = String(data.get('fullName') ?? '').trim();
-    const email = String(data.get('email') ?? '').trim();
-    setMessage('');
-    if (fullName.length < 3) {
-      setMessage('اسم المستخدم إلزامي — اكتب اسمك الثلاثي أو الرباعي (3 أحرف على الأقل).');
-      return;
-    }
-    const emailProblem = emailDomainProblem(email);
-    if (emailProblem) {
-      setMessage(emailProblem);
-      return;
-    }
-
-    setSending(true);
-    jsonFetch('/api/auth/verify/send', { method: 'POST', body: { email, name: fullName } })
-      .then(() => {
-        savePendingRegistration({
-          fullName,
-          email,
-          password: String(data.get('password') ?? ''),
-          studentNumber: '',
-          school: String(data.get('school') ?? ''),
-          branch: 'المسار الأكاديمي',
-          grade: String(data.get('grade') ?? ''),
-          section: 'أ',
-          gender: String(data.get('gender') ?? ''),
-          phone: String(data.get('phone') ?? ''),
-        });
-        setLocation('/auth/verify');
-      })
-      .catch((err: Error) => {
-        setSending(false);
-        setMessage(err?.message || 'تعذّر إرسال كود التأكيد. حاول بعد قليل.');
-      });  };
-
-  return (
-    <AuthLayout title="انضم لأرض اللغة" eyebrow="حساب طالب جديد">
-      <form onSubmit={submit} className="mt-8 space-y-4">
-        <Field name="fullName" label="الاسم الكامل (اسم المستخدم)" placeholder="اكتب الاسم الثلاثي أو الرباعي — إلزامي" testId="input-name" />
-        <div>
-          <Field name="email" label="البريد الإلكتروني" type="email" placeholder="name@gmail.com" testId="input-register-email" />
-          <p className="mt-2 flex items-center gap-2 px-1 text-xs font-semibold leading-5 text-muted-foreground" data-testid="hint-verify-email">
-            <Mail size={13} className="shrink-0 text-primary" /> بريد Gmail أو Hotmail أو Outlook فقط — سنرسل عليه كود التأكيد.
-          </p>
-        </div>
-        <Field name="password" label="كلمة المرور (6 خانات على الأقل)" type="password" placeholder="••••••••" testId="input-register-password" />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <LiveSelectField name="school" label="المدرسة" kind="school" testId="select-school" />
-          <LiveSelectField name="grade" label="الصف الدراسي" kind="grade" testId="select-grade" />
-          <SelectField name="gender" label="الجنس" options={['طالب', 'طالبة']} testId="select-gender" />
-          <Field name="phone" label="رقم الهاتف (اختياري)" placeholder="059xxxxxxx" testId="input-phone" />
-        </div>
-        <label className="flex items-start gap-2 pt-1 text-xs leading-5 text-muted-foreground">
-          <input type="checkbox" required className="mt-1 accent-primary" /> أوافق على الالتزام بمتابعة الدروس والتكليفات وفق توجيهات الأستاذ أحمد الأسطل.
-        </label>
-        <div className="flex items-start gap-2 rounded-2xl border border-border bg-secondary/50 px-4 py-3 text-xs font-semibold leading-6 text-muted-foreground">
-          <ShieldCheck size={15} className="mt-0.5 shrink-0 text-primary" />
-          لن يُنشأ حسابك إلا بعد إدخال كود التأكيد — إن توقفت هنا فلا حساب لك.
+      <div className="mt-8 space-y-5">
+        <div className="flex items-center gap-3 rounded-2xl bg-secondary p-5 text-sm leading-7 text-muted-foreground">
+          <RefreshCw size={18} className="h-5 w-5 shrink-0 animate-spin text-primary" />
+          <span>جارٍ نقلك إلى صفحة تسجيل الدخول الآمنة…</span>
         </div>
         {message && (
           <div className="rounded-xl bg-accent/20 px-4 py-3 text-sm leading-6 text-accent-foreground font-semibold">
             <p>{message}</p>
-            {message.includes('مسجّل') && (
-              <Link href="/login" className="mt-2 inline-flex items-center gap-1.5 font-extrabold text-primary hover:underline" data-testid="link-login-duplicate">
-                سجّل دخولك بهذا البريد <ArrowLeft size={14} />
-              </Link>
-            )}
+            <Button type="button" onClick={() => go('login')} disabled={busy} className="mt-3 w-full py-3" data-testid="button-login">
+              {busy ? 'جارٍ فتح صفحة الدخول...' : 'حاول مرة أخرى'} <ArrowLeft size={17} />
+            </Button>
           </div>
         )}
-        <Button type="submit" disabled={sending} className="mt-2 w-full py-3.5" data-testid="button-register">
-          {sending ? (
-            <><RefreshCw size={17} className="animate-spin" /> جارٍ إرسال كود التأكيد...</>
-          ) : (
-            <>إرسال كود التأكيد إلى بريدي <ArrowLeft size={17} /></>
-          )}
-        </Button>
-      </form>
-      <div className="mt-5 flex items-center gap-3 text-xs text-muted-foreground">
-        <span className="h-px flex-1 bg-border" />
-        أو
-        <span className="h-px flex-1 bg-border" />
+        <p className="text-center text-xs leading-6 text-muted-foreground">
+          الدخول يتم في صفحة Kinde الآمنة — بريدك وكلمة سرّك لا تمرّان على خوادمنا إطلاقاً.
+          يمكنك الاستعاذة بكلمة السر من هناك.
+        </p>
       </div>
-      <button
-        type="button"
-        onClick={continueWithGoogle}
-        className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm font-semibold text-primary transition-colors hover:bg-secondary"
-        data-testid="button-google-register"
-      >
-        <span className="grid h-5 w-5 place-items-center rounded-full bg-primary text-[10px] text-primary-foreground font-bold">G</span> إنشاء حساب عبر Google
-      </button>
-      <p className="mt-7 text-center text-sm text-muted-foreground">
-        لديك حساب بالفعل؟{' '}
-        <Link href="/login" className="font-bold text-primary hover:underline" data-testid="link-login-auth">
-          سجل دخولك
-        </Link>
-      </p>
     </AuthLayout>
   );
 }
 
 /* =========================================================================
-   صفحة تأكيد البريد — البوابة التي لا يُعبرها حساب بلا كود.
+   إنشاء الحساب — لا نموذج هنا. Kinde ينشئ الحساب ويتحقق من البريد،
+   والواجهة تطلب فقط الاسم الكامل ونوع الحساب ثم تحوّل إلى صفحة Kinde.
+   ما بعد الدخول يُسأل عنه في /auth/complete.
    ========================================================================= */
-function VerifyEmailPage() {
-  const [, setLocation] = useLocation();
-  useRedirectIfAuthenticated();
-  const [phase, setPhase] = useState<'loading' | 'ready' | 'empty' | 'done'>('loading');
-  const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
+function Register() {
   const [message, setMessage] = useState('');
-  const [notice, setNotice] = useState('');
-  const [cooldown, setCooldown] = useState(0);
-  const [shakeKey, setShakeKey] = useState(0);
-  const [busy, setBusy] = useState(false);
-  const [sending, setSending] = useState(false);
-
-  // 1) حالة الطلب عند فتح الصفحة — بلا طلب نشط نخرج بموضحة لا بكود وهمي
-  useEffect(() => {
-    let cancelled = false;
-    jsonFetch('/api/auth/verify/status')
-      .then((data) => {
-        if (cancelled) return;
-        if (!data?.pending) { setPhase('empty'); return; }
-        setEmail(String(data.email || ''));
-        setCooldown(Math.max(0, Number(data.resendIn) || 0));
-        setPhase('ready');
-      })
-      .catch(() => { if (!cancelled) setPhase('empty'); });
-    return () => { cancelled = true; };
-  }, []);
-
-  // 2) العدّاد: دقيقة كاملة قبل السماح بكود جديد
-  useEffect(() => {
-    if (cooldown <= 0) return;
-    const timer = setTimeout(() => setCooldown((value) => Math.max(0, value - 1)), 1000);
-    return () => clearTimeout(timer);
-  }, [cooldown]);
-
-  const submit = async () => {
-    if (busy || code.length !== 6) return;
-    const pending = readPendingRegistration();
-    if (!pending) {
-      setMessage('انتهت بيانات التسجيل في هذا المتصفح. عُد إلى صفحة التسجيل وابدأ من جديد.');
-      setCode('');
-      return;
-    }
+  const [busy, setBusy] = useState(true);
+  const go = async () => {
+    setMessage('');
     setBusy(true);
-    setMessage('');
     try {
-      await jsonFetch('/api/auth/register', { method: 'POST', body: { ...pending, code } });
-      clearPendingRegistration();
-      setPhase('done');
-      resetAuthGate();
-      setTimeout(() => redirectAfterAuth(setLocation), 1100);
+      // لا اسم ولا بريد ولا كلمة سر هنا — كلها ملك Kinde
+      await startKindeAuth('signup');
     } catch (err: any) {
-      setMessage(err?.message || 'تعذّر إنشاء الحساب. حاول ثانية.');
-      setCode('');
-      setShakeKey((key) => key + 1);
       setBusy(false);
+      setMessage(err?.message || 'تعذر فتح صفحة إنشاء الحساب. حاول بعد قليل.');
     }
   };
-
-  // 3) التأكيد تلقائياً عند اكتمال الأرقام الستة
-  useEffect(() => {
-    if (phase === 'ready' && code.length === 6 && !busy) submit();
-  }, [code, phase]);
-
-  const resend = async () => {
-    if (sending || cooldown > 0) return;
-    const pending = readPendingRegistration();
-    if (!pending) {
-      setMessage('انتهت بيانات التسجيل في هذا المتصفح. عُد إلى صفحة التسجيل وابدأ من جديد.');
-      return;
-    }
-    setSending(true);
-    setMessage('');
-    setNotice('');
-    try {
-      const data = await jsonFetch('/api/auth/verify/send', {
-        method: 'POST',
-        body: { email: pending.email, name: pending.fullName },
-      });
-      setEmail(String(data?.email || email));
-      setCooldown(Math.max(0, Number(data?.resendIn) || 60));
-      setCode('');
-      setNotice('وصل الكود الجديد إلى بريدك — الكود السابق لم يعد صالحاً.');
-    } catch (err: any) {
-      setMessage(err?.message || 'تعذّر إعادة الإرسال. حاول بعد قليل.');
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const cancel = () => {
-    clearPendingRegistration();
-    jsonFetch('/api/auth/verify/cancel', { method: 'POST' }).catch(() => undefined);
-    setLocation('/register');
-  };
-
-  if (phase === 'loading') {
-    return (
-      <AuthLayout title="لحظة واحدة فقط" eyebrow="تأكيد البريد الإلكتروني">
-        <div className="mt-8 flex items-center gap-3 rounded-2xl bg-secondary p-5 text-sm leading-7 text-muted-foreground">
-          <RefreshCw className="h-5 w-5 shrink-0 animate-spin text-primary" /> نجهّز طلب التأكيد...
-        </div>
-      </AuthLayout>
-    );
-  }
-
-  if (phase === 'empty') {
-    return (
-      <AuthLayout title="لا يوجد طلب تأكيد" eyebrow="تأكيد البريد الإلكتروني">
-        <div className="animate-fade-up mt-8 rounded-3xl border border-dashed border-border bg-card p-8 text-center">
-          <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-secondary text-muted-foreground">
-            <Mail size={28} />
-          </span>
-          <p className="text-sm font-semibold leading-7 text-foreground">لا يوجد طلب تأكيد قائم على هذا المتصفح.</p>
-          <p className="mt-2 text-sm leading-7 text-muted-foreground">
-            املأ بياناتك في صفحة التسجيل وسنرسل كود التأكيد إلى بريدك مباشرة.
-          </p>
-          <Button onClick={() => setLocation('/register')} className="mt-6 w-full py-3.5" data-testid="button-verify-back">
-            الذهاب إلى صفحة التسجيل <ArrowLeft size={17} />
-          </Button>
-        </div>
-      </AuthLayout>
-    );
-  }
-
-  if (phase === 'done') {
-    return (
-      <AuthLayout title="تم تأكيد بريدك" eyebrow="أهلاً بك في أرض اللغة">
-        <div className="animate-fade-up mt-8 rounded-3xl border border-border bg-card p-9 text-center shadow-sm">
-          <span className="animate-glow-pulse mx-auto mb-5 grid h-20 w-20 place-items-center rounded-full bg-accent/25 text-accent-foreground">
-            <CheckCircle2 size={40} />
-          </span>
-          <p className="font-display text-2xl font-bold text-primary">حسابك جاهز!</p>
-          <p className="mt-2 text-sm leading-7 text-muted-foreground">جارٍ إدخالك إلى مساحتك التعليمية...</p>
-          <div className="mt-6 flex items-center justify-center gap-2 text-sm font-bold text-primary">
-            <RefreshCw size={15} className="animate-spin" /> جارٍ الدخول إلى حسابك
-          </div>
-        </div>
-      </AuthLayout>
-    );
-  }
+  useRedirectIfAuthenticated('signup', setMessage);
 
   return (
-    <AuthLayout title="أدخل كود التأكيد" eyebrow="خطوة واحدة أخيرة">
-      {/* بطاقة البريد */}
-      <div className="animate-fade-up mt-8 flex items-center gap-4 rounded-3xl border border-border bg-card p-5 shadow-sm">
-        <span className="relative grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-primary to-[#2a7a72] text-primary-foreground shadow-md">
-          <Mail size={24} />
-          <span className="absolute -bottom-1.5 -left-1.5 grid h-7 w-7 place-items-center rounded-full bg-accent text-xs font-extrabold text-accent-foreground ring-4 ring-card">1</span>
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-bold text-accent-foreground">أرسلنا الكود إلى</p>
-          <p dir="ltr" className="truncate text-left font-mono text-base font-bold text-primary" data-testid="verify-email-target">
-            {email || '—'}
-          </p>
+    <AuthLayout title="انضم لأرض اللغة" eyebrow="حساب طالب جديد">
+      <div className="mt-8 space-y-5">
+        <div className="flex items-center gap-3 rounded-2xl bg-secondary p-5 text-sm leading-7 text-muted-foreground">
+          <RefreshCw size={18} className="h-5 w-5 shrink-0 animate-spin text-primary" />
+          <span>جارٍ نقلك إلى إنشاء الحساب في صفحة Kinde الآمنة…</span>
         </div>
-      </div>
-
-      {/* خانات الكود */}
-      <div className="mt-9">
-        <p className="text-center text-sm font-bold text-foreground">أدخل الكود المكوّن من 6 أرقام</p>
-        <p className="mt-1.5 text-center text-xs leading-6 text-muted-foreground">تحقّقنا من بريدك برسالة تحمل الكود فقط — لا يُنشأ حساب إلا بإدخاله.</p>
-        <div className="mt-5 flex justify-center" key={shakeKey}>
-          <InputOTP
-            maxLength={6}
-            value={code}
-            onChange={(value: string) => { setCode(value.replace(/\D/g, '').slice(0, 6)); setMessage(''); }}
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            disabled={busy}
-            containerClassName="animate-shake gap-2 sm:gap-3"
-            data-testid="input-verify-code"
-          >
-            <InputOTPGroup>
-              {[0, 1, 2, 3, 4, 5].map((index) => (
-                <InputOTPSlot
-                  key={index}
-                  index={index}
-                  className="h-14 w-11 rounded-2xl border-border bg-card font-display text-2xl font-extrabold text-primary shadow-sm transition-all sm:h-16 sm:w-14"
-                />
-              ))}
-            </InputOTPGroup>
-          </InputOTP>
+        <div className="flex items-start gap-2 rounded-2xl border border-border bg-secondary/50 px-4 py-3 text-xs leading-6 text-muted-foreground">
+          <ShieldCheck size={15} className="mt-0.5 shrink-0 text-primary" />
+          في صفحة Kinde تكتب بريدك وكلمة سرّك، أو تدخل بحساب Google، وKinde يتكفّل بتأكيد بريدك. بعد الدخول يسألك عن اسمك وصفّك ومدرستك.
         </div>
-      </div>
-
-      {notice && (
-        <p className="mt-6 flex items-center justify-center gap-2 rounded-2xl bg-accent/20 px-4 py-3 text-center text-sm font-semibold leading-6 text-accent-foreground">
-          <Check size={15} className="shrink-0" /> {notice}
-        </p>
-      )}
-
-      {message && (
-        <p className="mt-6 flex items-start gap-2 rounded-2xl bg-destructive/10 px-4 py-3 text-sm font-semibold leading-6 text-destructive" data-testid="verify-error">
-          <CircleAlert size={16} className="mt-0.5 shrink-0" /> <span>{message}</span>
-        </p>
-      )}
-
-      <Button
-        type="button"
-        onClick={submit}
-        disabled={busy || code.length !== 6}
-        className="mt-7 w-full py-4 text-base"
-        data-testid="button-verify-submit"
-      >
-        {busy ? (
-          <><RefreshCw size={17} className="animate-spin" /> جارٍ إنشاء حسابك...</>
-        ) : (
-          <>تأكيد الكود وإنشاء الحساب <Check size={18} /></>
-        )}
-      </Button>
-
-      {/* إعادة الإرسال بعد دقيقة */}
-      <div className="mt-5 flex justify-center">
-        {cooldown > 0 ? (
-          <div className="flex items-center gap-3 rounded-2xl border border-border bg-secondary/60 px-5 py-3 text-sm font-semibold text-muted-foreground" data-testid="verify-resend-countdown">
-            <CountdownRing seconds={cooldown} />
-            <span>
-              كود جديد بعد <span className="font-extrabold tabular-nums text-primary">{formatClock(cooldown)}</span>
-            </span>
+        {message && (
+          <div className="rounded-xl bg-accent/20 px-4 py-3 text-sm leading-6 text-accent-foreground font-semibold">
+            <p>{message}</p>
+            <Button type="button" onClick={go} disabled={busy} className="mt-3 w-full py-3" data-testid="button-register">
+              {busy ? 'جارٍ فتح صفحة إنشاء الحساب...' : 'حاول مرة أخرى'} <ArrowLeft size={17} />
+            </Button>
           </div>
-        ) : (
-          <button
-            type="button"
-            onClick={resend}
-            disabled={sending}
-            className="group inline-flex items-center gap-2 rounded-2xl border border-border bg-card px-5 py-3 text-sm font-extrabold text-primary shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
-            data-testid="button-verify-resend"
-          >
-            {sending ? (
-              <><RefreshCw size={16} className="animate-spin" /> جارٍ الإرسال...</>
-            ) : (
-              <><RefreshCw size={16} className="transition-transform duration-500 group-hover:rotate-180" /> إعادة إرسال الكود</>
-            )}
-          </button>
         )}
       </div>
-
-      <div className="mt-8 flex items-start gap-3 rounded-2xl border border-border bg-secondary/50 p-4 text-xs leading-6 text-muted-foreground">
-        <ShieldCheck size={16} className="mt-0.5 shrink-0 text-primary" />
-        <p>لو أغلقت هذه الصفحة الآن فلن يُنشأ لك أي حساب — الكود وحده هو ما يفتح الحساب.</p>
-      </div>
-
-      <p className="mt-6 text-center text-sm text-muted-foreground">
-        البريد غير صحيح؟{' '}
-        <button type="button" onClick={cancel} className="font-bold text-primary hover:underline" data-testid="link-verify-change-email">
-          غيّر البريد وابدأ من جديد
-        </button>
-      </p>
     </AuthLayout>
-  );
-}
-
-function Field({ name, label, type = 'text', placeholder, testId }: { name?: string; label: string; type?: string; placeholder: string; testId: string }) {
-  return (
-    <label className="block text-sm font-semibold text-foreground">
-      <span className="mb-2 block">{label}</span>
-      <input
-        name={name}
-        required={type !== 'tel' && !label.includes('اختياري')}
-        type={type}
-        placeholder={placeholder}
-        data-testid={testId}
-        className="w-full rounded-xl border border-input bg-card px-4 py-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-primary focus:ring-4 focus:ring-accent/20"
-      />
-    </label>
-  );
-}
-
-function SelectField({ name, label, options, testId, optional = false }: { name: string; label: string; options: string[]; testId: string; optional?: boolean }) {
-  return (
-    <label className="block text-sm font-semibold text-foreground">
-      <span className="mb-2 block">{label}</span>
-      <select name={name} required={!optional} data-testid={testId} className="w-full rounded-xl border border-input bg-card px-4 py-3 text-sm outline-none focus:border-primary focus:ring-4 focus:ring-accent/20">
-        <option value="">اختر</option>
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
-      </select>
-    </label>
   );
 }
 
 function AuthCallback() {
   const [, setLocation] = useLocation();
-  const [status, setStatus] = useState('جارٍ تأكيد حسابك عبر Google...');
+  const [status, setStatus] = useState('جارٍ تجهيز جلسة Kinde...');
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const params = new URLSearchParams(window.location.search);
       const code = params.get('code');
+      const state = params.get('state') || '';
       const error = params.get('error');
+      const errorText = params.get('error_description') || '';
       if (!code || error) {
         if (!cancelled) {
           setFailed(true);
-          setStatus(error === 'access_denied' ? 'ألغيت تسجيل الدخول عبر Google. يمكنك المتابعة بالبريد وكلمة المرور.' : 'تعذر إتمام تسجيل الدخول عبر Google.');
+          setStatus(
+            error === 'access_denied'
+              ? 'ألغيت تسجيل الدخول. يمكنك العودة والمحاولة في أي وقت.'
+              : errorText || 'تعذر إتمام تسجيل الدخول عبر Kinde.'
+          );
         }
         window.setTimeout(() => { if (!cancelled) setLocation('/login'); }, 2500);
         return;
       }
       try {
-        const result = await jsonFetch('/api/auth/exchange', { method: 'POST', body: { code } });
+        // الكود يُبادل على السيرفر وحده — لا سرّ ولا توكن يمرّ من المتصفح
+        const result = await jsonFetch('/api/auth/kinde/exchange', { method: 'POST', body: { code, state } });
         if (cancelled) return;
-        setStatus(result.needsSetup ? 'تم التحقق من حسابك بنجاح. أكمل بياناتك لتندفع إلى مساحة التعلم!' : 'تم التحقق من حسابك بنجاح.');
-        window.setTimeout(() => {
-          if (cancelled) return;
-          resetAuthGate();
-          setLocation(result.needsSetup ? '/auth/complete' : '/student');
-        }, 800);
+        try { sessionStorage.removeItem('ard-auth-mode'); sessionStorage.removeItem('ard-signup-name'); } catch { /* تجاهل */ }
+        resetAuthGate();
+        const target = result.role === 'admin' ? '/teacher' : result.needsSetup ? '/auth/complete' : '/student';
+        setStatus(result.needsSetup ? 'تم تأكيد حسابك. أكمل بياناتك لتندفع إلى مساحة التعلم!' : 'تم تأكيد حسابك بنجاح.');
+        window.setTimeout(() => { if (!cancelled) setLocation(target); }, 800);
       } catch (err: any) {
         if (!cancelled) {
           setFailed(true);
-          setStatus(err?.message || 'تعذر تأكيد الجلسة عبر Google. أعد المحاولة.');
+          setStatus(err?.message || 'تعذر تأكيد الجلسة عبر Kinde. أعد المحاولة.');
           window.setTimeout(() => { if (!cancelled) setLocation('/login'); }, 2500);
         }
       }
@@ -2406,7 +1959,6 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
   });
   // إغلاق القوائم تلقائياً عند التنقل — حتى لا تغطي المحتوى والنوافذ
   useEffect(() => { setMobileMenu(false); setProfileMenu(false); setNotifOpen(false); }, [location]);
-  const logout = useLogoutAccount();
   const studentDash = useGetStudentDashboard();
   // صورة الحساب (صورة Google إن سجل بها) — للطالب والمعلم
   const [meAvatar, setMeAvatar] = useState('');
@@ -2512,15 +2064,20 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
   }, [mode, foundationCount]);
   const active = links.find((link) => location === link.href)?.label ?? links[0].label;
 
-  const signOut = () => {
-    logout.mutate(undefined, {
-      onSuccess: () => {
-        resetAuthGate();
-        queryClient.clear();
-        setLocation('/login');
-      },
-      onError: () => { resetAuthGate(); setLocation('/login'); },
-    });
+  // الخروج: مسح كوكيز الجلسة عندنا، ثم إنهاء جلسة Kinde نفسها
+  // حتى لا يجد المستخدم حسابه ما زال مفتوحاً عند العودة من Kinde.
+  const signOut = async () => {
+    try { await jsonFetch('/api/auth/logout', { method: 'POST' }); } catch { /* نكمل */ }
+    try {
+      const { url } = await jsonFetch('/api/auth/kinde/logout');
+      resetAuthGate();
+      queryClient.clear();
+      window.location.assign(url || '/login');
+    } catch {
+      resetAuthGate();
+      queryClient.clear();
+      setLocation('/login');
+    }
   };
 
   return (
@@ -4510,7 +4067,6 @@ function StudentsPage() {
       section: s.section || 'أ',
       gender: s.gender === 'طالبة' ? 'طالبة' : 'طالب',
       status: s.status || 'نشط',
-      password: '',
     });
     setEditItem(s);
   };
@@ -4519,15 +4075,11 @@ function StudentsPage() {
     if (!editItem) return;
     setSavingEdit(true);
     try {
+      // كلمة السر ليست حقلاً هنا — حسابات الدخول تديرها Kinde نفسها.
       const { password, ...profile } = editForm;
       await jsonFetch(`/api/teacher/students/${editItem.id}`, { method: 'PATCH', body: profile });
-      let pwdMsg = '';
-      if (password && String(password).trim()) {
-        const pr = await jsonFetch(`/api/teacher/students/${editItem.id}/password`, { method: 'PATCH', body: { password: String(password).trim() } });
-        pwdMsg = ' + ' + (pr.message || 'تم تغيير كلمة السر');
-      }
       setOpOk(true);
-      setOpMsg(`تم حفظ بيانات ${editForm.name} بنجاح ✓${pwdMsg}`);
+      setOpMsg(`تم حفظ بيانات ${editForm.name} بنجاح ✓`);
       setEditItem(null);
       query.refetch();
       setTimeout(() => setOpMsg(''), 4000);
@@ -4805,17 +4357,10 @@ function StudentsPage() {
                 </select>
               </Field2>
             </div>
-            <Field2 label="كلمة سر جديدة (اختياري)">
-              <input
-                type="text"
-                value={editForm.password || ''}
-                onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
-                placeholder="اتركها فارغة للإبقاء — 6 أحرف على الأقل للتغيير"
-                dir="ltr"
-                className={`${inputCls} text-left`}
-                data-testid="input-edit-student-password"
-              />
-            </Field2>
+            <div className="flex items-start gap-2 rounded-2xl border border-border bg-secondary/50 px-4 py-3 text-[11px] font-bold leading-5 text-muted-foreground">
+              <ShieldCheck size={14} className="mt-0.5 shrink-0 text-primary" />
+              كلمة سر الطالب لا تُضبط من هنا — يحفظها في حسابه لدى Kinde ويستعيدها هناك.
+            </div>
             <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
               <Button type="button" onClick={() => editItem && deleteStudent(editItem)} variant="ghost" className="text-destructive"><Trash2 size={15} /> حذف الطالب</Button>
               <span className="flex items-center gap-3">
@@ -5510,19 +5055,15 @@ function SettingsPage() {
 }
 
 /* =========================================================================
-   حساب دخول المعلم — كلمة السر + بريد الإدارة + ربط Google
-========================================================================= */
+   حساب دخول المعلم — كلمة السر وإعدادات الحساب عبر Kinde
+   ========================================================================= */
 function AccountSecurityCard() {
   const [info, setInfo] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
-  const [cur, setCur] = useState('');
-  const [nw, setNw] = useState('');
-  const [nw2, setNw2] = useState('');
   const [adminMail, setAdminMail] = useState('');
-  const [busy, setBusy] = useState<'pwd' | 'mail' | null>(null);
+  const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [ok, setOk] = useState(true);
-  const google = useGetGoogleAuthUrl({ query: { enabled: false, queryKey: getGetGoogleAuthUrlQueryKey() } });
 
   const load = async () => {
     setLoading(true);
@@ -5534,24 +5075,8 @@ function AccountSecurityCard() {
   };
   useEffect(() => { load(); }, []);
 
-  const savePwd = async (e: FormEvent) => {
-    e.preventDefault();
-    if (nw !== nw2) { setOk(false); setMsg('تأكيد كلمة السر غير مطابق'); return; }
-    setBusy('pwd');
-    setMsg('');
-    try {
-      const r = await jsonFetch('/api/teacher/account/password', { method: 'PATCH', body: { currentPassword: cur, newPassword: nw } });
-      setOk(true);
-      setMsg(r.message || 'تم تغيير كلمة سرك بنجاح!');
-      setCur(''); setNw(''); setNw2('');
-    } catch (e: any) {
-      setOk(false);
-      setMsg(e?.message || 'تعذر تغيير كلمة السر');
-    } finally { setBusy(null); }
-  };
-
   const saveMail = async () => {
-    setBusy('mail');
+    setBusy(true);
     setMsg('');
     try {
       const r = await jsonFetch('/api/teacher/account/email', { method: 'PATCH', body: { adminEmail: adminMail.trim() } });
@@ -5561,13 +5086,13 @@ function AccountSecurityCard() {
     } catch (e: any) {
       setOk(false);
       setMsg(e?.message || 'تعذر الحفظ');
-    } finally { setBusy(null); }
+    } finally { setBusy(false); }
   };
 
-  const linkGoogle = async () => {
-    const r = await google.refetch();
-    if (r.data?.url) window.location.assign(r.data.url);
-    else { setOk(false); setMsg('تعذر بدء ربط Google الآن'); }
+  const openKindeAccount = () => {
+    const url = info?.profileUrl;
+    if (url) window.location.assign(url);
+    else { setOk(false); setMsg('رابط حساب Kinde غير متاح — تحقق من إعداد KINDE_ISSUER_URL على الخادم.'); }
   };
 
   return (
@@ -5576,7 +5101,7 @@ function AccountSecurityCard() {
         <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-lg"><ShieldCheck size={22} /></span>
         <div>
           <p className="font-display text-lg font-bold text-primary">حساب الدخول والأمان 🔐</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">كلمة سرك + بريد الإدارة + ربط Google — لك وحدك كمعلم.</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">كلمة السر وإعدادات الحساب — لك وحدك كمعلم.</p>
         </div>
       </div>
       {loading ? <StateNotice type="loading" /> : (
@@ -5584,33 +5109,25 @@ function AccountSecurityCard() {
           <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-secondary/50 px-4 py-3 text-xs font-bold">
             <span className="text-muted-foreground">دخولك الحالي:</span>
             <span className="text-primary" dir="ltr">{info?.email || '—'}</span>
-            {info?.googleLinked === true ? (
-              <span className="mr-auto rounded-full bg-green-500/15 px-3 py-1 text-[11px] font-extrabold text-green-800">مربوط بـ Google ✓</span>
-            ) : info?.googleLinked === false ? (
-              <span className="mr-auto rounded-full bg-muted px-3 py-1 text-[11px] font-bold text-muted-foreground">غير مربوط بـ Google</span>
-            ) : null}
           </div>
 
-          <form onSubmit={savePwd} className="rounded-2xl border border-border bg-background/60 p-4">
-            <p className="mb-3 text-sm font-extrabold text-primary">تغيير كلمة سرك</p>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <label className="block text-xs font-bold">الحالية<input type="password" value={cur} onChange={(e) => setCur(e.target.value)} required className={`${inputCls} py-2.5 text-sm`} data-testid="input-current-password" /></label>
-              <label className="block text-xs font-bold">الجديدة (6+ أحرف)<input type="password" value={nw} onChange={(e) => setNw(e.target.value)} required minLength={6} className={`${inputCls} py-2.5 text-sm`} data-testid="input-new-password" /></label>
-              <label className="block text-xs font-bold">تأكيد الجديدة<input type="password" value={nw2} onChange={(e) => setNw2(e.target.value)} required className={`${inputCls} py-2.5 text-sm`} /></label>
-            </div>
-            <Button type="submit" disabled={busy === 'pwd'} variant="soft" className="mt-3 px-5 py-2 text-xs">{busy === 'pwd' ? 'جارٍ التغيير...' : 'تغيير كلمة السر ✓'}</Button>
-          </form>
+          <div className="rounded-2xl border border-border bg-background/60 p-4">
+            <p className="mb-1 text-sm font-extrabold text-primary">كلمة السر وإعدادات الحساب</p>
+            <p className="mb-3 text-[11px] leading-5 text-muted-foreground">
+              كلمة السر والبريد وطرق الدخول كلها بيد Kinde — اضغط الزر بالأسفل لفتح صفحة حسابك هناك.
+            </p>
+            <Button type="button" onClick={openKindeAccount} variant="soft" className="w-full py-2.5 text-xs">
+              <ShieldCheck size={15} /> إدارة كلمة السر في Kinde
+            </Button>
+          </div>
 
           <div className="rounded-2xl border border-border bg-background/60 p-4">
-            <p className="mb-1 text-sm font-extrabold text-primary">بريد الإدارة (Gmail) — للدخول عبر Google كمعلم</p>
-            <p className="mb-3 text-[11px] leading-5 text-muted-foreground">احفظ بريدك هنا: أي حساب <b>طالب</b> سابق بنفس البريد يُحذف تلقائياً، وبعده سجّل بهذا البريد عبر Google لتدخل كمعلم مباشرة — ويُمنع إنشاء حسابات طلاب جديدة به.</p>
+            <p className="mb-1 text-sm font-extrabold text-primary">بريد الإدارة — للدخول كمعلم</p>
+            <p className="mb-3 text-[11px] leading-5 text-muted-foreground">احفظ بريدك هنا: أي حساب <b>طالب</b> سابق بنفس البريد يُحذف تلقائياً، وبعده سجّل بهذا البريد عبر Kinde لتدخل كمعلم مباشرة.</p>
             <div className="flex flex-wrap items-center gap-2">
               <input value={adminMail} onChange={(e) => setAdminMail(e.target.value)} placeholder="you@gmail.com" dir="ltr" className={`${inputCls} min-w-52 flex-1 py-2.5 text-left text-sm`} data-testid="input-admin-email" />
-              <Button type="button" onClick={saveMail} disabled={busy === 'mail'} variant="primary" className="px-5 py-2 text-xs">{busy === 'mail' ? 'جارٍ الحفظ والتنظيف...' : 'اعتماد وتنظيف ✓'}</Button>
+              <Button type="button" onClick={saveMail} disabled={busy} variant="primary" className="px-5 py-2 text-xs">{busy ? 'جارٍ الحفظ والتنظيف...' : 'اعتماد وتنظيف ✓'}</Button>
             </div>
-            <Button type="button" onClick={linkGoogle} variant="soft" className="mt-3 w-full py-2.5 text-xs">
-              <span className="grid h-5 w-5 place-items-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">G</span> تسجيل الدخول بهذا البريد عبر Google للربط
-            </Button>
           </div>
 
           {msg ? <p className={`rounded-xl px-4 py-3 text-xs font-bold leading-6 ${ok ? 'bg-green-500/15 text-green-800' : 'bg-destructive/10 text-destructive'}`}>{msg}</p> : null}
@@ -11755,7 +11272,6 @@ function Router() {
         <Route path="/" component={Home} />
         <Route path="/login" component={Login} />
         <Route path="/register" component={Register} />
-        <Route path="/auth/verify" component={VerifyEmailPage} />
         <Route path="/auth/callback" component={AuthCallback} />
         <Route path="/auth/complete" component={CompleteProfilePage} />
         <Route path="/student" component={StudentDashboardNew} />

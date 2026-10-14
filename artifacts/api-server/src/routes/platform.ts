@@ -12,23 +12,13 @@ import {
   UpdateTeacherSettingsBody,
   UpdateTeacherSettingsResponse,
 } from "@workspace/api-zod";
-import { supabaseQuery, getSupabaseUser } from "../lib/supabase";
-import { requireAuth, requireAdmin, type AuthedRequest } from "../middlewares/auth";
+import { supabaseQuery } from "../lib/supabase";
+import { ACCESS_COOKIE, fetchKindeUser } from "../lib/kinde";
+import { findProfileByAuthId, kindeIdentityOf, requireAuth, requireAdmin, type AuthedRequest } from "../middlewares/auth";
 import { logger } from "../lib/logger";
 import { saveError, dateOrNull, firstUuid } from "./study";
 
 const router: IRouter = Router();
-
-const SUPABASE_URL = process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co";
-
-function serviceKey(): string {
-  return (
-    process.env.SUPABASE_SECRET_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_KEY ||
-    ""
-  );
-}
 
 /** بريد الإدارة المعتمد (من البيئة أو قاعدة البيانات) — الدخول به = معلم */
 async function getAdminEmails(): Promise<string[]> {
@@ -54,14 +44,9 @@ async function getAdminEmails(): Promise<string[]> {
 async function resolveProfileFromSession(accessToken?: string): Promise<any | null> {
   if (!accessToken) return null;
   try {
-    const user = await getSupabaseUser(accessToken);
+    const user = await fetchKindeUser(String(accessToken));
     if (!user) return null;
-    const userId = String(user.id ?? "");
-    if (!userId) return null;
-    const { data } = await supabaseQuery<any[]>(
-      `profiles?select=*&id=eq.${userId}&limit=1`,
-    );
-    return data?.[0] || null;
+    return (await findProfileByAuthId(user.id, user.email)) || null;
   } catch (err) {
     logger.error({ err }, "resolveProfileFromSession failed");
     return null;
@@ -80,9 +65,7 @@ async function getActiveStudent(req?: any): Promise<any | null> {
       if (data?.[0]) return data[0];
     } catch { /* تجاهل */ }
   }
-  const sessionProfile = await resolveProfileFromSession(
-    req?.cookies?.supabase_access_token,
-  );
+  const sessionProfile = await resolveProfileFromSession(req?.cookies?.[ACCESS_COOKIE]);
   return sessionProfile || null;
 }
 
@@ -1218,21 +1201,8 @@ router.delete("/teacher/students/:id", requireAdmin, async (req, res) => {
     }
     const { error } = await supabaseQuery(`profiles?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
     if (error) throw new Error(String(error));
-    // محاولة حذف حساب الدخول من المصادقة (best-effort — لا تفشل الحذف إن تعذر)
-    try {
-      const base = SUPABASE_URL.replace(/\/+$/, "");
-      const key =
-        process.env.SUPABASE_SECRET_KEY ||
-        process.env.SUPABASE_SERVICE_ROLE_KEY ||
-        process.env.SUPABASE_KEY ||
-        "";
-      if (key) {
-        await fetch(`${base}/auth/v1/admin/users/${encodeURIComponent(id)}`, {
-          method: "DELETE",
-          headers: { apikey: key, Authorization: `Bearer ${key}` },
-        });
-      }
-    } catch { /* تجاهل — المهم حذف الملف */ }
+    // حساب Kinde نفسه يبقى — حسابات الدخول عندهم ملكهم؛ نمنعه فقط من الدخول
+    // لأن صف الـ profile اختفى فلم تعد له هوية مرتبطة.
     res.json({ success: true, message: "تم حذف الطالب وبياناته!" });
   } catch (err: any) {
     logger.error({ err }, "Error in DELETE /teacher/students/:id");
@@ -1240,53 +1210,17 @@ router.delete("/teacher/students/:id", requireAdmin, async (req, res) => {
   }
 });
 
-// 9.4 Change Student Password — تغيير كلمة سر حساب الطالب (المعلم فقط)
-router.patch("/teacher/students/:id/password", requireAdmin, async (req, res) => {
-  try {
-    const id = String(req.params.id);
-    const password = String(req.body?.password || "");
-    if (password.length < 6) {
-      res.status(400).json({ error: "كلمة السر 6 أحرف على الأقل" });
-      return;
-    }
-    const { data: exists } = await supabaseQuery<any[]>(`profiles?id=eq.${encodeURIComponent(id)}&select=id&limit=1`);
-    if (!exists?.[0]) {
-      res.status(404).json({ error: "الطالب غير موجود في القاعدة" });
-      return;
-    }
-    const base = SUPABASE_URL.replace(/\/+$/, "");
-    const key =
-      process.env.SUPABASE_SECRET_KEY ||
-      process.env.SUPABASE_SERVICE_ROLE_KEY ||
-      process.env.SUPABASE_KEY ||
-      "";
-    if (!key) {
-      res.status(500).json({ error: "مفتاح الخدمة غير مهيأ في السيرفر (SUPABASE_SECRET_KEY) — أضفه ثم أعد التشغيل" });
-      return;
-    }
-    const response = await fetch(`${base}/auth/v1/admin/users/${encodeURIComponent(id)}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({ password }),
-    });
-    const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-    if (!response.ok) {
-      throw new Error(String((data as any)?.msg ?? (data as any)?.message ?? `Auth error ${response.status}`));
-    }
-    res.json({ success: true, message: "تم تغيير كلمة سر الطالب بنجاح!" });
-  } catch (err: any) {
-    logger.error({ err }, "Error in PATCH /teacher/students/:id/password");
-    res.status(500).json({ error: err?.message || "تعذر تغيير كلمة السر" });
-  }
+// 9.4 إدارة دخول الطالب — Kinde يتولّى كلمات السر، فلم يعد للمعلم ما يضبطه.
+// نُبقي المسار للواجهة القديمة ونردّ برسالة واضحة بدل 404 غامض.
+router.patch("/teacher/students/:id/password", requireAdmin, async (_req, res) => {
+  res.status(501).json({
+    error: "كلمة السر تُدار من حساب Kinde لدى الطالب نفسه — لا يستطيع المعلم تعيينها.",
+  });
 });
 
 // ───────────────────────────── حساب دخول المعلم ─────────────────────────────
 
-// حالة الحساب: البريد + بريد الإدارة + هل Google مربوط؟
+// حالة الحساب: البريد + بريد الإدارة المعتمد + رابط إدارة الحساب في Kinde
 router.get("/teacher/account", requireAdmin, async (req, res) => {
   try {
     const auth = (req as AuthedRequest).auth!;
@@ -1295,86 +1229,33 @@ router.get("/teacher/account", requireAdmin, async (req, res) => {
       const { data } = await supabaseQuery<any[]>("platform_settings?select=admin_email&limit=1");
       adminEmail = String(data?.[0]?.admin_email || "").trim();
     } catch { /* العمود غير موجود بعد — نفّذ sql_admin_account.sql */ }
-    let googleLinked: boolean | null = null;
-    try {
-      const key = serviceKey();
-      if (key) {
-        const r = await fetch(`${SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/admin/users/${encodeURIComponent(auth.userId)}`, {
-          headers: { apikey: key, Authorization: `Bearer ${key}` },
-        });
-        if (r.ok) {
-          const u = (await r.json().catch(() => ({}))) as any;
-          const ids = Array.isArray(u?.identities) ? u.identities : [];
-          googleLinked = ids.some((i: any) => String(i?.provider || "").toLowerCase() === "google");
-        }
-      }
-    } catch { /* تجاهل */ }
-    res.json({ email: auth.email || "", adminEmail, googleLinked });
+    // رابط إدارة الحساب في Kinde — حيث يغيّر المعلم بريده وكلمة سره بنفسه
+    const profileUrl = `${(process.env.KINDE_ISSUER_URL || process.env.KINDE_DOMAIN || "").replace(/\/+$/, "")}/account/profile`;
+    res.json({ email: auth.email || "", adminEmail, profileUrl });
   } catch (err: any) {
     logger.error({ err }, "Error in GET /teacher/account");
     res.status(500).json({ error: "تعذر جلب بيانات الحساب" });
   }
 });
 
-// تغيير كلمة سر المعلم نفسه (يشترط الحالية)
-router.patch("/teacher/account/password", requireAdmin, async (req, res) => {
-  try {
-    const auth = (req as AuthedRequest).auth!;
-    const currentPassword = String(req.body?.currentPassword || "");
-    const newPassword = String(req.body?.newPassword || "");
-    if (newPassword.length < 6) {
-      res.status(400).json({ error: "كلمة السر الجديدة 6 أحرف على الأقل" });
-      return;
-    }
-    if (!auth.email) {
-      res.status(400).json({ error: "لا يوجد بريد مرتبط بحسابك" });
-      return;
-    }
-    // تحقق من الحالية بتسجيل دخول تجريبي
-    const anon =
-      process.env.SUPABASE_PUBLISHABLE_KEY ||
-      process.env.SUPABASE_ANON_KEY ||
-      process.env.SUPABASE_SECRET_KEY ||
-      "";
-    const verify = await fetch(`${SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/token?grant_type=password`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", apikey: anon, Authorization: `Bearer ${anon}` },
-      body: JSON.stringify({ email: auth.email, password: currentPassword }),
-    });
-    if (!verify.ok) {
-      res.status(401).json({ error: "كلمة السر الحالية غير صحيحة" });
-      return;
-    }
-    const key = serviceKey();
-    if (!key) {
-      res.status(500).json({ error: "مفتاح الخدمة غير مهيأ في السيرفر (SUPABASE_SECRET_KEY)" });
-      return;
-    }
-    const upd = await fetch(`${SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/admin/users/${encodeURIComponent(auth.userId)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", apikey: key, Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ password: newPassword }),
-    });
-    if (!upd.ok) throw new Error(`Auth error ${upd.status}`);
-    res.json({ success: true, message: "تم تغيير كلمة سرك بنجاح!" });
-  } catch (err: any) {
-    logger.error({ err }, "Error in PATCH /teacher/account/password");
-    res.status(500).json({ error: err?.message || "تعذر تغيير كلمة السر" });
-  }
+// كلمة سر المعلم — تدار في Kinde لا هنا. نردّ برسالة بدل 404 غامض.
+router.patch("/teacher/account/password", requireAdmin, async (_req, res) => {
+  res.status(501).json({
+    error: "غيّر كلمة السر من صفحة حسابك في Kinde — الرابط في إعدادات الحساب.",
+  });
 });
 
-// حفظ بريد الإدارة + حذف أي حساب طالب سابق بنفس البريد (Google للمعلم فقط)
+// اعتماد بريد الإدارة: يُرقّى صاحب هذا البريد إلى معلم عند دخوله، ويُحذف أي
+// ملف شخصي طالب قديم بنفس البريد حتى لا يتعطّل الدخول.
 router.patch("/teacher/account/email", requireAdmin, async (req, res) => {
   try {
     const adminEmail = String(req.body?.adminEmail || "").trim().toLowerCase();
     if (!adminEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) {
-      res.status(400).json({ error: "اكتب بريد Gmail صحيحاً" });
+      res.status(400).json({ error: "اكتب بريداً صحيحاً" });
       return;
     }
     let cleanedProfiles = 0;
-    let cleanedAuth = 0;
     try {
-      // 1) احذف بروفايلات الطلاب بنفس البريد
       const { data: dupes } = await supabaseQuery<any[]>(
         `profiles?email=eq.${encodeURIComponent(adminEmail)}&select=id,role&limit=50`,
       );
@@ -1384,33 +1265,9 @@ router.patch("/teacher/account/email", requireAdmin, async (req, res) => {
           if (!r.error) cleanedProfiles++;
         }
       }
-      // 2) احذف حسابات الدخول بنفس البريد (best-effort)
-      const key = serviceKey();
-      if (key) {
-        try {
-          const lr = await fetch(
-            `${SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/admin/users?per_page=200`,
-            { headers: { apikey: key, Authorization: `Bearer ${key}` } },
-          );
-          if (lr.ok) {
-            const lu = (await lr.json().catch(() => ({}))) as any;
-            const users = Array.isArray(lu?.users) ? lu.users : [];
-            for (const u of users) {
-              if (String(u?.email || "").toLowerCase() === adminEmail) {
-                const dr = await fetch(
-                  `${SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/admin/users/${encodeURIComponent(String(u.id))}`,
-                  { method: "DELETE", headers: { apikey: key, Authorization: `Bearer ${key}` } },
-                );
-                if (dr.ok) cleanedAuth++;
-              }
-            }
-          }
-        } catch { /* تجاهل */ }
-      }
     } catch (err) {
       logger.warn({ err }, "Admin email cleanup partial failure");
     }
-    // 3) احفظ بريد الإدارة
     const { error } = await supabaseQuery("platform_settings?id=eq.true", {
       method: "PATCH",
       body: { admin_email: adminEmail, updated_at: new Date().toISOString() },
@@ -1427,9 +1284,8 @@ router.patch("/teacher/account/email", requireAdmin, async (req, res) => {
     }
     res.json({
       success: true,
-      message: `تم اعتماد ${adminEmail} بريداً للإدارة ✓ وحُذف ${cleanedProfiles} حساب طالب و${cleanedAuth} حساب دخول بنفس البريد — سجّل به عبر Google لتدخل كمعلم مباشرة.`,
+      message: `تم اعتماد ${adminEmail} بريداً للإدارة ✓ وحُذف ${cleanedProfiles} حساب طالب بنفس البريد — سجّل به عند دخولك ليُرقّى إلى معلم.`,
       cleanedProfiles,
-      cleanedAuth,
     });
   } catch (err: any) {
     logger.error({ err }, "Error in PATCH /teacher/account/email");
