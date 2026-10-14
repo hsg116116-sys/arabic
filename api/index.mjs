@@ -36839,6 +36839,45 @@ async function joinFoundationLevels(userId) {
     logger.warn({ err }, "Joining foundation levels threw");
   }
 }
+async function isAdminEmail(email) {
+  const target = String(email || "").trim().toLowerCase();
+  if (!target) return false;
+  const adminList = await getAdminEmails().catch(() => []);
+  return adminList.includes(target);
+}
+async function promoteToAdmin(userId, email, metadata) {
+  if (!userId || !await isAdminEmail(email)) return false;
+  try {
+    const profile = await fetchProfileById(userId);
+    if (profile?.role === "admin") return true;
+    const payload = {
+      role: "admin",
+      status: "\u0646\u0634\u0637",
+      updated_at: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    if (profile) {
+      await supabaseQuery(`profiles?id=eq.${encodeURIComponent(userId)}`, { method: "PATCH", body: payload });
+    } else {
+      await supabaseQuery("profiles", {
+        method: "POST",
+        body: [{
+          id: userId,
+          email: String(email).trim().toLowerCase(),
+          full_name: String(metadata?.full_name ?? metadata?.name ?? "\u0627\u0644\u0645\u0639\u0644\u0645"),
+          role: "admin",
+          grade: "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
+          school: "",
+          status: "\u0646\u0634\u0637"
+        }],
+        headers: { Prefer: "resolution=merge-duplicates" }
+      });
+    }
+    return true;
+  } catch (err) {
+    logger.warn({ err, userId }, "Could not promote the account to admin");
+    return false;
+  }
+}
 async function confirmEmailAndOpenSession(email, password, userId) {
   const secretKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_KEY;
   if (!secretKey) return null;
@@ -36967,9 +37006,13 @@ router6.post("/auth/login", async (req, res) => {
     return;
   }
   setSessionCookies(res, data);
+  const user = data.user ?? {};
+  const userId = String(user.id ?? "");
+  const userEmail = String(user.email ?? "").trim().toLowerCase();
+  const isAdmin = userId ? await promoteToAdmin(userId, userEmail, user.user_metadata ?? {}) : false;
   res.json(
     LoginAccountResponse.parse({
-      message: "\u062A\u0645 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0628\u0646\u062C\u0627\u062D.",
+      message: isAdmin ? "\u0623\u0647\u0644\u0627\u064B \u0628\u0643 \u0641\u064A \u0628\u0648\u0627\u0628\u0629 \u0627\u0644\u0645\u0639\u0644\u0645." : "\u062A\u0645 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0628\u0646\u062C\u0627\u062D.",
       user: authUser(data)
     })
   );
@@ -37061,39 +37104,14 @@ router6.post("/auth/exchange", async (req, res) => {
     setSessionCookies(res, data);
     const userId = String(data.user?.id ?? "");
     const userEmail = String(data.user?.email ?? "").trim().toLowerCase();
-    const adminList = await getAdminEmails().catch(() => []);
-    const isAdminEmail = !!userEmail && adminList.includes(userEmail);
+    const meta = data.user?.user_metadata ?? {};
+    await syncGoogleAvatar(userId, meta);
+    const isAdminEmail2 = await promoteToAdmin(userId, userEmail, meta);
+    const profile = userId ? await fetchProfileById(userId) : null;
     if (userId) {
-      const profile = await fetchProfileById(userId);
-      const meta = data.user?.user_metadata ?? {};
-      await syncGoogleAvatar(userId, meta);
-      if (isAdminEmail && profile?.role !== "admin") {
-        if (profile) {
-          await supabaseQuery(`profiles?id=eq.${encodeURIComponent(userId)}`, {
-            method: "PATCH",
-            body: { role: "admin", status: "\u0646\u0634\u0637", updated_at: (/* @__PURE__ */ new Date()).toISOString() }
-          });
-        } else {
-          await supabaseQuery("profiles", {
-            method: "POST",
-            body: [{
-              id: userId,
-              email: userEmail,
-              full_name: String(meta.full_name ?? meta.name ?? "\u0627\u0644\u0645\u0639\u0644\u0645"),
-              role: "admin",
-              grade: "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631",
-              school: "",
-              status: "\u0646\u0634\u0637"
-            }],
-            headers: { Prefer: "resolution=merge-duplicates" }
-          });
-        }
-        res.json({ authenticated: true, needsSetup: false, user: authUser(data) });
-        return;
-      }
       res.json({
         authenticated: true,
-        needsSetup: isAdminEmail ? false : profileNeedsSetup(profile),
+        needsSetup: isAdminEmail2 ? false : profileNeedsSetup(profile),
         user: authUser(data)
       });
     } else {

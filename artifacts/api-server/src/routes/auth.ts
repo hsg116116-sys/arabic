@@ -228,6 +228,57 @@ async function joinFoundationLevels(userId: string): Promise<void> {
   }
 }
 
+/* ============================================================================
+   بريد الإدارة — مصدر واحد للدخول بالمعلم.
+   بريد واحد معتمد (platform_settings.admin_email أو ADMIN_EMAIL في البيئة).
+   أي جلسة — بكلمة المرور أو عبر Google — بهذا البريد تُرقّى إلى معلم في
+   الحال: يُنشأ له ملف إن لم يكن، أو يُرقّى دوره من طالب إلى admin.
+   فالحساب لا يعلق على طريقة دخول واحدة: إن نسي كلمة مرّره من Google نفسُه.
+   ============================================================================ */
+
+/** هل هذا البريد بريد الإدارة المعتمد؟ */
+async function isAdminEmail(email: string): Promise<boolean> {
+  const target = String(email || "").trim().toLowerCase();
+  if (!target) return false;
+  const adminList = await getAdminEmails().catch(() => [] as string[]);
+  return adminList.includes(target);
+}
+
+/** يرقّي الحساب إلى معلم (admin) إن كان بريده معتمداً — ويعيد نجاح الترقية */
+async function promoteToAdmin(userId: string, email: string, metadata?: Record<string, unknown>): Promise<boolean> {
+  if (!userId || !(await isAdminEmail(email))) return false;
+  try {
+    const profile = await fetchProfileById(userId);
+    if (profile?.role === "admin") return true;
+    const payload = {
+      role: "admin",
+      status: "نشط",
+      updated_at: new Date().toISOString(),
+    };
+    if (profile) {
+      await supabaseQuery(`profiles?id=eq.${encodeURIComponent(userId)}`, { method: "PATCH", body: payload });
+    } else {
+      await supabaseQuery("profiles", {
+        method: "POST",
+        body: [{
+          id: userId,
+          email: String(email).trim().toLowerCase(),
+          full_name: String(metadata?.full_name ?? metadata?.name ?? "المعلم"),
+          role: "admin",
+          grade: "الصف العاشر",
+          school: "",
+          status: "نشط",
+        }],
+        headers: { Prefer: "resolution=merge-duplicates" },
+      });
+    }
+    return true;
+  } catch (err) {
+    logger.warn({ err, userId }, "Could not promote the account to admin");
+    return false;
+  }
+}
+
 /** يؤكّد البريد من لوحة إدارة Supabase ثم يعيد جلسة — حين يطلب Supabase تأكيداً إضافياً. */
 async function confirmEmailAndOpenSession(
   email: string,
@@ -389,9 +440,19 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   }
 
   setSessionCookies(res, data);
+
+  // بريد الإدارة يدخل معلماً بأي طريقة دخول — هنا بكلمة المرور.
+  // فالنقل بين كلمة المرور وGoogle لا يسقط الأدمن أبداً.
+  const user = (data.user ?? {}) as Record<string, unknown>;
+  const userId = String(user.id ?? "");
+  const userEmail = String(user.email ?? "").trim().toLowerCase();
+  const isAdmin = userId
+    ? await promoteToAdmin(userId, userEmail, (user.user_metadata ?? {}) as Record<string, unknown>)
+    : false;
+
   res.json(
     LoginAccountResponse.parse({
-      message: "تم تسجيل الدخول بنجاح.",
+      message: isAdmin ? "أهلاً بك في بوابة المعلم." : "تم تسجيل الدخول بنجاح.",
       user: authUser(data),
     }),
   );
@@ -502,37 +563,13 @@ router.post("/auth/exchange", async (req, res): Promise<void> => {
 
     const userId = String((data.user as Record<string, unknown>)?.id ?? "");
     const userEmail = String((data.user as Record<string, unknown>)?.email ?? "").trim().toLowerCase();
-    // بريد الإدارة (Gmail المعتمد) يدخل كمعلم دائماً — ولو كان مسجلاً طالباً سابقاً يُرقّى
-    const adminList = await getAdminEmails().catch(() => [] as string[]);
-    const isAdminEmail = !!userEmail && adminList.includes(userEmail);
+    const meta = ((data.user as Record<string, unknown>)?.user_metadata ?? {}) as Record<string, unknown>;
+    await syncGoogleAvatar(userId, meta);
+    // بريد الإدارة يدخل معلماً — هنا عبر Google (نفس دالة الدخول بالبريد)
+    const isAdminEmail = await promoteToAdmin(userId, userEmail, meta);
+    const profile = userId ? await fetchProfileById(userId) : null;
+
     if (userId) {
-      const profile = await fetchProfileById(userId);
-      const meta = ((data.user as Record<string, unknown>)?.user_metadata ?? {}) as Record<string, unknown>;
-      await syncGoogleAvatar(userId, meta);
-      if (isAdminEmail && profile?.role !== "admin") {
-        if (profile) {
-          await supabaseQuery(`profiles?id=eq.${encodeURIComponent(userId)}`, {
-            method: "PATCH",
-            body: { role: "admin", status: "نشط", updated_at: new Date().toISOString() },
-          });
-        } else {
-          await supabaseQuery("profiles", {
-            method: "POST",
-            body: [{
-              id: userId,
-              email: userEmail,
-              full_name: String(meta.full_name ?? meta.name ?? "المعلم"),
-              role: "admin",
-              grade: "الصف العاشر",
-              school: "",
-              status: "نشط",
-            }],
-            headers: { Prefer: "resolution=merge-duplicates" },
-          });
-        }
-        res.json({ authenticated: true, needsSetup: false, user: authUser(data) });
-        return;
-      }
       res.json({
         authenticated: true,
         needsSetup: isAdminEmail ? false : profileNeedsSetup(profile),
