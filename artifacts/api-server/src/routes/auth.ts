@@ -203,6 +203,31 @@ async function emailAlreadyRegistered(email: string): Promise<boolean> {
   }
 }
 
+/** مستويات التأسيس الرسمية — تُزرع بسكربت scripts/seed-foundation-levels.mjs */
+const FOUNDATION_LEVEL_IDS = [
+  "f1000000-0000-4000-8000-000000000001",
+  "f1000000-0000-4000-8000-000000000002",
+  "f1000000-0000-4000-8000-000000000003",
+  "f1000000-0000-4000-8000-000000000004",
+  "f1000000-0000-4000-8000-000000000005",
+];
+
+/** يدخل الطالب الجديد المستويات الخمسة فور تسجيله — لا دعوة ولا انتظار.
+ *  الأستاذ يبقى صاحب القرار: يستطيع استثناء أي طالب من لوحة «إعداد التأسيس». */
+async function joinFoundationLevels(userId: string): Promise<void> {
+  if (!userId) return;
+  try {
+    const { error } = await supabaseQuery("foundation_members", {
+      method: "POST",
+      body: FOUNDATION_LEVEL_IDS.map((sectionId) => ({ section_id: sectionId, user_id: userId })),
+      headers: { Prefer: "resolution=ignore-duplicates" },
+    });
+    if (error) logger.warn({ error }, "Could not join the new student to foundation levels");
+  } catch (err) {
+    logger.warn({ err }, "Joining foundation levels threw");
+  }
+}
+
 /** يؤكّد البريد من لوحة إدارة Supabase ثم يعيد جلسة — حين يطلب Supabase تأكيداً إضافياً. */
 async function confirmEmailAndOpenSession(
   email: string,
@@ -322,6 +347,8 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     } catch (err) {
       logger.error({ err }, "Failed to create profile after signup");
     }
+    // المستويات الخمسة مفتوحة لكل طالب جديد — يدخلها بلا خطوة إضافية
+    await joinFoundationLevels(newUserId);
   }
 
   // إن كان مشروع Supabase يشترط تأكيد البريد فلا جلسة من signup — نؤكّده من

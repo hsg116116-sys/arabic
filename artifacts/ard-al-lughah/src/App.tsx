@@ -11238,6 +11238,111 @@ function FoundationSpine({ index, color, done, doneFn, saving, meta }: {
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   قائمة المستويات العلوية — شريط ثابت فوق المحتوى.
+   الغرض: الطالب ينتقل بين الأقسام الخمسة بضغطة واحدة بلا تمرير طويل.
+   يتتبّع مكان التمرير فيضئ المستوى الذي يقرأه الآن، ويعرض تقدّمه في شريط.
+   الإضاءة تتبع لون القسم نفسه فيبقى الشريط هادئاً لا يزاحم القراءة.
+   ═══════════════════════════════════════════════════════════════════════ */
+function FoundationLevelNav({ sections, activeId, onPick }: {
+  sections: any[]; activeId: string; onPick: (id: string) => void;
+}) {
+  const totalLessons = sections.reduce((a: number, s: any) => a + (Number(s.totalCount) || 0), 0);
+  const totalDone = sections.reduce((a: number, s: any) => a + (Number(s.doneCount) || 0), 0);
+
+  return (
+    <nav
+      aria-label="أقسام التأسيس"
+      data-testid="foundation-level-nav"
+      className="sticky top-[76px] z-20 mb-8 rounded-[1.75rem] border border-border/80 bg-card/85 p-2.5 shadow-xl shadow-primary/[0.07] backdrop-blur-xl"
+    >
+      {/* سطر العنوان — يخبر الطالب أين هو وإلى أين ينتقل */}
+      <div className="flex items-center gap-2.5 px-2 pb-2.5">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-primary to-[#2a7a72] text-primary-foreground shadow-md">
+          <Layers size={17} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-extrabold leading-tight text-primary">أقسام التأسيس</p>
+          <p className="text-[11px] font-semibold leading-tight text-muted-foreground">
+            {sections.length} مستويات · {totalLessons} درس · أنجزت {totalDone}
+          </p>
+        </div>
+        <span className="hidden shrink-0 items-center gap-1.5 rounded-full bg-accent/25 px-3 py-1.5 text-[11px] font-extrabold text-accent-foreground sm:inline-flex">
+          <Sparkles size={12} /> اختر مستواك
+        </span>
+      </div>
+
+      {/* شرائط الأقسام — تنزلق أفقياً على الجوال، وتحمل لون قسمها */}
+      <div className="flex gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {sections.map((s: any, i: number) => {
+          const Icon = (UNIT_ICONS as any)[s.icon] || Sparkles;
+          const total = Number(s.totalCount) || 0;
+          const done = Number(s.doneCount) || 0;
+          const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+          const active = activeId === s.id;
+
+          return (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => onPick(s.id)}
+              aria-current={active ? 'true' : undefined}
+              data-testid={`button-foundation-level-${s.id}`}
+              className={`group relative flex w-56 shrink-0 flex-col gap-2.5 overflow-hidden rounded-2xl border p-3 text-right transition-all duration-300 ${
+                active
+                  ? 'border-transparent bg-primary text-primary-foreground shadow-lg shadow-primary/30'
+                  : 'border-border bg-background hover:-translate-y-1 hover:border-primary/35 hover:shadow-lg'
+              }`}
+            >
+              {/* توهّج خلفي بلون القسم — يظهر في 상태 الاختيار فقط */}
+              <span
+                aria-hidden
+                className={`pointer-events-none absolute -left-6 -top-8 h-20 w-20 rounded-full blur-2xl transition-opacity duration-300 ${active ? 'opacity-45' : 'opacity-0 group-hover:opacity-25'}`}
+                style={{ background: s.color || '#17413f' }}
+              />
+
+              <span className="relative flex items-center gap-2.5">
+                <span
+                  className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-white shadow-sm ring-1 ring-white/25"
+                  style={{ background: `linear-gradient(135deg, ${s.color || '#17413f'}, ${s.color || '#17413f'}99)` }}
+                >
+                  <Icon size={16} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className={`block text-[11px] font-extrabold ${active ? 'text-accent' : 'text-muted-foreground'}`}>
+                    {s.subtitle || `المستوى ${i + 1}`}
+                  </span>
+                  <span className="block truncate text-[13px] font-extrabold leading-tight">{s.title || 'قسم'}</span>
+                </span>
+                <span
+                  aria-hidden
+                  className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] font-extrabold tabular-nums ${
+                    active ? 'bg-accent text-[#3a2c07]' : pct === 100 ? 'bg-green-600/15 text-green-700' : 'bg-secondary text-muted-foreground'
+                  }`}
+                >
+                  {done >= total && total > 0 ? <Check size={11} /> : i + 1}
+                </span>
+              </span>
+
+              <span className="relative flex items-center justify-between text-[11px] font-extrabold">
+                <span className={active ? 'text-white/70' : 'text-muted-foreground'}>{total} دروس</span>
+                <span className={active ? 'text-accent' : 'text-primary'}>{done}/{total}</span>
+              </span>
+
+              <span className={`relative h-1.5 overflow-hidden rounded-full ${active ? 'bg-black/20' : 'bg-secondary'}`}>
+                <span
+                  className="block h-full rounded-full transition-[width] duration-700"
+                  style={{ width: `${pct}%`, background: active ? 'linear-gradient(to left,#e7b55f,#f7e2b0)' : (s.color || '#17413f') }}
+                />
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
 function StudentFoundationPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -11295,6 +11400,46 @@ function StudentFoundationPage() {
     return 0;
   };
 
+  /* ── قائمة المستويات: تتبّع القسم المعروض + القفز إليه ──
+     الـ key هنا نص معرّفات الأقسام لا المصفوفة نفسها: `sections` تُبنى
+     جديداً في كل رسم، وربطها مباشرة يعيد تركيب المستمع في كل مرة. */
+  const [activeSectionId, setActiveSectionId] = useState('');
+  const sectionKey = sections.map((s) => s.id).join('|');
+
+  useEffect(() => {
+    if (!sections.length) { setActiveSectionId(''); return; }
+    setActiveSectionId((prev) => (sections.some((s) => s.id === prev) ? prev : sections[0].id));
+
+    // نختار القسم الذي يمرّ خطّه العلوي بحوالي ربع الشاشة — أقرب إحساس
+    // بالقراءة: المشروع الذي تحت العين مباشرة هو النشط.
+    const onScroll = () => {
+      const probe = Math.max(120, Math.round(window.innerHeight * 0.3));
+      let current = sections[0].id;
+      for (const s of sections) {
+        const el = document.getElementById(`foundation-section-${s.id}`);
+        if (!el) continue;
+        if (el.getBoundingClientRect().top - probe <= 0) current = s.id;
+      }
+      setActiveSectionId(current);
+    };
+
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sectionKey]);
+
+  const jumpToSection = (id: string) => {
+    setActiveSectionId(id);
+    const el = document.getElementById(`foundation-section-${id}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   return (
     <Shell mode="student">
       {/* ترويسة خفيفة — لأن المحتوى هو البطل */}
@@ -11304,11 +11449,12 @@ function StudentFoundationPage() {
         <div className="pointer-events-none absolute -left-2 -top-8 select-none font-display text-[8rem] leading-none text-white/[0.07]">ت</div>
         <div className="relative">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-accent px-3.5 py-1.5 text-xs font-extrabold text-[#3a2c07] shadow-sm">
-            <Sprout size={13} /> قسم خاص بك وحدك
+            <Sprout size={13} /> خمسة مستويات · خمسون درساً
           </span>
-          <h1 className="mt-3 font-display text-3xl font-bold leading-snug sm:text-4xl">التأسيس</h1>
+          <h1 className="mt-3 font-display text-3xl font-bold leading-snug sm:text-4xl">إعداد التأسيس</h1>
           <p className="mt-2 max-w-2xl text-sm leading-7 text-white/75">
-            صفحة واحدة متصلة — كل الدروس مرصوفة تحت بعضها، اقرأها من أولها لآخرها بلا تنقّل.
+            من الجملة إلى الكلمة، ومن النحو إلى الصرف فالبلاغة فالإملاء — خمسة مستويات متدرّجة، كل مستوى عشرة دروس.
+            تنقّل بين المستويات من القائمة فوق، واقرأ ما يكفيك اليوم.
           </p>
           {stats.lessons > 0 ? (
             <div className="mt-6 max-w-xl">
@@ -11323,7 +11469,7 @@ function StudentFoundationPage() {
           ) : null}
           <div className="mt-5 flex flex-wrap gap-2.5">
             {[
-              { value: stats.sections, label: 'فاصل' },
+              { value: stats.sections, label: 'مستوى' },
               { value: stats.lessons, label: 'درس' },
               { value: stats.done, label: 'أنجزته' },
             ].map((s, i) => (
@@ -11354,14 +11500,24 @@ function StudentFoundationPage() {
         </div>
       ) : (
         /* ══ التدفّق: كل شيء عمود واحد متصل ══ */
+        <>
+        {/* قائمة المستويات — تبقى ظاهرة فوق كل قسم أثناء التمرير */}
+        <FoundationLevelNav sections={sections} activeId={activeSectionId} onPick={jumpToSection} />
+
         <div className="mx-auto max-w-4xl space-y-14">
-          {sections.map((s) => {
+          {sections.map((s, sectionIndex) => {
             const Icon = (UNIT_ICONS as any)[s.icon] || Sparkles;
             const lessons: any[] = Array.isArray(s.lessons) ? s.lessons : [];
             const secPct = s.totalCount > 0 ? Math.round((s.doneCount / s.totalCount) * 100) : 0;
 
             return (
-              <section key={s.id}>
+              <section
+                key={s.id}
+                id={`foundation-section-${s.id}`}
+                data-testid={`foundation-section-${s.id}`}
+                /* نُبقي العنوان تحت الشريطين الثابتين عند القفز من القائمة */
+                className="scroll-mt-[196px]"
+              >
                 {/* ── عنوان الفاصل: نقطة توقف بصرية فقط، بلا صفحة جديدة ── */}
                 <header className="relative mb-8 overflow-hidden rounded-[2rem] shadow-lg">
                   {s.coverUrl ? (
@@ -11373,7 +11529,7 @@ function StudentFoundationPage() {
                   <div className="absolute bottom-0 right-0 left-0 flex items-end gap-4 p-5 sm:p-6">
                     <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/25 text-white shadow-lg backdrop-blur-sm"><Icon size={24} /></span>
                     <div className="min-w-0 flex-1">
-                      {s.subtitle ? <p className="text-xs font-extrabold text-accent">{s.subtitle}</p> : null}
+                      <p className="text-xs font-extrabold text-accent">{s.subtitle || `المستوى ${sectionIndex + 1}`}</p>
                       <h2 className="mt-0.5 font-display text-xl font-extrabold text-white sm:text-2xl">{s.title}</h2>
                     </div>
                     {s.totalCount > 0 ? (
@@ -11448,6 +11604,7 @@ function StudentFoundationPage() {
             {stats.done >= stats.lessons && stats.lessons > 0 ? 'أكملت كل دروس التأسيس — أحسنت!' : 'واصل — ما оста إلا إكمال الباقي.'}
           </p>
         </div>
+        </>
       )}
     </Shell>
   );

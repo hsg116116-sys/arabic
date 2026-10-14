@@ -10,6 +10,7 @@
     "build:web": "pnpm --filter @workspace/ard-al-lughah run build",
     "build:api": "pnpm --filter @workspace/api-server run build",
     "build:deploy": "pnpm run build:web && pnpm run build:api && node scripts/copy-api-bundle.mjs",
+    "seed:foundation": "node scripts/seed-foundation-levels.mjs",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
