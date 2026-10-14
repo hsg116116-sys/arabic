@@ -688,6 +688,140 @@ function isCloudUrl(url?: string) {
   return !!url && url.startsWith('https://ik.imagekit.io/');
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   رفع فيديوهات الدروس — Cloudinary مباشرة من المتصفح.
+   ───────────────────────────────────────────────────────────────────────
+   لماذا مباشرة؟ ملف 20 دقيقة (مئات الميجا) لا يمر عبر Vercel إطلاقاً —
+   المتصفح يرفعه إلى Cloudinary بالمقاطع (20MB للمقطع)، والسيرفر يعطيه
+   توقيعاً مؤقتاً فقط. السر لا يغادر الخادم أبداً.
+   الضغط: رابط العرض يُبنى بتحويلات (f_mp4,vc_h264,q_auto:low,w_960) —
+   نفس الفيديو بنسخة خفيفة جداً تعمل على الآيباد والهاتف.
+   التبديل: إن فشل الحساب الأول يُطلب توقيع الثاني تلقائياً ويُعاد الرفع.
+   ═══════════════════════════════════════════════════════════════════════ */
+const CLOUDINARY_DELIVERY = 'f_mp4,vc_h264,q_auto:low,w_960';
+
+/** رابط العرض المضغوط من أي رابط Cloudinary خام — مطابِق لمنطق السيرفر */
+function cloudinaryDeliveryUrl(rawUrl: string): string {
+  const raw = String(rawUrl || '').trim();
+  const m = raw.match(/^https?:\/\/res\.cloudinary\.com\/([^/]+)\/video\/upload\/(?:v\d+\/)?(.+?)(?:\.[a-z0-9]+)?(?:[?#].*)?$/i);
+  if (!m) return raw;
+  const [, cloud, publicId] = m;
+  if (!cloud || !publicId) return raw;
+  return `https://res.cloudinary.com/${cloud}/video/upload/${CLOUDINARY_DELIVERY}/${publicId}.mp4`;
+}
+
+function formatMega(bytes: number): string {
+  if (!bytes) return '0MB';
+  const mb = bytes / (1024 * 1024);
+  return mb >= 1000 ? `${(mb / 1024).toFixed(1)}GB` : `${mb < 10 ? mb.toFixed(1) : Math.round(mb)}MB`;
+}
+
+/** رفع مقطع واحد — يُستدعى لكل شريحة في الرفع المقطّع */
+function postChunk(args: {
+  uploadUrl: string; params: Record<string, string>; blob: Blob; fileName: string;
+  uploadId: string; range?: string; onProgress: (loaded: number) => void; signal?: AbortSignal;
+}): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    for (const [k, v] of Object.entries(args.params)) form.append(k, v);
+    form.append('file', args.blob, args.fileName);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', args.uploadUrl);
+    xhr.setRequestHeader('X-Unique-Upload-Id', args.uploadId);
+    if (args.range) xhr.setRequestHeader('Content-Range', args.range);
+    if (args.signal) {
+      args.signal.addEventListener('abort', () => xhr.abort(), { once: true });
+    }
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) args.onProgress(e.loaded); };
+    xhr.onload = () => {
+      try {
+        const data = JSON.parse(xhr.responseText || '{}');
+        if (xhr.status >= 200 && xhr.status < 300 && !data.error) resolve(data);
+        else reject(new Error(data?.error?.message || `فشل الرفع (${xhr.status})`));
+      } catch { reject(new Error('رد غير مفهوم من خادم الفيديو')); }
+    };
+    xhr.onerror = () => reject(new Error('انقطع الاتصال أثناء الرفع — تحقق من الإنترنت'));
+    xhr.onabort = () => reject(new Error('أُلغي الرفع'));
+    xhr.send(form);
+  });
+}
+
+async function uploadVideoToCloudinary(
+  file: File,
+  onProgress: (sent: number, total: number, accountLabel: string) => void,
+  signal?: AbortSignal,
+): Promise<{ url: string; publicId: string; bytes: number; accountLabel: string; cloud: string }> {
+  if (!/^video\//.test(file.type) && !/\.(mp4|webm|mov|m4v|avi|mkv)$/i.test(file.name)) {
+    throw new Error('اختر ملف فيديو صالحاً (mp4 أو webm أو mov)');
+  }
+
+  // 1) توقيع من السيرفر — يختار الحساب السليم (الأول، وإلا الثاني تلقائياً)
+  const signOnce = async (failedCloud?: string) => {
+    if (!failedCloud) {
+      return jsonFetch(`/api/teacher/cloudinary/sign?${new URLSearchParams({ filename: file.name }).toString()}`);
+    }
+    return jsonFetch('/api/teacher/cloudinary/failover', {
+      method: 'POST',
+      body: { failedCloud, filename: file.name },
+    });
+  };
+
+  let lastError: any = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const sign = await signOnce(attempt === 0 ? undefined : (lastError as any)?.__cloud);
+    const params: Record<string, string> = {
+      api_key: String(sign.apiKey),
+      timestamp: String(sign.timestamp),
+      signature: String(sign.signature),
+      folder: String(sign.folder || 'ard-al-lughah/videos'),
+      filename_override: file.name.slice(0, 120),
+      use_filename: 'true',
+      unique_filename: 'true',
+      overwrite: 'false',
+    };
+    const uploadId = `ard-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const CHUNK = 20 * 1024 * 1024;
+    try {
+      let sentBase = 0;
+      let result: any = null;
+      if (file.size <= CHUNK) {
+        result = await postChunk({
+          uploadUrl: sign.uploadUrl, params, blob: file, fileName: file.name,
+          uploadId, onProgress: (l) => onProgress(l, file.size, sign.accountLabel), signal,
+        });
+      } else {
+        // الرفع المقطّع: شرائح 20MB — فيديو 20 دقيقة يُرفع بأمان مهما كبر
+        for (let start = 0; start < file.size; start += CHUNK) {
+          const end = Math.min(start + CHUNK, file.size);
+          const slice = file.slice(start, end, file.type || 'video/mp4');
+          result = await postChunk({
+            uploadUrl: sign.uploadUrl, params, blob: slice, fileName: file.name,
+            uploadId, range: `bytes ${start}-${end - 1}/${file.size}`,
+            onProgress: (l) => onProgress(sentBase + l, file.size, sign.accountLabel), signal,
+          });
+          sentBase = end;
+        }
+      }
+      const secureUrl = String(result?.secure_url || '');
+      if (!secureUrl) throw new Error('اكتمل الرفع بلا رابط — حاول مجدداً');
+      return {
+        url: cloudinaryDeliveryUrl(secureUrl),
+        publicId: String(result?.public_id || ''),
+        bytes: Number(result?.bytes || file.size),
+        accountLabel: String(sign.accountLabel || ''),
+        cloud: String(sign.cloud || ''),
+      };
+    } catch (err: any) {
+      lastError = err;
+      (lastError as any).__cloud = sign.cloud;
+      if (signal?.aborted) throw err;
+      if (attempt === 0) continue; // جرّب الحساب الثاني تلقائياً
+      throw err;
+    }
+  }
+  throw lastError || new Error('تعذر الرفع');
+}
+
 const AR_LETTER_INDEX: Record<string, number> = { 'أ': 0, 'ا': 0, 'إ': 0, 'ب': 1, 'ج': 2, 'د': 3, 'هـ': 4, 'ه': 4, 'و': 5, 'ز': 6, 'A': 0, 'B': 1, 'C': 2, 'D': 3, 'a': 0, 'b': 1, 'c': 2, 'd': 3 };
 
 /** استخراج الأسئلة من نص ماركداون عادي (## عنوان + الخيارات + الجواب الصحيح + ملاحظة) */
@@ -11713,6 +11847,129 @@ function FoundationMembersModal({ open, onClose, flash }: {
   );
 }
 /* ══════════════════ نموذج الدرس (لمس) ══════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════
+   رافع فيديو الدرس — زر + شريط تقدم + شارة الحساب.
+   يعرض أثناء الرفع: النسبة، والميجا المرفوعة من الأصل، والحساب المستخدم
+   (الأول/الثاني)، وبعده ملاحظة أن العرض بنسخة مضغوطة. عند فشل حساب
+   ينتقل للثاني تلقائياً ويُكمل — والأستاذ يرى التبديل مكتوباً.
+   ═══════════════════════════════════════════════════════════════════════ */
+function FoundationVideoUploader({ value, onUploaded }: {
+  value: string; onUploaded: (url: string, info: { accountLabel: string; bytes: number }) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [account, setAccount] = useState('');
+  const [error, setError] = useState('');
+  const [status, setStatus] = useState<any>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let live = true;
+    jsonFetch('/api/teacher/cloudinary/status')
+      .then((d) => { if (live) setStatus(d); })
+      .catch(() => undefined);
+    return () => { live = false; };
+  }, []);
+
+  const pick = () => {
+    if (busy) return;
+    setError('');
+    inputRef.current?.click();
+  };
+
+  const start = async (file: File | undefined) => {
+    if (!file || busy) return;
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    setBusy(true);
+    setSent(0);
+    setTotal(file.size);
+    setAccount('');
+    setError('');
+    try {
+      const r = await uploadVideoToCloudinary(
+        file,
+        (s, t, label) => { setSent(s); setTotal(t); setAccount(label); },
+        ctrl.signal,
+      );
+      onUploaded(r.url, { accountLabel: r.accountLabel, bytes: r.bytes });
+    } catch (err: any) {
+      if (!ctrl.signal.aborted) setError(err?.message || 'تعذر رفع الفيديو');
+    } finally {
+      setBusy(false);
+      abortRef.current = null;
+    }
+  };
+
+  const cancel = () => abortRef.current?.abort();
+
+  const pct = total > 0 ? Math.min(100, Math.round((sent / total) * 100)) : 0;
+  const activeLabel = status?.active === 1 ? 'الأول' : status?.active === 2 ? 'الثاني' : '—';
+
+  return (
+    <div className="mt-3 rounded-2xl border border-[#0d47a1]/25 bg-[#0d47a1]/[0.04] p-4">
+      <input
+        ref={inputRef}
+        type="file"
+        accept="video/*"
+        className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; void start(f); }}
+        data-testid="input-foundation-video-file"
+      />
+
+      <div className="flex flex-wrap items-center gap-2.5">
+        <button
+          type="button"
+          onClick={pick}
+          disabled={busy}
+          className="inline-flex min-h-[52px] items-center gap-2 rounded-2xl bg-[#0d47a1] px-5 text-sm font-extrabold text-white shadow-md transition-all hover:-translate-y-0.5 active:scale-[.97] disabled:opacity-60"
+          data-testid="button-upload-foundation-video"
+        >
+          <Upload size={17} />
+          {busy ? 'جارٍ الرفع...' : value ? 'استبدال بفيديو مرفوع' : 'ارفع فيديو من جهازك'}
+        </button>
+        {busy ? (
+          <button type="button" onClick={cancel} className="inline-flex min-h-[52px] items-center gap-2 rounded-2xl border-2 border-border bg-card px-4 text-sm font-extrabold text-muted-foreground">
+            <X size={16} /> إلغاء
+          </button>
+        ) : null}
+        <span className="ms-auto inline-flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-[11px] font-extrabold text-muted-foreground" title="الحساب الذي سيُرفع عليه هذا الفيديو">
+          <Video size={12} /> التخزين: {activeLabel}
+        </span>
+      </div>
+
+      {busy ? (
+        <div className="mt-3" data-testid="video-upload-progress">
+          <div className="mb-1.5 flex items-center justify-between text-[11px] font-extrabold">
+            <span className="text-primary tabular-nums">{pct}% · {formatMega(sent)} / {formatMega(total)}</span>
+            {account ? <span className="rounded-full bg-[#0d47a1]/10 px-2.5 py-0.5 text-[#0d47a1]">عبر {account}</span> : null}
+          </div>
+          <div className="h-2.5 overflow-hidden rounded-full bg-secondary">
+            <div className="h-full rounded-full bg-gradient-to-l from-[#0d47a1] to-[#5b9bd5] transition-[width] duration-200" style={{ width: `${pct}%` }} />
+          </div>
+          <p className="mt-1.5 text-[11px] font-semibold leading-5 text-muted-foreground">
+            الملفات الكبيرة تُرفع بالمقاطع — لا تغلق الصفحة. عند الامتلاء ينتقل للآخر تلقائياً.
+          </p>
+        </div>
+      ) : null}
+
+      {error ? (
+        <p className="mt-3 flex items-start gap-2 rounded-2xl bg-destructive/10 px-4 py-3 text-xs font-extrabold leading-6 text-destructive" data-testid="video-upload-error">
+          <CircleAlert size={15} className="mt-0.5 shrink-0" /> {error}
+        </p>
+      ) : null}
+
+      {!busy && !error ? (
+        <p className="mt-2.5 text-[11px] font-semibold leading-5 text-muted-foreground">
+          يُرفع الفيديو بأصله إلى تخزين الفيديو، ويُعرض للطالب بنسخة مضغوطة خفيفة (جودة مناسبة للشرح) — فيديو 20 دقيقة بعشرات الميجا.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function FoundationLessonForm({ form, setForm, saving, error, submitLabel, onSubmit, onCancel }: {
   form: any;
   setForm: (updater: any) => void;
@@ -11861,9 +12118,15 @@ function FoundationLessonForm({ form, setForm, saving, error, submitLabel, onSub
       {wants('video') ? (
         <div className="rounded-3xl border-2 border-dashed border-[#0d47a1]/40 bg-[#0d47a1]/6 p-4">
           <p className="mb-3 flex items-center gap-2 text-sm font-extrabold text-primary"><Video size={17} /> فيديو الدرس</p>
+          <FoundationVideoUploader
+            value={form.videoUrl || ''}
+            onUploaded={(url) => setForm({ ...form, videoUrl: url })}
+          />
+          <div className="mt-3">
           <Field2 label="رابط الفيديو" hint="يوتيوب (عادي أو مختصر) أو Vimeo أو رابط ملف mp4 مباشر">
             <input value={form.videoUrl || ''} onChange={(e) => setForm({ ...form, videoUrl: e.target.value })} dir="ltr" placeholder="https://www.youtube.com/watch?v=..." className={`${touchCls} font-mono text-sm`} data-testid="input-foundation-video" />
           </Field2>
+          </div>
           <div className="mt-3">
             <Field2 label="وصف تحت الفيديو" hint="سطر يشرح للطالب ماذا يتعلم من المقطع">
               <input value={form.videoCaption || ''} onChange={(e) => setForm({ ...form, videoCaption: e.target.value })} placeholder="شرح قاعدة المد..." className={touchCls} />

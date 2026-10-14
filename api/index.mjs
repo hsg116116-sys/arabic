@@ -20804,27 +20804,27 @@ var require_router = __commonJS({
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router11;
+    module.exports = Router12;
     module.exports.Route = Route;
-    function Router11(options) {
-      if (!(this instanceof Router11)) {
-        return new Router11(options);
+    function Router12(options) {
+      if (!(this instanceof Router12)) {
+        return new Router12(options);
       }
       const opts = options || {};
-      function router11(req, res, next) {
-        router11.handle(req, res, next);
+      function router12(req, res, next) {
+        router12.handle(req, res, next);
       }
-      Object.setPrototypeOf(router11, this);
-      router11.caseSensitive = opts.caseSensitive;
-      router11.mergeParams = opts.mergeParams;
-      router11.params = {};
-      router11.strict = opts.strict;
-      router11.stack = [];
-      return router11;
+      Object.setPrototypeOf(router12, this);
+      router12.caseSensitive = opts.caseSensitive;
+      router12.mergeParams = opts.mergeParams;
+      router12.params = {};
+      router12.strict = opts.strict;
+      router12.stack = [];
+      return router12;
     }
-    Router11.prototype = function() {
+    Router12.prototype = function() {
     };
-    Router11.prototype.param = function param(name, fn) {
+    Router12.prototype.param = function param(name, fn) {
       if (!name) {
         throw new TypeError("argument name is required");
       }
@@ -20844,7 +20844,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router11.prototype.handle = function handle(req, res, callback) {
+    Router12.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20971,7 +20971,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router11.prototype.use = function use(handler) {
+    Router12.prototype.use = function use(handler) {
       let offset = 0;
       let path = "/";
       if (typeof handler !== "function") {
@@ -21004,7 +21004,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router11.prototype.route = function route(path) {
+    Router12.prototype.route = function route(path) {
       const route2 = new Route(path);
       const layer = new Layer(path, {
         sensitive: this.caseSensitive,
@@ -21019,7 +21019,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router11.prototype[method] = function(path) {
+      Router12.prototype[method] = function(path) {
         const route = this.route(path);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
@@ -21202,13 +21202,13 @@ var require_application = __commonJS({
     var compileTrust = require_utils3().compileTrust;
     var resolve2 = __require("node:path").resolve;
     var once = require_once();
-    var Router11 = require_router();
+    var Router12 = require_router();
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
     var trustProxyDefaultSymbol = "@@symbol:trust_proxy_default";
     app2.init = function init() {
-      var router11 = null;
+      var router12 = null;
       this.cache = /* @__PURE__ */ Object.create(null);
       this.engines = /* @__PURE__ */ Object.create(null);
       this.settings = /* @__PURE__ */ Object.create(null);
@@ -21217,13 +21217,13 @@ var require_application = __commonJS({
         configurable: true,
         enumerable: true,
         get: function getrouter() {
-          if (router11 === null) {
-            router11 = new Router11({
+          if (router12 === null) {
+            router12 = new Router12({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
           }
-          return router11;
+          return router12;
         }
       });
     };
@@ -21294,15 +21294,15 @@ var require_application = __commonJS({
       if (fns.length === 0) {
         throw new TypeError("app.use() requires a middleware function");
       }
-      var router11 = this.router;
+      var router12 = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router11.use(path, fn2);
+          return router12.use(path, fn2);
         }
         debug(".use app under %s", path);
         fn2.mountpath = path;
         fn2.parent = this;
-        router11.use(path, function mounted_app(req, res, next) {
+        router12.use(path, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -23811,7 +23811,7 @@ var require_express = __commonJS({
     var EventEmitter = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router11 = require_router();
+    var Router12 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23833,8 +23833,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router11.Route;
-    exports.Router = Router11;
+    exports.Route = Router12.Route;
+    exports.Router = Router12;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -31019,13 +31019,13 @@ init_env();
 
 // src/app.ts
 init_env();
-var import_express11 = __toESM(require_express2(), 1);
+var import_express12 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_cookie_parser = __toESM(require_cookie_parser(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
 
 // src/routes/index.ts
-var import_express10 = __toESM(require_express2(), 1);
+var import_express11 = __toESM(require_express2(), 1);
 
 // src/routes/health.ts
 var import_express = __toESM(require_express2(), 1);
@@ -37254,6 +37254,155 @@ var auth_default = router6;
 var import_express7 = __toESM(require_express2(), 1);
 init_supabase();
 init_auth();
+
+// src/lib/cloudinary.ts
+init_env();
+init_logger();
+import { createHash as createHash2 } from "node:crypto";
+function parseCloudinaryUrl(raw) {
+  const text = String(raw || "").trim();
+  const m = text.match(/^cloudinary:\/\/([^:]+):([^@]+)@([^/]+)\/?$/);
+  if (!m) return null;
+  const [, apiKey, apiSecret, cloud] = m;
+  if (!apiKey || !apiSecret || !cloud) return null;
+  return { cloud: cloud.trim(), apiKey: apiKey.trim(), apiSecret: apiSecret.trim() };
+}
+function getCloudinaryAccounts() {
+  loadLocalEnvOnce();
+  const out = [];
+  for (let i = 1; i <= 4; i++) {
+    const fromUrl = parseCloudinaryUrl(process.env[`CLOUDINARY_${i}_URL`]);
+    const cloud = fromUrl?.cloud || String(process.env[`CLOUDINARY_${i}_CLOUD`] || "").trim();
+    const apiKey = fromUrl?.apiKey || String(process.env[`CLOUDINARY_${i}_KEY`] || "").trim();
+    const apiSecret = fromUrl?.apiSecret || String(process.env[`CLOUDINARY_${i}_SECRET`] || "").trim();
+    if (!cloud || !apiKey || !apiSecret) continue;
+    out.push({ index: i, cloud, apiKey, apiSecret });
+  }
+  return out;
+}
+var downUntil = /* @__PURE__ */ new Map();
+function markCloudinaryDown(index, minutes = 10) {
+  downUntil.set(index, Date.now() + minutes * 60 * 1e3);
+  logger.warn({ index, minutes }, "Cloudinary account marked down, failing over");
+}
+function isDown(index) {
+  const until = downUntil.get(index) || 0;
+  if (until && until < Date.now()) downUntil.delete(index);
+  return (downUntil.get(index) || 0) > Date.now();
+}
+var usageCache = /* @__PURE__ */ new Map();
+var USAGE_TTL = 5 * 60 * 1e3;
+var EXHAUSTED_AT = 0.95;
+async function fetchUsage(acc) {
+  try {
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${acc.cloud}/usage`, {
+      headers: { Authorization: "Basic " + Buffer.from(`${acc.apiKey}:${acc.apiSecret}`).toString("base64") }
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => ({}));
+    const used = Number(data?.storage?.used ?? data?.storage?.usage ?? NaN);
+    const limit = Number(data?.storage?.limit ?? NaN);
+    return {
+      storageUsed: Number.isFinite(used) ? used : 0,
+      storageLimit: Number.isFinite(limit) ? limit : 0,
+      storagePct: Number.isFinite(used) && Number.isFinite(limit) && limit > 0 ? used / limit : null,
+      plan: String(data?.plan || "")
+    };
+  } catch (err) {
+    logger.warn({ err, cloud: acc.cloud }, "Cloudinary usage check failed");
+    return null;
+  }
+}
+async function accountExhausted(acc) {
+  const now = Date.now();
+  const hit = usageCache.get(acc.index);
+  let usage = hit && now - hit.at < USAGE_TTL ? hit.usage : null;
+  if (!usage) {
+    usage = await fetchUsage(acc);
+    usageCache.set(acc.index, { at: now, usage });
+  }
+  if (!usage || usage.storagePct === null) return false;
+  return usage.storagePct >= EXHAUSTED_AT;
+}
+async function pickCloudinaryAccount() {
+  const accounts = getCloudinaryAccounts();
+  for (const acc of accounts) {
+    if (isDown(acc.index)) continue;
+    if (await accountExhausted(acc)) {
+      logger.warn({ cloud: acc.cloud }, "Cloudinary account exhausted, failing over");
+      continue;
+    }
+    return acc;
+  }
+  return null;
+}
+function signCloudinaryParams(acc, params) {
+  const timestamp = Math.floor(Date.now() / 1e3);
+  const all = { ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])) };
+  all.timestamp = String(timestamp);
+  const body = Object.keys(all).sort().map((k) => `${k}=${all[k]}`).join("&");
+  const signature = createHash2("sha1").update(body + acc.apiSecret).digest("hex");
+  return { signature, timestamp };
+}
+var CLOUDINARY_VIDEO_FOLDER = "ard-al-lughah/videos";
+async function createVideoUploadAuth(filename) {
+  const acc = await pickCloudinaryAccount();
+  if (!acc) {
+    throw new Error("\u062D\u0633\u0627\u0628\u0627 Cloudinary \u0645\u0645\u062A\u0644\u0626\u0627\u0646 \u0623\u0648 \u063A\u064A\u0631 \u0645\u0647\u064A\u0623\u064A\u0646 \u2014 \u0623\u0636\u0641 \u0645\u0633\u0627\u062D\u0629 \u0623\u0648 \u0631\u0627\u062C\u0639 \u0627\u0644\u0645\u0641\u0627\u062A\u064A\u062D");
+  }
+  const safe = String(filename || `lesson-${Date.now()}.mp4`).replace(/[^\w.\-()[\] ]+/g, "_").slice(0, 120);
+  const { signature, timestamp } = signCloudinaryParams(acc, {
+    folder: CLOUDINARY_VIDEO_FOLDER,
+    filename_override: safe,
+    use_filename: "true",
+    unique_filename: "true",
+    overwrite: "false"
+  });
+  return {
+    cloud: acc.cloud,
+    apiKey: acc.apiKey,
+    timestamp,
+    signature,
+    folder: CLOUDINARY_VIDEO_FOLDER,
+    uploadUrl: `https://api.cloudinary.com/v1_1/${acc.cloud}/video/upload`,
+    accountIndex: acc.index,
+    accountLabel: `\u0627\u0644\u062D\u0633\u0627\u0628 ${acc.index === 1 ? "\u0627\u0644\u0623\u0648\u0644" : "\u0627\u0644\u062B\u0627\u0646\u064A"}`
+  };
+}
+var DELIVERY_TRANSFORM = "f_mp4,vc_h264,q_auto:low,w_960";
+function cloudinaryDeliveryUrl(rawUrl) {
+  const raw = String(rawUrl || "").trim();
+  const m = raw.match(
+    /^https?:\/\/res\.cloudinary\.com\/([^/]+)\/video\/upload\/(?:v\d+\/)?(.+?)(?:\.[a-z0-9]+)?(?:[?#].*)?$/i
+  );
+  if (!m) return raw;
+  const [, cloud, publicId] = m;
+  if (!cloud || !publicId) return raw;
+  return `https://res.cloudinary.com/${cloud}/video/upload/${DELIVERY_TRANSFORM}/${publicId}.mp4`;
+}
+async function getCloudinaryStatus() {
+  const accounts = getCloudinaryAccounts();
+  const active = await pickCloudinaryAccount();
+  const list = [];
+  for (const acc of accounts) {
+    const hit = usageCache.get(acc.index);
+    const usage = hit && Date.now() - hit.at < USAGE_TTL ? hit.usage : await fetchUsage(acc).then((u) => {
+      usageCache.set(acc.index, { at: Date.now(), usage: u });
+      return u;
+    });
+    list.push({
+      index: acc.index,
+      cloud: acc.cloud,
+      label: `\u0627\u0644\u062D\u0633\u0627\u0628 ${acc.index === 1 ? "\u0627\u0644\u0623\u0648\u0644" : "\u0627\u0644\u062B\u0627\u0646\u064A"}`,
+      down: isDown(acc.index),
+      exhausted: !!usage && usage.storagePct !== null && usage.storagePct >= EXHAUSTED_AT,
+      usage
+    });
+  }
+  return { configured: accounts.length, active: active?.index ?? null, accounts: list };
+}
+
+// src/routes/foundation.ts
 init_logger();
 var router7 = (0, import_express7.Router)();
 var enc3 = (v) => encodeURIComponent(Array.isArray(v) ? v[0] ?? "" : v ?? "");
@@ -38238,7 +38387,7 @@ router7.post("/teacher/foundation/lessons", requireAdmin, async (req, res) => {
       body_text: String(b.bodyText ?? b.body_text ?? ""),
       cover_url: String(b.coverUrl || ""),
       images: Array.isArray(b.images) ? b.images.filter(Boolean).slice(0, 40) : [],
-      video_url: String(b.videoUrl || ""),
+      video_url: cloudinaryDeliveryUrl(String(b.videoUrl || "")),
       video_caption: String(b.videoCaption || "").slice(0, 300),
       html_content: String(b.htmlContent || ""),
       html_file_url: String(b.htmlFileUrl || ""),
@@ -38271,7 +38420,7 @@ router7.patch("/teacher/foundation/lessons/:id", requireAdmin, async (req, res) 
     if (b.bodyText !== void 0 || b.body_text !== void 0) full.body_text = String(b.bodyText ?? b.body_text ?? "");
     if (b.coverUrl !== void 0) full.cover_url = String(b.coverUrl || "");
     if (b.images !== void 0) full.images = Array.isArray(b.images) ? b.images.filter(Boolean).slice(0, 40) : [];
-    if (b.videoUrl !== void 0) full.video_url = String(b.videoUrl || "");
+    if (b.videoUrl !== void 0) full.video_url = cloudinaryDeliveryUrl(String(b.videoUrl || ""));
     if (b.videoCaption !== void 0) full.video_caption = String(b.videoCaption || "").slice(0, 300);
     if (b.htmlContent !== void 0) full.html_content = String(b.htmlContent || "");
     if (b.htmlFileUrl !== void 0) full.html_file_url = String(b.htmlFileUrl || "");
@@ -39082,22 +39231,72 @@ router9.get("/teacher/report/student/:id", requireAdmin, async (req, res) => {
 });
 var report_default = router9;
 
-// src/routes/index.ts
+// src/routes/cloudinary.ts
+var import_express10 = __toESM(require_express2(), 1);
+init_auth();
+init_logger();
 var router10 = (0, import_express10.Router)();
-router10.use(health_default);
-router10.use(platform_default);
-router10.use(curriculum_default);
-router10.use(storage_default);
-router10.use(study_default);
-router10.use(auth_default);
-router10.use(foundation_default);
-router10.use(organization_default);
-router10.use(report_default);
-var routes_default = router10;
+router10.get("/teacher/cloudinary/sign", requireAdmin, async (req, res) => {
+  try {
+    const q = req.query || {};
+    const auth = await createVideoUploadAuth(q.filename || q.name);
+    res.json({ success: true, ...auth });
+  } catch (err) {
+    logger.error({ err }, "GET cloudinary sign failed");
+    res.status(503).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u062A\u062C\u0647\u064A\u0632 \u0627\u0644\u0631\u0641\u0639 \u2014 \u0631\u0627\u062C\u0639 \u062D\u0633\u0627\u0628\u064A Cloudinary" });
+  }
+});
+router10.get("/teacher/cloudinary/status", requireAdmin, async (_req, res) => {
+  try {
+    const status = await getCloudinaryStatus();
+    res.json({ success: true, ...status });
+  } catch (err) {
+    logger.error({ err }, "GET cloudinary status failed");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0642\u0631\u0627\u0621\u0629 \u062D\u0627\u0644\u0629 \u0627\u0644\u062A\u062E\u0632\u064A\u0646" });
+  }
+});
+router10.post("/teacher/cloudinary/failover", requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const accounts = getCloudinaryAccounts();
+    const failedIndex = Number(b.failedIndex);
+    const failedCloud = String(b.failedCloud || "").trim();
+    const hit = accounts.find(
+      (a) => Number.isFinite(failedIndex) && failedIndex > 0 && a.index === failedIndex || failedCloud && a.cloud === failedCloud
+    );
+    if (hit) markCloudinaryDown(hit.index, 10);
+    const next = await pickCloudinaryAccount();
+    if (!next) {
+      res.status(503).json({ error: "\u0627\u0644\u062D\u0633\u0627\u0628\u0627\u0646 \u0633\u0627\u0642\u0637\u0627\u0646 \u0627\u0644\u0622\u0646 \u2014 \u062D\u0627\u0648\u0644 \u0628\u0639\u062F \u062F\u0642\u0627\u0626\u0642" });
+      return;
+    }
+    const q = req.query || {};
+    const auth = await createVideoUploadAuth(typeof b.filename === "string" ? b.filename : q.filename);
+    res.json({ success: true, switched: !!hit, ...auth });
+  } catch (err) {
+    logger.error({ err }, "POST cloudinary failover failed");
+    res.status(503).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u0627\u0644\u062A\u0628\u062F\u064A\u0644 \u0644\u0644\u062D\u0633\u0627\u0628 \u0627\u0644\u0622\u062E\u0631" });
+  }
+});
+var cloudinary_default = router10;
+
+// src/routes/index.ts
+var router11 = (0, import_express11.Router)();
+router11.use(health_default);
+router11.use(platform_default);
+router11.use(curriculum_default);
+router11.use(storage_default);
+router11.use(study_default);
+router11.use(auth_default);
+router11.use(foundation_default);
+router11.use(organization_default);
+router11.use(report_default);
+router11.use(cloudinary_default);
+var routes_default = router11;
 
 // src/app.ts
 init_logger();
-var app = (0, import_express11.default)();
+var app = (0, import_express12.default)();
 app.use(
   (0, import_pino_http.default)({
     logger,
@@ -39118,8 +39317,8 @@ app.use(
   })
 );
 app.use((0, import_cors.default)());
-app.use(import_express11.default.json({ limit: "25mb" }));
-app.use(import_express11.default.urlencoded({ extended: true, limit: "25mb" }));
+app.use(import_express12.default.json({ limit: "25mb" }));
+app.use(import_express12.default.urlencoded({ extended: true, limit: "25mb" }));
 app.use((0, import_cookie_parser.default)());
 app.use("/api", routes_default);
 var app_default = app;

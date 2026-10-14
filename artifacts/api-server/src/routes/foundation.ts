@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { supabaseQuery } from "../lib/supabase";
 import { requireAuth, requireAdmin, type AuthedRequest } from "../middlewares/auth";
+import { cloudinaryDeliveryUrl } from "../lib/cloudinary";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -1171,7 +1172,7 @@ router.post("/teacher/foundation/lessons", requireAdmin, async (req, res) => {
       body_text: String(b.bodyText ?? b.body_text ?? ""),
       cover_url: String(b.coverUrl || ""),
       images: Array.isArray(b.images) ? b.images.filter(Boolean).slice(0, 40) : [],
-      video_url: String(b.videoUrl || ""),
+      video_url: cloudinaryDeliveryUrl(String(b.videoUrl || "")),
       video_caption: String(b.videoCaption || "").slice(0, 300),
       html_content: String(b.htmlContent || ""),
       html_file_url: String(b.htmlFileUrl || ""),
@@ -1207,7 +1208,7 @@ router.patch("/teacher/foundation/lessons/:id", requireAdmin, async (req, res) =
     if (b.bodyText !== undefined || b.body_text !== undefined) full.body_text = String(b.bodyText ?? b.body_text ?? "");
     if (b.coverUrl !== undefined) full.cover_url = String(b.coverUrl || "");
     if (b.images !== undefined) full.images = Array.isArray(b.images) ? b.images.filter(Boolean).slice(0, 40) : [];
-    if (b.videoUrl !== undefined) full.video_url = String(b.videoUrl || "");
+    if (b.videoUrl !== undefined) full.video_url = cloudinaryDeliveryUrl(String(b.videoUrl || ""));
     if (b.videoCaption !== undefined) full.video_caption = String(b.videoCaption || "").slice(0, 300);
     if (b.htmlContent !== undefined) full.html_content = String(b.htmlContent || "");
     if (b.htmlFileUrl !== undefined) full.html_file_url = String(b.htmlFileUrl || "");
