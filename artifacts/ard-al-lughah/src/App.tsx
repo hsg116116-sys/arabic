@@ -10368,19 +10368,12 @@ function TeacherFoundationPage() {
   const [savingSection, setSavingSection] = useState(false);
   const [formError, setFormError] = useState('');
 
-  const [lessonModal, setLessonModal] = useState<null | { mode: 'create'; sectionId: string; unitId?: string } | { mode: 'edit'; lesson: any }>(null);
+  const [lessonModal, setLessonModal] = useState<null | { mode: 'create'; sectionId: string } | { mode: 'edit'; lesson: any }>(null);
   const [lessonForm, setLessonForm] = useState<any>({});
   const [savingLesson, setSavingLesson] = useState(false);
   const [lessonError, setLessonError] = useState('');
   const [preview, setPreview] = useState<any | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
-
-  // ── القسم الفرعي المختار داخل المستوى النشط ──
-  const [activeUnit, setActiveUnit] = useState<string>('');
-  const [unitModal, setUnitModal] = useState<null | { mode: 'create' } | { mode: 'edit'; unit: any }>(null);
-  const [unitForm, setUnitForm] = useState<any>({});
-  const [savingUnit, setSavingUnit] = useState(false);
-  const [unitError, setUnitError] = useState('');
 
   const flash = (text: string, tone: 'ok' | 'err' = 'ok') => {
     setToast({ text, tone });
@@ -10407,76 +10400,18 @@ function TeacherFoundationPage() {
   useEffect(() => { reload(false); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   const totalLessons = sections.reduce((a, s) => a + (s.lessonsCount || 0), 0);
-  const totalUnits = sections.reduce((a, s) => a + ((s.units || []).length || 0), 0);
   const current = sections.find((s) => s.id === activeSection) || null;
-  const currentUnits: any[] = current ? (Array.isArray(current.units) ? current.units : []) : [];
-  const currentUnit = currentUnits.find((u) => u.id === activeUnit) || null;
-  // بلا قسم فرعي مختار نعرض كل دروس المستوى — لا يختفي درس عن الأستاذ
-  const visibleLessons: any[] = currentUnit
-    ? (Array.isArray(currentUnit.lessons) ? currentUnit.lessons : [])
-    : (current?.lessons || []).flatMap((l: any) => [l]);
-
-  // تبديل المستوى يُصفّر القسم الفرعي المختار — وإلا بقي مختاراً من مستوىٍ آخر
-  useEffect(() => {
-    setActiveUnit((prev) => (currentUnits.some((u) => u.id === prev) ? prev : ''));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSection]);
+  // دروس المستوى كلّها بترتيبها — بلا طبقة وسطى، فالطالب يراها هكذا أيضاً
+  const visibleLessons: any[] = current
+    ? (Array.isArray(current.units) && current.units.length
+        ? current.units.flatMap((u: any) => (Array.isArray(u.lessons) ? u.lessons : []))
+        : (Array.isArray(current.lessons) ? current.lessons : [])
+      ).slice().sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0))
+    : [];
 
   const moveSection = async (s: any, dir: 'up' | 'down') => {
     try { await jsonFetch('/api/teacher/foundation/sections/reorder', { method: 'POST', body: { id: s.id, dir } }); await reload(); }
     catch (err: any) { flash(err?.message || 'تعذرت إعادة ترتيب الأقسام', 'err'); }
-  };
-  const moveUnit = async (u: any, dir: 'up' | 'down') => {
-    try { await jsonFetch('/api/teacher/foundation/units/reorder', { method: 'POST', body: { id: u.id, dir } }); await reload(); }
-    catch (err: any) { flash(err?.message || 'تعذرت إعادة ترتيب الأقسام الفرعية', 'err'); }
-  };
-
-  /* ── الأقسام الفرعية ── */
-  const openUnitCreate = () => {
-    if (!current) { flash('اختر مستوىً أولاً ثم أنشئ أقسامه الفرعية', 'err'); return; }
-    setUnitForm({
-      title: '', description: '', icon: 'book-open', color: '',
-      isLocked: false, isVisible: true,
-    });
-    setUnitError('');
-    setUnitModal({ mode: 'create' });
-  };
-  const openUnitEdit = (u: any) => {
-    setUnitForm({ title: u.title, description: u.description, icon: u.icon, color: u.color || '', isLocked: u.isLocked, isVisible: u.isVisible });
-    setUnitError('');
-    setUnitModal({ mode: 'edit', unit: u });
-  };
-  const saveUnit = async (e: FormEvent) => {
-    e.preventDefault();
-    const title = String(unitForm.title || '').trim();
-    if (!title) { setUnitError('اكتب عنوان القسم الفرعي أولاً.'); return; }
-    setSavingUnit(true);
-    setUnitError('');
-    try {
-      if (unitModal?.mode === 'create') {
-        const r = await jsonFetch('/api/teacher/foundation/units', { method: 'POST', body: { ...unitForm, title, sectionId: current.id } });
-        if (r?.unit?.id) setActiveUnit(r.unit.id);
-        flash(`تم إنشاء «${title}»`);
-      } else if (unitModal?.mode === 'edit') {
-        await jsonFetch(`/api/teacher/foundation/units/${unitModal.unit.id}`, { method: 'PATCH', body: { ...unitForm, title } });
-        flash('تم حفظ القسم الفرعي');
-      }
-      setUnitModal(null);
-      await reload();
-    } catch (err: any) {
-      const m = err?.message || 'تعذر حفظ القسم الفرعي';
-      setUnitError(m);
-      flash(m, 'err');
-    } finally { setSavingUnit(false); }
-  };
-  const quickUnit = async (u: any, patch: any) => {
-    try { await jsonFetch(`/api/teacher/foundation/units/${u.id}`, { method: 'PATCH', body: patch }); await reload(); flash('تم التحديث'); }
-    catch (err: any) { flash(err?.message || 'تعذر التعديل', 'err'); }
-  };
-  const removeUnit = async (u: any) => {
-    if (!window.confirm(`حذف القسم الفرعي «${u.title}»؟ دروسه (${u.lessonsCount || 0}) تبقى وتنتقل إلى القسم الأول.`)) return;
-    try { await jsonFetch(`/api/teacher/foundation/units/${u.id}`, { method: 'DELETE' }); setActiveUnit(''); await reload(); flash('تم الحذف'); }
-    catch (err: any) { flash(err?.message || 'تعذر الحذف', 'err'); }
   };
 
   /* ── الفواصل: عناوين تنظيمية فقط، لا صفحات للطالب ── */
@@ -10537,7 +10472,7 @@ function TeacherFoundationPage() {
   };
 
   /* ── الدروس ── */
-  const openLessonCreate = (sectionId?: string, unitId?: string) => {
+  const openLessonCreate = (sectionId?: string) => {
     // لا نهاية ميتة: إن لم يوجد فاصل ننشئ واحداً فوراً بدل رسالة "أنشئ فاصلاً"
     const target = sectionId || activeSection || sections[0]?.id || '';
     if (!target) {
@@ -10547,17 +10482,15 @@ function TeacherFoundationPage() {
       flash('أنشئ فاصلاً أولاً — بعد حفظه ستنتقل مباشرة لإضافة الدروس', 'err');
       return;
     }
-    setLessonForm({ title: '', description: '', kind: 'text', bodyText: '', coverUrl: '', images: [], videoUrl: '', videoCaption: '', htmlContent: '', htmlFileUrl: '', isLocked: false, isVisible: true, unitId: unitId || activeUnit || '' });
+    setLessonForm({ title: '', description: '', kind: 'text', bodyText: '', coverUrl: '', images: [], videoUrl: '', videoCaption: '', htmlContent: '', htmlFileUrl: '', isLocked: false, isVisible: true });
     setLessonError('');
-    setLessonModal({ mode: 'create', sectionId: target, unitId: unitId || activeUnit || undefined });
+    setLessonModal({ mode: 'create', sectionId: target });
   };
   const openLessonEdit = (l: any) => {
     setLessonError('');
     jsonFetch(`/api/foundation/lessons/${l.id}`)
       .then((full: any) => {
-        // الوحدة تُرجَع مكمّلة بـ __flat__ عند الدرس بلا قسم — نفرّغها للقائمة
-        const rawUnit = String(full.unitId || '');
-        setLessonForm({ title: full.title, description: full.description, kind: full.kind, bodyText: full.bodyText || '', coverUrl: full.coverUrl || '', images: full.images || [], videoUrl: full.videoUrl || '', videoCaption: full.videoCaption || '', htmlContent: full.htmlContent || '', htmlFileUrl: full.htmlFileUrl || '', isLocked: full.isLocked, isVisible: full.isVisible, unitId: rawUnit.startsWith('__flat__') ? '' : rawUnit });
+        setLessonForm({ title: full.title, description: full.description, kind: full.kind, bodyText: full.bodyText || '', coverUrl: full.coverUrl || '', images: full.images || [], videoUrl: full.videoUrl || '', videoCaption: full.videoCaption || '', htmlContent: full.htmlContent || '', htmlFileUrl: full.htmlFileUrl || '', isLocked: full.isLocked, isVisible: full.isVisible });
         setLessonModal({ mode: 'edit', lesson: { ...l, ...full } });
       })
       .catch((e: any) => flash(e?.message || 'تعذر فتح الدرس', 'err'));
@@ -10570,7 +10503,7 @@ function TeacherFoundationPage() {
     setLessonError('');
     try {
       if (lessonModal?.mode === 'create') {
-        await jsonFetch('/api/teacher/foundation/lessons', { method: 'POST', body: { ...lessonForm, title, sectionId: lessonModal.sectionId, unitId: lessonModal.unitId } });
+        await jsonFetch('/api/teacher/foundation/lessons', { method: 'POST', body: { ...lessonForm, title, sectionId: lessonModal.sectionId } });
         flash(`تمت إضافة «${title}»`);
       } else if (lessonModal?.mode === 'edit') {
         await jsonFetch(`/api/teacher/foundation/lessons/${lessonModal.lesson.id}`, { method: 'PATCH', body: { ...lessonForm, title } });
@@ -10609,9 +10542,9 @@ function TeacherFoundationPage() {
   return (
     <Shell mode="teacher">
       <SectionHero
-        eyebrow="ثلاثة مستويات: القسم ثم القسم الفرعي ثم الدرس"
+        eyebrow="المستوى ثم مواضيعه ثم الدرس"
         title="إعداد التأسيس"
-        body="الطالب يفتح المستوى فيرى مربعات أقسامه، ويفتح القسم فيرى دروسه، ويفتح الدرس فيقرأه في صفحة مستقلة. أنت تتحكّم بالترتيب في كل مستوى، وتحرّر كل درس بما تريد — نصاً أو صوراً أو فيديو أو HTML."
+        body="الطالب يفتح المستوى فيرى مواضيعه العشرة مرقّمة، ويفتح الموضوع فيقرأ الدرس في صفحة مستقلة. أنت تتحكّم بالترتيب بالأسهم، وتحرّر كل درس بما تريد — نصاً أو صوراً أو فيديو أو HTML."
         action={
           <div className="flex flex-wrap gap-2.5">
             <button type="button" onClick={openSectionCreate} className={touchBtnSoft} data-testid="button-add-foundation-section"><Layers size={18} /> مستوى جديد</button>
@@ -10620,9 +10553,9 @@ function TeacherFoundationPage() {
         }
         stats={[
           { value: sections.length, label: 'مستوى' },
-          { value: totalUnits, label: 'قسم فرعي' },
-          { value: totalLessons, label: 'درس' },
+          { value: totalLessons, label: 'موضوع ودرس' },
           { value: sections.reduce((a, s) => a + (s.memberCount || 0), 0), label: 'طالب مسجَّل' },
+          { value: sections.filter((s) => s.isVisible).length, label: 'ظاهر للطالب' },
         ]}
       />
 
@@ -10677,29 +10610,6 @@ function TeacherFoundationPage() {
               </div>
             ) : null}
 
-            {/* شريط breadcrumb داخل المستوى — يحكي للطالب-visible أين أنا */}
-            {current ? (
-              <div className="flex flex-wrap items-center gap-1.5 border-b border-border bg-card px-4 py-3 text-sm font-bold">
-                <span className="text-muted-foreground">المسار:</span>
-                <span className="rounded-lg bg-secondary px-2.5 py-1 text-primary">{current.subtitle || current.title}</span>
-                <ChevronLeft size={14} className="text-muted-foreground/50" />
-                {currentUnit ? (
-                  <>
-                    <span className="rounded-lg bg-accent/30 px-2.5 py-1 text-accent-foreground">{currentUnit.title}</span>
-                    <ChevronLeft size={14} className="text-muted-foreground/50" />
-                    <span className="text-muted-foreground">{visibleLessons.length} درس</span>
-                  </>
-                ) : (
-                  <span className="text-muted-foreground">كل الأقسام الفرعية · {current.lessonsCount} درس</span>
-                )}
-                {currentUnit ? (
-                  <button type="button" onClick={() => setActiveUnit('')} className="ms-auto rounded-lg px-2.5 py-1 text-xs font-extrabold text-primary hover:bg-secondary" data-testid="button-clear-active-unit">
-                    عرض كل دروس المستوى
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-
             {showMembers && current
               ? <FoundationMembersPanel sectionId={current.id} sectionTitle={current.title} flash={flash} onChanged={() => reload()} />
               : !current
@@ -10707,98 +10617,15 @@ function TeacherFoundationPage() {
                 : null}
           </section>
 
-          {/* ═══ الأقسام الفرعية: مربعات داخل المستوى ═══ */}
-          {current ? (
-            <section className="rounded-[2rem] border border-border bg-card shadow-sm">
-              <div className="flex flex-wrap items-center gap-3 border-b border-border bg-gradient-to-l from-[#17413f] to-[#2a7a72] p-4 text-white sm:p-5">
-                <Layers size={20} />
-                <div className="min-w-0 flex-1">
-                  <h2 className="font-display text-lg font-extrabold">أقسام «{current.subtitle || current.title}»</h2>
-                  <p className="mt-0.5 text-xs font-bold text-white/75">
-                    {currentUnits.length} قسم فرعي · {current.lessonsCount} درس — رتّبها بالأسهم، والدروس تنزل تحتها
-                  </p>
-                </div>
-                <button type="button" onClick={openUnitCreate} className="inline-flex min-h-[48px] items-center gap-2 rounded-2xl bg-accent px-5 text-sm font-extrabold text-[#3a2c07] shadow-lg active:scale-[.97]" data-testid="button-add-foundation-unit">
-                  <Plus size={18} /> قسم فرعي جديد
-                </button>
-              </div>
-
-              {!currentUnits.length ? (
-                <div className="px-5 py-12 text-center">
-                  <p className="text-sm font-semibold text-muted-foreground">
-                    لا أقسام فرعية بعد — أنشئ واحداً لتضع دروسه فيه.
-                  </p>
-                  <button type="button" onClick={openUnitCreate} className={`${touchBtnSoft} mt-4 px-5 text-sm`}>
-                    <Plus size={17} /> أنشئ أول قسم فرعي
-                  </button>
-                </div>
-              ) : (
-                <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {currentUnits.map((u: any, ui: number) => {
-                    const UIcon = (UNIT_ICONS as any)[u.icon] || BookOpen;
-                    const uColor = u.color || current.color;
-                    const picked = activeUnit === u.id;
-                    return (
-                      <div
-                        key={u.id}
-                        className={`group relative overflow-hidden rounded-3xl border p-4 transition-all ${picked ? 'border-accent ring-4 ring-accent/20' : 'border-border hover:border-primary/35'}`}
-                        style={{ background: picked ? `${uColor}12` : undefined }}
-                        data-testid={`unit-card-${u.id}`}
-                      >
-                        {u.isVirtual ? (
-                          <span className="absolute left-3 top-3 rounded-full bg-muted px-2 py-0.5 text-[9px] font-extrabold text-muted-foreground">تلقائي</span>
-                        ) : null}
-
-                        <div className="flex items-start gap-3">
-                          <button
-                            type="button"
-                            onClick={() => setActiveUnit(picked ? '' : u.id)}
-                            className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-white shadow-md"
-                            style={{ background: `linear-gradient(135deg, ${uColor}, ${uColor}99)` }}
-                            aria-label="اختيار القسم الفرعي"
-                          >
-                            <UIcon size={19} />
-                          </button>
-                          <button type="button" onClick={() => setActiveUnit(picked ? '' : u.id)} className="min-w-0 flex-1 text-right">
-                            <p className="truncate font-display text-[15px] font-extrabold text-primary">{u.title}</p>
-                            <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] font-bold text-muted-foreground">
-                              <span className="rounded-md bg-secondary px-2 py-0.5 tabular-nums">{u.lessonsCount} درس</span>
-                              {!u.isVisible ? <span className="rounded-md bg-muted px-2 py-0.5">مخفي</span> : null}
-                              {u.isLocked ? <span className="rounded-md bg-[#b7791f]/15 px-2 py-0.5 text-[#b7791f]">مقفل</span> : null}
-                            </p>
-                          </button>
-                        </div>
-
-                        {!u.isVirtual ? (
-                          <div className="mt-3 flex flex-wrap items-center gap-1 border-t border-border pt-3">
-                            <span className="flex flex-col">
-                              <button type="button" onClick={() => moveUnit(u, 'up')} disabled={ui === 0} className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground active:bg-secondary disabled:opacity-25" aria-label="تقديم"><ArrowUp size={14} /></button>
-                              <button type="button" onClick={() => moveUnit(u, 'down')} disabled={ui === currentUnits.length - 1} className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground active:bg-secondary disabled:opacity-25" aria-label="تأخير"><ArrowDown size={14} /></button>
-                            </span>
-                            <button type="button" onClick={() => openLessonCreate(current.id, u.id)} className="grid h-9 w-9 place-items-center rounded-xl bg-accent/25 text-accent-foreground active:bg-accent/50" aria-label="أضف درساً"><Plus size={16} /></button>
-                            <button type="button" onClick={() => quickUnit(u, { isVisible: !u.isVisible })} className="grid h-9 w-9 place-items-center rounded-xl bg-secondary text-muted-foreground active:bg-accent/40" aria-label="إظهار/إخفاء">{u.isVisible ? <EyeOff size={16} /> : <Eye size={16} />}</button>
-                            <button type="button" onClick={() => quickUnit(u, { isLocked: !u.isLocked })} className="grid h-9 w-9 place-items-center rounded-xl bg-secondary text-muted-foreground active:bg-accent/40" aria-label="قفل">{u.isLocked ? <LockOpen size={16} /> : <Lock size={16} />}</button>
-                            <button type="button" onClick={() => openUnitEdit(u)} className="grid h-9 w-9 place-items-center rounded-xl bg-secondary text-primary active:bg-accent/40" aria-label="تعديل"><Pencil size={16} /></button>
-                            <button type="button" onClick={() => removeUnit(u)} className="grid h-9 w-9 place-items-center rounded-xl bg-secondary text-destructive active:bg-destructive/10" aria-label="حذف"><Trash2 size={16} /></button>
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-          ) : null}
-
           {/* ═══ الدروس: داخل القسم الفرعي المختار أو كل المستوى ═══ */}
           <section>
             <div className="mb-4 flex flex-wrap items-center gap-3">
               <h2 className="flex items-center gap-2 font-display text-lg font-extrabold text-primary">
                 <NotebookPen size={20} />
-                {currentUnit ? `دروس «${currentUnit.title}»` : current ? `دروس «${current.subtitle || current.title}»` : 'الدروس'}
+                {current ? `مواضيع «${current.subtitle || current.title}»` : 'المواضيع'}
               </h2>
               <span className="rounded-xl bg-secondary px-3 py-1.5 text-xs font-extrabold tabular-nums text-primary">{visibleLessons.length}</span>
-              <button type="button" onClick={() => openLessonCreate(activeSection, activeUnit || undefined)} className={`${touchBtnAccent} mr-auto px-5 text-sm`} data-testid="button-add-lesson-here">
+              <button type="button" onClick={() => openLessonCreate(activeSection)} className={`${touchBtnAccent} mr-auto px-5 text-sm`} data-testid="button-add-lesson-here">
                 <Plus size={18} /> أضف درساً
               </button>
             </div>
@@ -10807,18 +10634,16 @@ function TeacherFoundationPage() {
               <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-16 text-center">
                 <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-gradient-to-br from-primary to-[#2a7a72] text-primary-foreground shadow-lg"><NotebookPen size={30} /></span>
                 <p className="font-display text-xl font-bold text-primary">ابدأ أول مستوى</p>
-                <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-muted-foreground">المستوى هو الصفحة الأولى التي يراها الطالب. أنشئ واحداً ثم قسّمه إلى أقسام فرعية وضع فيها الدروس.</p>
+                <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-muted-foreground">المستوى هو الصفحة الأولى التي يراها الطالب. أنشئ واحداً ثم ضع فيه مواضيعه العشرة.</p>
                 <button type="button" onClick={openSectionCreate} className={`${touchBtnPrimary} mt-6`}><Plus size={20} /> أنشئ مستوىً</button>
               </div>
             ) : !visibleLessons.length ? (
               <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-16 text-center">
-                <p className="font-display text-xl font-bold text-primary">
-                  {currentUnit ? `قسم «${currentUnit.title}» بلا دروس` : 'لا دروس في هذا المستوى بعد'}
-                </p>
+                <p className="font-display text-xl font-bold text-primary">لا مواضيع في هذا المستوى بعد</p>
                 <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-muted-foreground">
                   الدرس يحوي نصاً وصوراً وفيديو وHTML — اكتب ما تريد فيه وستظهر للطالب كما هي.
                 </p>
-                <button type="button" onClick={() => openLessonCreate(activeSection, activeUnit || undefined)} className={`${touchBtnSoft} mt-6 px-6 text-sm`}>
+                <button type="button" onClick={() => openLessonCreate(activeSection)} className={`${touchBtnSoft} mt-6 px-6 text-sm`}>
                   <Plus size={18} /> أضف أول درس
                 </button>
               </div>
@@ -10873,94 +10698,6 @@ function TeacherFoundationPage() {
           </section>
         </div>
       )}
-
-      {/* ═══ نافذة القسم الفرعي ═══ */}
-      {unitModal ? (
-        <Modal
-          title={unitModal.mode === 'create' ? 'قسم فرعي جديد' : 'تعديل القسم الفرعي'}
-          eyebrow="الحلقة الوسطى — يجمع دروساً متقاربة تحت سقف واحد"
-          onClose={() => setUnitModal(null)}
-          maxWidth="max-w-2xl"
-        >
-          <form onSubmit={saveUnit} className="space-y-5 pb-4">
-            <div className="relative overflow-hidden rounded-3xl p-5 shadow-lg" style={{ background: `linear-gradient(135deg, ${unitForm.color || current?.color || '#17413f'}, ${unitForm.color || current?.color || '#17413f'}bb)` }}>
-              <div className="pointer-events-none absolute -left-6 -top-8 select-none font-display text-[6rem] leading-none text-white/15">ق</div>
-              <div className="relative flex items-center gap-4">
-                <span className="grid h-12 w-12 place-items-center rounded-2xl bg-white/25 text-white shadow-lg">
-                  {(() => { const I = (UNIT_ICONS as any)[unitForm.icon] || BookOpen; return <I size={22} />; })()}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-display text-lg font-extrabold text-white">{unitForm.title || 'عنوان القسم الفرعي...'}</p>
-                  <p className="mt-0.5 truncate text-xs font-bold text-white/85">{current ? `داخل ${current.subtitle || current.title}` : ''}</p>
-                </div>
-              </div>
-              <span className="absolute left-4 top-4 rounded-full bg-black/40 px-3 py-1 text-[10px] font-bold text-white backdrop-blur-md">معاينة حية</span>
-            </div>
-
-            {unitError ? (
-              <p className="flex items-start gap-2.5 rounded-2xl border-2 border-destructive/40 bg-destructive/10 px-4 py-3.5 text-sm font-extrabold leading-6 text-destructive">
-                <CircleAlert size={19} className="mt-0.5 shrink-0" /> {unitError}
-              </p>
-            ) : null}
-
-            <label className="block text-sm font-extrabold text-foreground">
-              <span className="mb-2 block">عنوان القسم الفرعي *</span>
-              <input
-                name="unit-title" required autoFocus value={unitForm.title || ''}
-                onChange={(e) => setUnitForm((f: any) => ({ ...f, title: e.target.value }))}
-                placeholder="مثال: الجملة وأنواعها"
-                data-testid="input-unit-title"
-                className={touchCls}
-              />
-            </label>
-
-            <label className="block text-sm font-extrabold text-foreground">
-              <span className="mb-2 block">وصف مختصر (يظهر للطالب على المربع)</span>
-              <textarea
-                name="unit-description" rows={3} value={unitForm.description || ''}
-                onChange={(e) => setUnitForm((f: any) => ({ ...f, description: e.target.value }))}
-                placeholder="جملة واحدة تشرح للطالب ماذا يجد داخل هذا القسم"
-                data-testid="input-unit-description"
-                className={touchCls}
-              />
-            </label>
-
-            <div>
-              <span className="mb-2 block text-sm font-extrabold text-foreground">الأيقونة</span>
-              <div className="flex flex-wrap gap-2">
-                {Object.keys(UNIT_ICONS).map((k) => {
-                  const I = (UNIT_ICONS as any)[k];
-                  return (
-                    <button
-                      key={k} type="button" onClick={() => setUnitForm((f: any) => ({ ...f, icon: k }))}
-                      className={`grid h-12 w-12 place-items-center rounded-2xl border-2 transition-colors ${unitForm.icon === k ? 'border-primary bg-accent/25 text-primary' : 'border-border bg-card text-muted-foreground'}`}
-                      aria-label={k}
-                    >
-                      <I size={19} />
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <label className="flex items-center gap-2.5 text-sm font-bold text-foreground">
-              <input type="checkbox" checked={!!unitForm.isVisible} onChange={(e) => setUnitForm((f: any) => ({ ...f, isVisible: e.target.checked }))} className="h-5 w-5 accent-primary" />
-              ظاهر للطالب
-            </label>
-            <label className="flex items-center gap-2.5 text-sm font-bold text-foreground">
-              <input type="checkbox" checked={!!unitForm.isLocked} onChange={(e) => setUnitForm((f: any) => ({ ...f, isLocked: e.target.checked }))} className="h-5 w-5 accent-primary" />
-              مقفل مؤقتاً (يرى الطالب الاسم ولا يفتح الدروس)
-            </label>
-
-            <div className="flex gap-3 pt-1">
-              <button type="submit" disabled={savingUnit} className={`${touchBtnPrimary} flex-1`} data-testid="button-save-unit">
-                {savingUnit ? <><RefreshCw size={18} className="animate-spin" /> جارٍ الحفظ...</> : <><Save size={18} /> {unitModal.mode === 'create' ? 'أنشئ القسم الفرعي' : 'احفظ التعديل'}</>}
-              </button>
-              <button type="button" onClick={() => setUnitModal(null)} className={`${touchBtnGhost} px-6`}>إلغاء</button>
-            </div>
-          </form>
-        </Modal>
-      ) : null}
 
       {sectionModal ? (
         <Modal title={sectionModal.mode === 'create' ? 'فاصل جديد في التدفّق' : 'تعديل الفاصل'} eyebrow="فاصل تنظيمي فقط — الطالب لا يفتحه" onClose={() => setSectionModal(null)} maxWidth="max-w-3xl">
@@ -11030,7 +10767,6 @@ function TeacherFoundationPage() {
             submitLabel={lessonModal.mode === 'create' ? 'أضف إلى التدفّق' : 'حفظ التعديلات'}
             onSubmit={saveLesson}
             onCancel={() => setLessonModal(null)}
-            unitOptions={currentUnits.filter((u: any) => !u.isVirtual)}
           />
         </Modal>
       ) : null}
@@ -11216,7 +10952,7 @@ function FoundationMembersPanel({ sectionId, sectionTitle, flash, onChanged }: {
 }
 
 /* ══════════════════ نموذج الدرس (لمس) ══════════════════ */
-function FoundationLessonForm({ form, setForm, saving, error, submitLabel, onSubmit, onCancel, unitOptions = [] }: {
+function FoundationLessonForm({ form, setForm, saving, error, submitLabel, onSubmit, onCancel }: {
   form: any;
   setForm: (updater: any) => void;
   saving: boolean;
@@ -11224,8 +10960,6 @@ function FoundationLessonForm({ form, setForm, saving, error, submitLabel, onSub
   submitLabel: string;
   onSubmit: (e: FormEvent) => void;
   onCancel: () => void;
-  /** أقسام المستوى التي يصل إليها الدرس — lets the teacher move the lesson without recreating it */
-  unitOptions?: any[];
 }) {
   const kind = String(form.kind || 'text');
   const meta = FOUNDATION_KINDS[kind] || FOUNDATION_KINDS.text;
@@ -11322,23 +11056,6 @@ function FoundationLessonForm({ form, setForm, saving, error, submitLabel, onSub
 
       <Field2 label="عنوان الدرس *"><input value={form.title || ''} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="مثال: حروف المد — من الفتح إلى الياء" className={touchCls} data-testid="input-foundation-lesson-title" /></Field2>
       <Field2 label="وصف قصير" hint="سطر أو سطران يظهر أعلى الدرس عند الطالب"><textarea value={form.description || ''} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2} placeholder="نتعلم اليوم..." className={`${touchCls} resize-none leading-7`} /></Field2>
-
-      {/* نقل الدرس بين الأقسام الفرعية — بلا إعادة إنشاء الدرس */}
-      {unitOptions.length ? (
-        <Field2 label="القسم الفرعي" hint="الدرس ينزل تحت هذا القسم في صفحة الطالب">
-          <select
-            value={form.unitId || ''}
-            onChange={(e) => setForm({ ...form, unitId: e.target.value })}
-            className={touchCls}
-            data-testid="select-foundation-lesson-unit"
-          >
-            <option value="">— بلا قسم (يظهر في أول قسم فرعي) —</option>
-            {unitOptions.map((u) => (
-              <option key={u.id} value={u.id}>{u.title}</option>
-            ))}
-          </select>
-        </Field2>
-      ) : null}
 
       {/* النص */}
       {wants('text') ? (
@@ -11585,6 +11302,10 @@ function FoundationTile({ item, onOpen }: { item: any; onOpen: (item: any) => vo
   const done = Number(item.doneCount ?? 0);
   const children: any[] = Array.isArray(item.units) ? item.units : [];
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  // المستويات تحمل اسمين: «المستوى الأول» و«أساسيات النحو والتركيب» —
+  // كلاهما على المربع نفسه فلا يضغط الطالب مرتين ليعرف وين هو.
+  const eyebrow = item.subtitle || '';
+  const headline = item.title || '';
 
   return (
     <button
@@ -11594,7 +11315,7 @@ function FoundationTile({ item, onOpen }: { item: any; onOpen: (item: any) => vo
       className="group relative flex flex-col overflow-hidden rounded-3xl border border-border bg-card text-right shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:border-primary/35 hover:shadow-2xl"
     >
       {/* رأس ملوّن — لون المستوى أو وراثته */}
-      <span className="relative block h-24 overflow-hidden" style={{ background: `linear-gradient(135deg, ${color}, ${color}88)` }}>
+      <span className="relative block h-28 overflow-hidden" style={{ background: `linear-gradient(135deg, ${color}, ${color}88)` }}>
         <span className="absolute -left-8 -top-10 h-28 w-28 rounded-full bg-white/15 blur-2xl" />
         <span className="absolute -bottom-12 right-6 h-24 w-24 rounded-full bg-black/10 blur-xl" />
         {item.coverUrl ? <img src={item.coverUrl} alt="" className="absolute inset-0 h-full w-full object-cover" /> : null}
@@ -11611,8 +11332,9 @@ function FoundationTile({ item, onOpen }: { item: any; onOpen: (item: any) => vo
       </span>
 
       <span className="flex flex-1 flex-col p-5">
-        {item.subtitle ? <span className="text-[11px] font-extrabold text-accent-foreground">{item.subtitle}</span> : null}
-        <span className="mt-0.5 font-display text-lg font-extrabold leading-snug text-primary">{item.title}</span>
+        {/* الاسمان على بطاقة واحدة: المستوى ثم موضوعه */}
+        <span className="text-[11px] font-extrabold uppercase tracking-wide text-accent-foreground">{eyebrow}</span>
+        <span className="mt-1 font-display text-xl font-extrabold leading-snug text-primary">{headline}</span>
         {item.description ? (
           <span className="mt-2 line-clamp-2 text-[13px] font-semibold leading-6 text-muted-foreground">{item.description}</span>
         ) : null}
@@ -11640,6 +11362,7 @@ function FoundationTile({ item, onOpen }: { item: any; onOpen: (item: any) => vo
     </button>
   );
 }
+
 
 /* ═══════════════════ الصفحة 1: المستويات (مربعات الأقسام) ═══════════════════ */
 function StudentFoundationPage() {
@@ -11680,14 +11403,23 @@ function StudentFoundationPage() {
   );
 }
 
-/* ═══════════════════ الصفحة 2: أقسام المستوى (مربعات) ═══════════════════ */
+/* ═══════════════════ الصفحة 2: مواضيع المستوى (1..10) ═══════════════════ */
 function FoundationSectionPage() {
   const [, setLocation] = useLocation();
   const { sectionId = '' } = useParams();
   const { data, loading, err, reload } = useFoundationStream();
   const sections: any[] = Array.isArray(data?.sections) ? data.sections : [];
   const section = sections.find((s) => s.id === sectionId) || null;
-  const units: any[] = section ? (Array.isArray(section.units) ? section.units : []) : [];
+
+  // المواضيع = كل دروس المستوى بترتيبها، أياً كان تقسيمها داخلياً.
+  // نقرأ من units إن وُجدت ومن lessons مباشرةً كحل احتياطي — فالصفحة
+  // واحدة تعرض العشرة دروس دائماً بلا طبقة وسطى على الطالب.
+  const topics: any[] = section
+    ? (Array.isArray(section.units) && section.units.length
+        ? section.units.flatMap((u: any) => (Array.isArray(u.lessons) ? u.lessons : []))
+        : (Array.isArray(section.lessons) ? section.lessons : [])
+      ).slice().sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0))
+    : [];
   const Icon = section ? ((UNIT_ICONS as any)[section.icon] || Sparkles) : Layers;
 
   return (
@@ -11695,7 +11427,7 @@ function FoundationSectionPage() {
       <FoundationCrumbs
         items={[
           { label: 'التأسيس', href: '/student/foundation' },
-          { label: section?.subtitle || section?.title || 'المستوى' },
+          { label: section ? `${section.subtitle || ''} — ${section.title || ''}`.trim() : 'المستوى' },
         ]}
       />
 
@@ -11720,69 +11452,16 @@ function FoundationSectionPage() {
 
           <div className="mb-4 flex flex-wrap items-center gap-3">
             <h2 className="flex items-center gap-2 font-display text-lg font-extrabold text-primary">
-              <Layers size={20} /> أقسام المستوى
+              <NotebookText size={20} /> قائمة المواضيع الرئيسية
             </h2>
-            <span className="rounded-xl bg-secondary px-3 py-1.5 text-xs font-extrabold tabular-nums text-primary">{units.length}</span>
+            <span className="rounded-xl bg-secondary px-3 py-1.5 text-xs font-extrabold tabular-nums text-primary">{topics.length}</span>
           </div>
 
-          <FoundationTileGrid
-            items={units}
-            onOpen={(u) => setLocation(`/student/foundation/section/${section.id}/unit/${u.id}`)}
-            emptyText="يقسّم الأستاذ هذا المستوى إلى أقسام فرعية — عد قريباً."
-
-          />
-        </>
-      )}
-    </Shell>
-  );
-}
-
-/* ═══════════════════ الصفحة 3: دروس القسم الفرعي ═══════════════════ */
-function FoundationUnitPage() {
-  const [, setLocation] = useLocation();
-  const { sectionId = '', unitId = '' } = useParams();
-  const { data, loading, err, reload } = useFoundationStream();
-  const sections: any[] = Array.isArray(data?.sections) ? data.sections : [];
-  const section = sections.find((s) => s.id === sectionId) || null;
-  const unit = section?.units?.find((u: any) => u.id === unitId) || null;
-  const lessons: any[] = unit ? (Array.isArray(unit.lessons) ? unit.lessons : []) : [];
-  const color = unit?.color || section?.color || '#17413f';
-  const Icon = unit ? ((UNIT_ICONS as any)[unit.icon] || BookOpen) : BookOpen;
-
-  return (
-    <Shell mode="student">
-      <FoundationCrumbs
-        items={[
-          { label: 'التأسيس', href: '/student/foundation' },
-          { label: section?.subtitle || section?.title || 'المستوى', href: section ? `/student/foundation/section/${section.id}` : undefined },
-          { label: unit?.title || 'القسم الفرعي' },
-        ]}
-      />
-
-      {loading ? <StateNotice type="loading" /> : err ? (
-        <StateNotice type="error" onRetry={() => reload(true)} />
-      ) : !unit ? (
-        <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-16 text-center">
-          <p className="font-display text-xl font-bold text-primary">هذا القسم غير موجود</p>
-          <Link href="/student/foundation" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-extrabold text-primary-foreground">
-            <ArrowLeft size={16} /> رجع للتأسيس
-          </Link>
-        </div>
-      ) : (
-        <>
-          <FoundationPageHead
-            color={color} icon={Icon}
-            eyebrow={section?.subtitle ? `${section.subtitle} · قسم فرعي` : 'قسم فرعي'}
-            title={unit.title}
-            description={unit.description}
-            done={unit.doneCount} total={unit.totalCount}
-          />
-
-          {lessons.length ? (
+          {topics.length ? (
             <div className="grid gap-4 sm:grid-cols-2">
-              {lessons.map((l: any, i: number) => (
+              {topics.map((l: any, i: number) => (
                 <FoundationLessonCard
-                  key={l.id} lesson={l} index={i + 1} color={color}
+                  key={l.id} lesson={l} index={i + 1} color={section.color}
                   onOpen={() => setLocation(`/student/foundation/lesson/${l.id}`)}
                 />
               ))}
@@ -11790,8 +11469,8 @@ function FoundationUnitPage() {
           ) : (
             <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-16 text-center">
               <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-secondary text-primary"><NotebookPen size={30} /></span>
-              <p className="font-display text-xl font-bold text-primary">دروس هذا القسم لم تُنشر بعد</p>
-              <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-muted-foreground">الأستاذ يحضّرها الآن. عد قريباً وستجدها هنا.</p>
+              <p className="font-display text-xl font-bold text-primary">مواضيع هذا المستوى لم تُنشر بعد</p>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-muted-foreground">الأستاذ يحضّرها الآن. عد قريباً وستجدها هنا مرقّمة.</p>
             </div>
           )}
         </>
@@ -11864,20 +11543,28 @@ function FoundationLessonPage() {
   const [saving, setSaving] = useState(false);
 
   const sections: any[] = Array.isArray(data?.sections) ? data.sections : [];
+
+  // الدرس يُبحث فيه في كل أقسام المستوى — ونجمع شقيقاته من المستوى كله
+  // (لا من قسم فرعي) فالسابق/التالي يمرّان على العشرة بالترتيب نفسه
+  // الذي يراه الطالب في صفحة المواضيع.
+  const flatLessons = (s: any): any[] =>
+    (Array.isArray(s.units) && s.units.length
+      ? s.units.flatMap((u: any) => (Array.isArray(u.lessons) ? u.lessons : []))
+      : (Array.isArray(s.lessons) ? s.lessons : [])
+    ).slice().sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0));
+
   let section: any = null;
-  let unit: any = null;
   let lesson: any = null;
   let index = 0;
   for (const s of sections) {
-    for (const u of s.units || []) {
-      const hit = (u.lessons || []).find((l: any) => l.id === lessonId);
-      if (hit) { section = s; unit = u; lesson = hit; index = (u.lessons || []).indexOf(hit) + 1; }
-    }
+    const list = flatLessons(s);
+    const at = list.findIndex((l: any) => l.id === lessonId);
+    if (at !== -1) { section = s; lesson = list[at]; index = at + 1; break; }
   }
-  const siblings: any[] = unit?.lessons || [];
+  const siblings: any[] = section ? flatLessons(section) : [];
   const prev = index > 1 ? siblings[index - 2] : null;
   const next = index > 0 && index < siblings.length ? siblings[index] : null;
-  const color = unit?.color || section?.color || '#17413f';
+  const color = section?.color || '#17413f';
 
   const markDone = async () => {
     if (!lesson || saving || lesson.done) return;
@@ -11920,8 +11607,7 @@ function FoundationLessonPage() {
       <FoundationCrumbs
         items={[
           { label: 'التأسيس', href: '/student/foundation' },
-          { label: section?.subtitle || section?.title || 'المستوى', href: section ? `/student/foundation/section/${section.id}` : undefined },
-          { label: unit?.title || 'القسم الفرعي', href: unit ? `/student/foundation/section/${section.id}/unit/${unit.id}` : undefined },
+          { label: section ? `${section.subtitle || ''} — ${section.title || ''}`.trim() : 'المستوى', href: section ? `/student/foundation/section/${section.id}` : undefined },
           { label: lesson.title },
         ]}
       />
@@ -11934,11 +11620,10 @@ function FoundationLessonPage() {
             <meta.Icon size={13} /> {meta.label}
           </span>
           <h1 className="mt-3 font-display text-2xl font-bold leading-snug sm:text-3xl">{lesson.title}</h1>
-          {unit ? (
-            <p className="mt-1.5 text-sm font-bold text-accent">
-              {section?.subtitle ? `${section.subtitle} · ` : ''}{unit.title} · الدرس {index} من {siblings.length}
-            </p>
-          ) : null}
+          <p className="mt-1.5 text-sm font-bold text-accent">
+            {section ? `${section.subtitle || ''} — ${section.title || ''} · `.trim() : ''}
+            الموضوع {index} من {siblings.length}
+          </p>
           {lesson.description ? <p className="mt-3 max-w-2xl text-sm leading-7 text-white/75">{lesson.description}</p> : null}
         </div>
       </header>
@@ -11971,7 +11656,7 @@ function FoundationLessonPage() {
             </Link>
           ) : (
             <Link href={`/student/foundation/section/${section?.id}`} className={`${touchBtn} ${touchBtnSoft} px-5 text-sm`} data-testid="button-lesson-back">
-              رجع لأقسام المستوى <ArrowLeft size={16} />
+              رجع لمواضيع المستوى <ArrowLeft size={16} />
             </Link>
           )}
         </div>
@@ -12001,7 +11686,6 @@ function Router() {
         <Route path="/student/courses/:courseId/lessons/:lessonId" component={StudentLessonPage} />
         <Route path="/student/foundation" component={StudentFoundationPage} />
         <Route path="/student/foundation/section/:sectionId" component={FoundationSectionPage} />
-        <Route path="/student/foundation/section/:sectionId/unit/:unitId" component={FoundationUnitPage} />
         <Route path="/student/foundation/lesson/:lessonId" component={FoundationLessonPage} />
         <Route path="/student/notebook" component={StudentNotebookPage} />
         <Route path="/student/assignments" component={AssignmentsPage} />

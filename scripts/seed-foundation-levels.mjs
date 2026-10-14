@@ -3,12 +3,12 @@
 // ──────────────────────────────────────────────────────────────────────
 //  ما يفعله هذا الملف:
 //    1) ينشئ/يضمن خمسة أقسام في foundation_sections (المستويات الخمسة)
+//       ولكل واحد اسمان: «المستوى الأول» + «أساسيات النحو والتركيب»
 //    2) ينشئ/يضمن خمسين درساً في foundation_lessons — المحتوى كله فاضي
 //       عمداً: الأستاذ يكتب نص كل درس من لوحة «إعداد التأسيس» بنفسه
 //    3) يفتح المستويات الخمسة لكل الطلاب المسجّلين (foundation_members)
-//    4) — إن كان جدول الأقسام الفرعية منفّذاً (sql_foundation_units_v10.sql) —
-//       ينشئ 15 قسماً فرعياً (ثلاثة لكل مستوى) ويوزّع عليها الدروس
 //
+//  بنية الطالب: المستوى ← مواضيعه العشرة ← الدرس في صفحة مستقلة.
 //  طريقة التشغيل (من جذر المستودع):
 //    node scripts/seed-foundation-levels.mjs
 //
@@ -211,47 +211,6 @@ function lessonId(levelIndex, lessonIndex) {
   return `f${levelIndex + 1}02${hex(lessonIndex + 1)}-0000-4000-8000-${String(levelIndex + 1).padStart(8, "0")}${String(lessonIndex + 1).padStart(4, "0")}`;
 }
 
-/* ──────────────────────────────────────────────────────────────────────
-   الأقسام الفرعية — ثلاثة لكل مستوى.
-   كل قسم يحدّد المدى (from..to) من مواضع الدروس العشرة في nivelه،
-   فالزرع يضع كل درس في قسمه الصحيح بلا تخمين.
-   ────────────────────────────────────────────────────────────────────── */
-const UNIT_GROUPS = [
-  [
-    { suffix: "01", title: "الجملة وأنواعها", description: "ما الجملة؟ وكيف تختلف الاسمية عن الفعلية في التركيب والإعراب.", icon: "book-open", from: 1, to: 3 },
-    { suffix: "02", title: "أقسام الكلمة وعددها", description: "الكلمة وحدها: نوعها وعددها وتذكيرها وتأنيثها.", icon: "library", from: 4, to: 5 },
-    { suffix: "03", title: "أدوات المعاني", description: "الضمائر والإشارة والوصل والنكرة والمعرفة وحروف الجر.", icon: "scroll-text", from: 6, to: 10 },
-  ],
-  [
-    { suffix: "01", title: "الجملة المركّبة", description: "كان وأخواتها، وإن وأخواتها، والإضافة والعطف.", icon: "landmark", from: 1, to: 2 },
-    { suffix: "02", title: "العلاقات النحوية", description: "النعت والعطف والشرط والمفعول به والمفعول المطلق.", icon: "target", from: 3, to: 7 },
-    { suffix: "03", title: "الإعراب والتطبيقات", description: "الحال والتمييز وعلامات الإعراب ثم تطبيقات شاملة.", icon: "award", from: 8, to: 10 },
-  ],
-  [
-    { suffix: "01", title: "بنية الكلمة صرفياً", description: "الجذر والميزان والمجرد والمزيد والفعل الصحيح والمعتل.", icon: "scroll-text", from: 1, to: 4 },
-    { suffix: "02", title: "المشتقات", description: "المصادر واسم الفاعل والمفعول والصفة المشبهة والآلة.", icon: "library", from: 5, to: 8 },
-    { suffix: "03", title: "صيغ الكلمة وتطبيقاتها", description: "التصغير وجمع التكسير والاشتقاق.", icon: "sparkles", from: 9, to: 10 },
-  ],
-  [
-    { suffix: "01", title: "الصورة البيانية", description: "التشبيه والاستعارة والكناية والمجاز المرسل.", icon: "sparkles", from: 1, to: 4 },
-    { suffix: "02", title: "المحسّنات البديعية", description: "المحسّنات اللفظية والمعنوية.", icon: "award", from: 5, to: 6 },
-    { suffix: "03", title: "أساليب الخطاب", description: "الخبر والإنشاء، والتقديم والتأخير، والإيجاز والإطناب.", icon: "target", from: 7, to: 10 },
-  ],
-  [
-    { suffix: "01", title: "قواعد الإملاء", description: "الهمزة والتاء والألف اللينة واللام والتنوين والترقيم.", icon: "shield-check", from: 1, to: 5 },
-    { suffix: "02", title: "فنون الكتابة", description: "كتابة الفقرة والمقال والرسالة.", icon: "book-open", from: 6, to: 8 },
-    { suffix: "03", title: "القراءة والتلخيص", description: "الفهم القرائي ثم التلخيص والتوسع.", icon: "library", from: 9, to: 10 },
-  ],
-];
-
-/** معرّف قسم فرعي ثابت — نفس المنطق في ملف V10 حتى لا يتكرر الزرع مرتين.
- *  خانات UUID لا تقبل إلا 0-9 و a-f، فالبادئة 'a' (Aquam) وليس 'u'. */
-function unitId(levelIndex, unitIndex) {
-  const lv = levelIndex + 1; // 1..5
-  const un = unitIndex + 1; // 1..3
-  return `a${lv}00000${un}-0000-4000-8000-0000000000${String(un).padStart(2, "0")}`;
-}
-
 // ──────────────────────────────────────────────────────────────────────
 //  التنفيذ
 // ──────────────────────────────────────────────────────────────────────
@@ -298,56 +257,6 @@ async function main() {
   const newLessons = await insertIgnoringDuplicates("foundation_lessons", lessonRows);
   console.log(`✓ الدروس   : ${lessonRows.length} درس (أُضيف ${newLessons})`);
 
-  // ── الأقسام الفرعية (اختيارية — تتطلّب sql_foundation_units_v10.sql) ──
-  const unitRows = UNIT_GROUPS.flatMap((groups, levelIndex) =>
-    groups.map((g, unitIndex) => ({
-      id: unitId(levelIndex, unitIndex),
-      section_id: LEVELS[levelIndex].id,
-      title: g.title,
-      description: g.description,
-      cover_url: "",
-      color: "",
-      icon: g.icon,
-      sort_order: unitIndex + 1,
-      is_locked: false,
-      is_visible: true,
-    })),
-  );
-
-  let unitsReady = true;
-  try {
-    await rest("foundation_units?select=id&limit=1");
-  } catch {
-    unitsReady = false;
-  }
-
-  if (unitsReady) {
-    const newUnits = await insertIgnoringDuplicates("foundation_units", unitRows);
-    console.log(`✓ الأقسام الفرعية: ${unitRows.length} قسم (أُضيف ${newUnits})`);
-
-    // توزيع الدروس على أقسامها — نpatch فقط الدروس التي بلا قسم بعد
-    let assigned = 0;
-    for (let levelIndex = 0; levelIndex < UNIT_GROUPS.length; levelIndex++) {
-      const groups = UNIT_GROUPS[levelIndex];
-      for (let unitIndex = 0; unitIndex < groups.length; unitIndex++) {
-        const g = groups[unitIndex];
-        const ids = LEVELS[levelIndex].lessons
-          .map((_, lessonIndex) => lessonId(levelIndex, lessonIndex))
-          .slice(g.from - 1, g.to);
-        if (!ids.length) continue;
-        await rest(
-          `foundation_lessons?id=in.(${ids.join(",")})&unit_id=is.null`,
-          "PATCH",
-          { unit_id: unitId(levelIndex, unitIndex), updated_at: new Date().toISOString() },
-          { Prefer: "return=minimal" },
-        );
-        assigned += ids.length;
-      }
-    }
-    console.log(`✓ التوزيع : ${assigned} درس وُضع تحت أقسامه`);
-  } else {
-    console.log("⚠ الأقسام الفرعية: الجدول غير موجود — نفّذ sql_foundation_units_v10.sql ثم أعد تشغيل هذا الملف");
-  }
 
   // فتح المستويات لكل الطلاب — رابط واحد لكل (قسم × طالب)
   const students = (await rest("profiles?select=id&role=eq.student&limit=5000")) || [];
@@ -381,8 +290,8 @@ async function main() {
     console.log("✓ الأعضاء   : لا يوجد طلاب بعد — سيُضافون تلقائياً عند التسجيل");
   }
 
-  console.log(`\nتم بنجاح — ${LEVELS.length} مستويات · ${unitRows.length} أقسام فرعية · ${lessonRows.length} درس.`);
-  console.log("افتح: بوابة الطالب ← التأسيس.");
+  console.log(`\nتم بنجاح — ${LEVELS.length} مستويات · ${lessonRows.length} درس.`);
+  console.log("افتح: بوابة الطالب ← التأسيس ← المستوى ← الموضوع ← الدرس.");
 }
 
 main().catch((err) => {
