@@ -10053,6 +10053,324 @@ function StudentNotebookPage() {
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   نافذة مراجعة الدفاتر — مصممة للآيباد أولاً.
+   ───────────────────────────────────────────────────────────────────────
+   • طالب واحد في كل مرة + قائمة الطلاب للتنقل السريع (تتحمل 50 وأكثر).
+   • عارض صور كبير يحترم الطولي والعرضي + مصغرات بالترتيب + تنقل.
+   • الضغط على الصورة يفتحها ملء الشاشة مع تنقل وتكبير.
+   • حفظ، وحفظ والتالي (ينتقل لأول غير مُقيَّم تلقائياً).
+   ═══════════════════════════════════════════════════════════════════════ */
+function NotebookReviewModal({ task, submissions, grading, setGrading, saveGrade, onClose }: {
+  task: any;
+  submissions: any[];
+  grading: Record<string, { score: string; feedback: string; checks: { label: string; done: boolean }[] }>;
+  setGrading: (updater: any) => void;
+  saveGrade: (sub: any) => Promise<boolean>;
+  onClose: () => void;
+}) {
+  const [selectedId, setSelectedId] = useState<string>(submissions[0]?.id || '');
+  const [photoIdx, setPhotoIdx] = useState(0);
+  const [lightbox, setLightbox] = useState(false);
+  const [search, setSearch] = useState('');
+  const [savingNext, setSavingNext] = useState(false);
+
+  // المحدد يبقى صالحاً بعد إعادة التحميل (الحفظ يعيد الجلب)
+  useEffect(() => {
+    if (!submissions.length) { setSelectedId(''); return; }
+    if (!submissions.some((s) => s.id === selectedId)) setSelectedId(submissions[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [submissions.map((s) => s.id).join(',')]);
+  useEffect(() => { setPhotoIdx(0); setLightbox(false); }, [selectedId]);
+
+  const isGraded = (s: any) =>
+    (s.score !== null && s.score !== undefined && String(s.score) !== '') ||
+    s.status === 'تم التقييم';
+  const reviewedCount = submissions.filter(isGraded).length;
+  const reviewPct = submissions.length ? Math.round((reviewedCount / submissions.length) * 100) : 0;
+
+  const filtered = useMemo(() => {
+    const needle = String(search || '').trim();
+    if (!needle) return submissions;
+    return submissions.filter((s) => (s.student?.name || '').includes(needle));
+  }, [submissions, search]);
+
+  const selected = submissions.find((s) => s.id === selectedId) || filtered[0] || submissions[0] || null;
+  const photos: string[] = selected && Array.isArray(selected.photos) ? selected.photos.filter(Boolean) : [];
+  const safePhotoIdx = photos.length ? Math.min(photoIdx, photos.length - 1) : 0;
+  const g = selected ? (grading[selected.id] || { score: '', feedback: '', checks: [] }) : { score: '', feedback: '', checks: [] };
+
+  const goStudent = (dir: 1 | -1) => {
+    const list = filtered.length ? filtered : submissions;
+    if (!selected || !list.length) return;
+    const i = list.findIndex((s) => s.id === selected.id);
+    const next = list[(i + dir + list.length) % list.length];
+    if (next) setSelectedId(next.id);
+  };
+
+  const saveAndNext = async () => {
+    if (!selected || savingNext) return;
+    setSavingNext(true);
+    try {
+      const ok = await saveGrade(selected);
+      if (ok) {
+        const list = filtered.length ? filtered : submissions;
+        const i = list.findIndex((s) => s.id === selected.id);
+        // أول غير مُقيَّم بعد الحالي — وإلا التالي في القائمة
+        const rest = [...list.slice(i + 1), ...list.slice(0, i + 1)];
+        const next = rest.find((s) => s.id !== selected.id && !isGraded(s)) || rest.find((s) => s.id !== selected.id);
+        if (next) setSelectedId(next.id);
+      }
+    } finally {
+      setSavingNext(false);
+    }
+  };
+
+  return (
+    <Modal
+      title={task?.title || 'مراجعة الدفاتر'}
+      eyebrow={`روجعت ${reviewedCount} من ${submissions.length}`}
+      onClose={onClose}
+      maxWidth="max-w-6xl"
+    >
+      {/* شريط التقدم — يرى الأستاذ أين وصل من الـ 50 */}
+      <div className="mb-4 flex items-center gap-3 rounded-2xl bg-secondary/60 px-4 py-3">
+        <span className="text-sm font-extrabold tabular-nums text-primary">{reviewedCount}/{submissions.length}</span>
+        <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-background">
+          <span className="block h-full rounded-full bg-gradient-to-l from-[#b7791f] to-[#d7b65e] transition-[width] duration-500" style={{ width: `${reviewPct}%` }} />
+        </span>
+        <span className="text-xs font-extrabold tabular-nums text-muted-foreground">{reviewPct}%</span>
+      </div>
+
+      {!submissions.length ? (
+        <p className="rounded-2xl bg-secondary/50 px-4 py-10 text-center text-sm text-muted-foreground">
+          لا تسليمات على هذه المهمة بعد — ستظهر أسماء الطلاب هنا فور تسليمهم.
+        </p>
+      ) : (
+        <div className="grid items-start gap-4 md:grid-cols-[250px_minmax(0,1fr)]">
+          {/* ── قائمة الطلاب ── */}
+          <aside className="overflow-hidden rounded-3xl border border-border bg-background">
+            <div className="border-b border-border p-3">
+              <div className="relative">
+                <Search size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="ابحث باسم الطالب..."
+                  className="w-full rounded-xl border border-input bg-card py-2.5 pl-3 pr-9 text-sm outline-none placeholder:text-muted-foreground/60 focus:border-primary"
+                  data-testid="input-review-search"
+                />
+              </div>
+            </div>
+            <div className="max-h-56 space-y-1 overflow-y-auto p-2 md:max-h-[62vh]" data-testid="review-student-list">
+              {filtered.map((s, i) => {
+                const graded = isGraded(s);
+                const active = selected?.id === s.id;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setSelectedId(s.id)}
+                    data-testid={`button-review-student-${s.id}`}
+                    className={`flex w-full items-center gap-2.5 rounded-2xl p-2.5 text-right transition-colors ${active ? 'bg-primary text-primary-foreground shadow-md' : 'hover:bg-secondary active:bg-secondary'}`}
+                  >
+                    <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg text-[11px] font-extrabold tabular-nums ${active ? 'bg-white/20' : 'bg-secondary text-muted-foreground'}`}>
+                      {i + 1}
+                    </span>
+                    <Avatar name={s.student?.name} src={s.student?.avatarUrl} size="sm" />
+                    <span className="min-w-0 flex-1">
+                      <span className={`block truncate text-[13px] font-extrabold ${active ? '' : 'text-primary'}`}>{s.student?.name}</span>
+                      <span className={`mt-0.5 flex items-center gap-1.5 text-[10px] font-bold ${active ? 'text-white/75' : 'text-muted-foreground'}`}>
+                        {graded ? (
+                          <><CheckCircle2 size={11} /> {s.score ?? ''}</>
+                        ) : (
+                          <><Clock3 size={11} /> بانتظار</>
+                        )}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+              {!filtered.length ? (
+                <p className="px-3 py-8 text-center text-xs text-muted-foreground">لا نتائج لهذا البحث</p>
+              ) : null}
+            </div>
+          </aside>
+
+          {/* ── بطاقة المراجعة ── */}
+          {selected ? (
+            <article className="min-w-0 overflow-hidden rounded-3xl border border-border bg-background" data-testid="review-card">
+              {/* رأس الطالب + تنقل */}
+              <div className="flex flex-wrap items-center gap-3 border-b border-border bg-gradient-to-l from-secondary/70 to-card p-4">
+                <Avatar name={selected.student?.name} src={selected.student?.avatarUrl} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-display text-base font-extrabold text-primary">{selected.student?.name}</p>
+                  <p className="mt-0.5 text-xs font-semibold text-muted-foreground">
+                    {[selected.student?.grade, selected.student?.section, selected.student?.school].filter(Boolean).join(' · ')}
+                  </p>
+                </div>
+                <span className={`shrink-0 rounded-full px-3 py-1.5 text-[11px] font-extrabold ${isGraded(selected) ? 'bg-green-500/15 text-green-800' : 'bg-accent/25 text-accent-foreground'}`}>
+                  {isGraded(selected) ? `مُقيَّم ${selected.score ?? ''}` : selected.status || 'مُسلَّم'}
+                </span>
+                <span className="flex shrink-0 gap-1.5">
+                  <button type="button" onClick={() => goStudent(-1)} className="grid h-11 w-11 place-items-center rounded-xl border border-border bg-card text-muted-foreground active:bg-secondary" aria-label="الطالب السابق" data-testid="button-review-prev-student">
+                    <ChevronRight size={19} />
+                  </button>
+                  <button type="button" onClick={() => goStudent(1)} className="grid h-11 w-11 place-items-center rounded-xl border border-border bg-card text-muted-foreground active:bg-secondary" aria-label="الطالب التالي" data-testid="button-review-next-student">
+                    <ChevronLeft size={19} />
+                  </button>
+                </span>
+              </div>
+
+              <div className="space-y-4 p-4">
+                {selected.note ? (
+                  <p className="rounded-2xl border-r-4 border-accent bg-secondary/50 px-4 py-3 text-[13px] font-semibold leading-7 text-primary">
+                    ملاحظة الطالب: {selected.note}
+                  </p>
+                ) : null}
+
+                {/* ── عارض الصور: كبير + مصغرات بالترتيب + تكبير ── */}
+                {photos.length ? (
+                  <div>
+                    <div className="mb-2 flex items-center justify-between">
+                      <p className="text-xs font-extrabold text-muted-foreground">
+                        صور الحل بالترتيب ({safePhotoIdx + 1} / {photos.length})
+                      </p>
+                      <span className="text-[11px] font-bold text-muted-foreground">اضغط الصورة للتكبير</span>
+                    </div>
+                    <div className="relative overflow-hidden rounded-3xl border border-border bg-[#101515]">
+                      <button
+                        type="button"
+                        onClick={() => setLightbox(true)}
+                        className="block max-h-[46vh] min-h-[240px] w-full cursor-zoom-in md:max-h-[56vh]"
+                        data-testid="button-photo-enlarge"
+                        aria-label="تكبير الصورة"
+                      >
+                        <img
+                          key={photos[safePhotoIdx]}
+                          src={photos[safePhotoIdx]}
+                          alt={`حل ${selected.student?.name} — صورة ${safePhotoIdx + 1}`}
+                          className="mx-auto max-h-[46vh] min-h-[240px] w-full object-contain md:max-h-[56vh]"
+                          loading="lazy"
+                        />
+                      </button>
+                      {photos.length > 1 ? (
+                        <>
+                          <button type="button" onClick={() => setPhotoIdx((v) => Math.max(0, v - 1))} disabled={safePhotoIdx === 0} className="absolute right-2 top-1/2 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-2xl bg-black/55 text-white backdrop-blur-sm transition-all active:scale-95 disabled:opacity-30" aria-label="الصورة السابقة" data-testid="button-photo-prev">
+                            <ChevronRight size={24} />
+                          </button>
+                          <button type="button" onClick={() => setPhotoIdx((v) => Math.min(photos.length - 1, v + 1))} disabled={safePhotoIdx === photos.length - 1} className="absolute left-2 top-1/2 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-2xl bg-black/55 text-white backdrop-blur-sm transition-all active:scale-95 disabled:opacity-30" aria-label="الصورة التالية" data-testid="button-photo-next">
+                            <ChevronLeft size={24} />
+                          </button>
+                          <span className="absolute bottom-2.5 left-1/2 grid h-8 min-w-14 -translate-x-1/2 place-items-center rounded-full bg-black/60 px-3 text-xs font-extrabold tabular-nums text-white backdrop-blur-sm">
+                            {safePhotoIdx + 1} / {photos.length}
+                          </span>
+                        </>
+                      ) : null}
+                    </div>
+                    {/* شريط المصغرات بالترتيب */}
+                    {photos.length > 1 ? (
+                      <div className="mt-2.5 flex gap-2 overflow-x-auto pb-1" data-testid="photo-thumbnails">
+                        {photos.map((src, i) => (
+                          <button
+                            key={`${src}-${i}`}
+                            type="button"
+                            onClick={() => setPhotoIdx(i)}
+                            data-testid={`button-photo-thumb-${i}`}
+                            aria-label={`صورة ${i + 1}`}
+                            className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border-2 transition-all ${i === safePhotoIdx ? 'border-accent shadow-md' : 'border-border opacity-70 hover:opacity-100'}`}
+                          >
+                            <img src={src} alt="" loading="lazy" className="h-full w-full object-cover" />
+                            <span className={`absolute bottom-0.5 right-0.5 grid h-5 min-w-5 place-items-center rounded-md px-1 text-[10px] font-extrabold tabular-nums ${i === safePhotoIdx ? 'bg-accent text-[#3a2c07]' : 'bg-black/60 text-white'}`}>
+                              {i + 1}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="rounded-2xl bg-secondary/50 px-4 py-6 text-center text-xs text-muted-foreground">لا صور مرفقة في هذا التسليم</p>
+                )}
+
+                {/* متطلبات المهمة */}
+                {(g.checks || []).length ? (
+                  <div className="rounded-2xl border border-accent/30 bg-accent/[0.07] p-3.5">
+                    <div className="mb-2.5 flex items-center justify-between">
+                      <p className="text-xs font-extrabold text-primary">بنود المهمة — علّم ما تحقق منها:</p>
+                      <span className="rounded-full bg-secondary px-2.5 py-1 text-[11px] font-extrabold tabular-nums text-primary">
+                        {(g.checks || []).filter((c) => c.done).length}/{(g.checks || []).length} متحقق
+                      </span>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {(g.checks || []).map((c, ci) => (
+                        <button
+                          key={ci}
+                          type="button"
+                          onClick={() => setGrading((gg: any) => ({ ...gg, [selected.id]: { ...gg[selected.id], checks: (gg[selected.id]?.checks || []).map((x: any, j: number) => j === ci ? { ...x, done: !x.done } : x) } }))}
+                          className={`flex min-h-[52px] items-center gap-2.5 rounded-xl border-2 p-2.5 text-right text-xs font-bold transition-all active:scale-[0.98] ${c.done ? 'border-green-600 bg-green-500/10 text-green-800' : 'border-border bg-card text-muted-foreground hover:border-accent/60'}`}
+                        >
+                          <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg font-extrabold ${c.done ? 'bg-green-600 text-white' : 'bg-muted text-muted-foreground'}`}>
+                            {c.done ? <Check size={16} /> : <span>{ci + 1}</span>}
+                          </span>
+                          <span className="min-w-0 flex-1 leading-5">{c.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* العلامة + الملاحظة + الحفظ */}
+                <div className="rounded-2xl bg-secondary/40 p-3.5">
+                  <div className="grid gap-2.5 sm:grid-cols-[130px_1fr]">
+                    <label className="block">
+                      <span className="mb-1.5 block text-xs font-extrabold text-primary">
+                        العلامة {task?.points ? <span className="text-muted-foreground">/ {task.points}</span> : null}
+                      </span>
+                      <input
+                        type="number" min={0} max={task?.points || undefined}
+                        value={g.score ?? ''}
+                        onChange={(e) => setGrading((gg: any) => ({ ...gg, [selected.id]: { ...gg[selected.id], score: e.target.value } }))}
+                        placeholder="0"
+                        className={`${inputCls} py-3 text-center font-display text-lg font-extrabold tabular-nums`}
+                        data-testid="input-review-score"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1.5 block text-xs font-extrabold text-primary">ملاحظة للطالب</span>
+                      <input
+                        value={g.feedback ?? ''}
+                        onChange={(e) => setGrading((gg: any) => ({ ...gg, [selected.id]: { ...gg[selected.id], feedback: e.target.value } }))}
+                        placeholder="أحسنت، انتبه للهمزة..."
+                        className={`${inputCls} py-3 text-sm`}
+                        data-testid="input-review-feedback"
+                      />
+                    </label>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2.5">
+                    <Button onClick={() => saveGrade(selected)} variant="primary" className="min-h-[52px] flex-1 px-5 text-sm" data-testid="button-review-save">
+                      <Save size={16} /> حفظ التقييم
+                    </Button>
+                    <Button onClick={saveAndNext} variant="soft" className="min-h-[52px] flex-1 px-5 text-sm" data-testid="button-review-save-next" disabled={savingNext}>
+                      {savingNext ? <RefreshCw size={16} className="animate-spin" /> : <ArrowLeft size={16} />}
+                      {savingNext ? 'جارٍ الحفظ...' : 'حفظ والتالي'}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </article>
+          ) : null}
+        </div>
+      )}
+
+      {/* ملء الشاشة — نفس ترتيب الصور، طولي أو عرضي يُعرض كاملاً */}
+      {lightbox && photos.length ? (
+        <FoundationLightbox key={`${selected?.id}-${safePhotoIdx}`} images={photos} start={safePhotoIdx} onClose={() => setLightbox(false)} />
+      ) : null}
+    </Modal>
+  );
+}
+
 function TeacherNotebooksPage() {
   // الصفوف والمدارس تأتي من قاعدة البيانات — يشترك هنا ليعيد الرسم فور تغيّرها
   useCatalog();
@@ -10150,7 +10468,7 @@ function TeacherNotebooksPage() {
     } catch { setSubmissions([]); }
   };
 
-  const saveGrade = async (sub: any) => {
+  const saveGrade = async (sub: any): Promise<boolean> => {
     const g = grading[sub.id] || { score: '', feedback: '', checks: [] };
     try {
       await jsonFetch(`/api/teacher/curriculum/notebook-submissions/${sub.id}`, {
@@ -10160,8 +10478,9 @@ function TeacherNotebooksPage() {
       const data = await jsonFetch(`/api/teacher/curriculum/notebooks/${reviewTask.id}/submissions`);
       setSubmissions(Array.isArray(data) ? data : []);
       load();
-      flash(`تم تقييم دفتر ${sub.student.name}!`);
-    } catch (e: any) { flash(e?.message || 'تعذر الحفظ'); }
+      flash(`Ï¬┘à Ï¬┘é┘è┘è┘à Ï»┘üÏ¬Ï▒ ${sub.student.name}!`);
+      return true;
+    } catch (e: any) { flash(e?.message || 'Ï¬Ï╣Ï░Ï▒ Ïº┘äÏ¡┘üÏ©');  return false; }
   };
 
   return (
@@ -10337,64 +10656,14 @@ function TeacherNotebooksPage() {
       )}
 
       {reviewTask && (
-        <Modal title={reviewTask.title} eyebrow={`دفاتر الطلاب · ${submissions.length} تسليمات`} onClose={() => setReviewTask(null)} maxWidth="max-w-3xl">
-          {!submissions.length ? (
-            <p className="rounded-2xl bg-secondary/50 px-4 py-8 text-center text-sm text-muted-foreground">لم يسلّم أي طالب دفتره بعد — سيظهرون هنا فور التسليم.</p>
-          ) : (
-            <div className="space-y-4">
-              {submissions.map((sub) => (
-                <div key={sub.id} className="rounded-2xl border border-border bg-background p-4">
-                  <div className="flex items-center gap-3">
-                    <Avatar name={sub.student.name} src={sub.student.avatarUrl} size="sm" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-bold text-primary">{sub.student.name}</p>
-                      <p className="text-xs text-muted-foreground">{sub.student.grade}</p>
-                    </div>
-                    <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${sub.status === 'تم التقييم' ? 'bg-green-500/15 text-green-800' : 'bg-accent/25 text-accent-foreground'}`}>{sub.status}</span>
-                  </div>
-                  {sub.note ? <p className="mt-2 text-xs text-muted-foreground">ملاحظة الطالب: {sub.note}</p> : null}
-                  <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
-                    {sub.photos.map((src: string, i: number) => (
-                      <a key={i} href={src} target="_blank" rel="noreferrer" className="group overflow-hidden rounded-xl border border-border" title="اضغط للعرض بالحجم الكامل">
-                        <img src={src} alt={`دفتر ${sub.student.name} — صفحة ${i + 1}`} loading="lazy" className="h-28 w-full object-cover transition-transform duration-300 group-hover:scale-105" />
-                      </a>
-                    ))}
-                  </div>
-                  {(grading[sub.id]?.checks || []).length ? (
-                    <div className="mt-3 rounded-2xl border border-accent/30 bg-accent/[0.07] p-3.5">
-                      <div className="mb-2.5 flex items-center justify-between">
-                        <p className="text-xs font-extrabold text-primary">🎯 بنود المطلوب — اضغط على المنجز منها:</p>
-                        <span className="rounded-full bg-secondary px-2.5 py-1 text-[11px] font-extrabold text-primary">
-                          {(grading[sub.id]?.checks || []).filter((c) => c.done).length}/{(grading[sub.id]?.checks || []).length} منجزة
-                        </span>
-                      </div>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        {(grading[sub.id]?.checks || []).map((c, ci) => (
-                          <button
-                            key={ci}
-                            type="button"
-                            onClick={() => setGrading((g) => ({ ...g, [sub.id]: { ...g[sub.id], checks: (g[sub.id]?.checks || []).map((x, j) => j === ci ? { ...x, done: !x.done } : x) } }))}
-                            className={`flex items-center gap-2.5 rounded-xl border-2 p-2.5 text-right text-xs font-bold transition-all active:scale-[0.98] ${c.done ? 'border-green-600 bg-green-500/10 text-green-800' : 'border-border bg-card text-muted-foreground hover:border-accent/60'}`}
-                          >
-                            <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg font-extrabold ${c.done ? 'bg-green-600 text-white' : 'bg-muted text-muted-foreground'}`}>
-                              {c.done ? <Check size={15} /> : <span>{ci + 1}</span>}
-                            </span>
-                            <span className="min-w-0 flex-1 leading-5">{c.label}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                  <div className="mt-3 grid gap-2 rounded-2xl bg-secondary/40 p-3 sm:grid-cols-[100px_1fr_auto]">
-                    <input type="number" min={0} value={grading[sub.id]?.score ?? ''} onChange={(e) => setGrading((g) => ({ ...g, [sub.id]: { ...g[sub.id], score: e.target.value } }))} placeholder="الدرجة" className={`${inputCls} py-2 text-sm`} />
-                    <input value={grading[sub.id]?.feedback ?? ''} onChange={(e) => setGrading((g) => ({ ...g, [sub.id]: { ...g[sub.id], feedback: e.target.value } }))} placeholder="ملاحظتك على الدفتر..." className={`${inputCls} py-2 text-sm`} />
-                    <Button onClick={() => saveGrade(sub)} variant="primary" className="px-4 py-2 text-xs"><Save size={14} /> حفظ التقييم</Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Modal>
+        <NotebookReviewModal
+          task={reviewTask}
+          submissions={submissions}
+          grading={grading}
+          setGrading={setGrading}
+          saveGrade={saveGrade}
+          onClose={() => setReviewTask(null)}
+        />
       )}
     </Shell>
   );
