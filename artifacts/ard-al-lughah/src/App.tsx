@@ -10414,12 +10414,12 @@ function TeacherFoundationPage() {
     catch (err: any) { flash(err?.message || 'تعذرت إعادة ترتيب الأقسام', 'err'); }
   };
 
-  /* ── الفواصل: عناوين تنظيمية فقط، لا صفحات للطالب ── */
+  /* ── المستويات: القسم الجديد سرّي افتراضياً — لا يراه أحد حتى تفتحه ── */
   const openSectionCreate = () => {
     setSectionForm({
       title: '', subtitle: '', description: '',
       color: FOUNDATION_COLORS[sections.length % FOUNDATION_COLORS.length],
-      icon: 'sparkles', isLocked: false, isVisible: true, isPublished: true,
+      icon: 'sparkles', isLocked: false, isVisible: false, isPublished: true,
     });
     setFormError('');
     setSectionModal({ mode: 'create' });
@@ -10586,17 +10586,21 @@ function TeacherFoundationPage() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2 p-4">
-                {sections.map((s: any, si: number) => (
+                {sections.map((s: any, si: number) => {
+                  const hidden = s.isVisible === false;
+                  const locked = !!s.isLocked;
+                  return (
                   <span key={s.id} className="flex items-center">
                     <button
                       type="button"
                       onClick={() => setActiveSection(s.id)}
                       data-testid={`button-pick-section-${s.id}`}
+                      title={hidden ? 'مخفي عن الكل — لا يراه أي طالب' : locked ? 'مقفل — يرى الطلاب الاسم فقط' : 'ظاهر للطلاب الأعضاء'}
                       className={`inline-flex min-h-[56px] items-center gap-2.5 rounded-2xl px-5 text-sm font-extrabold transition-all active:scale-[.97] ${
                         activeSection === s.id
                           ? 'text-white shadow-lg'
-                          : 'border-2 border-border bg-card text-muted-foreground hover:border-primary/35'
-                      }`}
+                          : 'border-2 bg-card hover:border-primary/35'
+                      } ${hidden ? 'border-dashed border-muted-foreground/50 text-muted-foreground' : 'border-border text-muted-foreground'}`}
                       style={activeSection === s.id ? { background: `linear-gradient(135deg, ${s.color}, ${s.color}bb)` } : undefined}
                     >
                       <span className="h-8 w-1.5 shrink-0 rounded-full" style={{ background: s.color }} />
@@ -10604,14 +10608,40 @@ function TeacherFoundationPage() {
                         <span className="block text-[11px] opacity-85">{s.subtitle || `م${si + 1}`}</span>
                         <span className="block">{s.title}</span>
                       </span>
+                      {/* شارة الحالة — تُقرأ بنظرة واحدة */}
+                      {hidden ? (
+                        <span className="inline-flex items-center gap-1 rounded-lg bg-muted px-2 py-1 text-[10px] font-extrabold text-muted-foreground">
+                          <EyeOff size={12} /> مخفي
+                        </span>
+                      ) : locked ? (
+                        <span className="inline-flex items-center gap-1 rounded-lg bg-[#b7791f]/15 px-2 py-1 text-[10px] font-extrabold text-[#b7791f]">
+                          <Lock size={12} /> مقفل
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-lg bg-green-600/12 px-2 py-1 text-[10px] font-extrabold text-green-800">
+                          <Eye size={12} /> ظاهر
+                        </span>
+                      )}
                       <span className="rounded-lg bg-black/10 px-2 py-0.5 text-[10px] font-extrabold tabular-nums opacity-80">{s.lessonsCount}</span>
                     </button>
-                    <span className="ms-1 flex flex-col">
-                      <button type="button" onClick={() => moveSection(s, 'up')} disabled={si === 0} className="grid h-5 w-7 place-items-center rounded text-muted-foreground disabled:opacity-20" aria-label="تقديم المستوى"><ArrowUp size={13} /></button>
-                      <button type="button" onClick={() => moveSection(s, 'down')} disabled={si === sections.length - 1} className="grid h-5 w-7 place-items-center rounded text-muted-foreground disabled:opacity-20" aria-label="تأخير المستوى"><ArrowDown size={13} /></button>
+                    {/* الإخفاء/القفل بضغطة واحدة — بلا نافذة وبلا حفظ */}
+                    <span className="ms-1 flex flex-col items-center gap-0.5">
+                      <span className="flex">
+                        <button type="button" onClick={() => moveSection(s, 'up')} disabled={si === 0} className="grid h-5 w-6 place-items-center rounded text-muted-foreground disabled:opacity-20" aria-label="تقديم المستوى"><ArrowUp size={12} /></button>
+                        <button type="button" onClick={() => quickSection(s, { isVisible: !s.isVisible })} className={`grid h-7 w-7 place-items-center rounded-lg transition-colors ${hidden ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-secondary'}`} aria-label={hidden ? 'إظهار المستوى' : 'إخفاء المستوى عن الكل'} title={hidden ? 'إظهار' : 'إخفاء عن الكل'}>
+                          {hidden ? <Eye size={14} /> : <EyeOff size={14} />}
+                        </button>
+                      </span>
+                      <span className="flex">
+                        <button type="button" onClick={() => moveSection(s, 'down')} disabled={si === sections.length - 1} className="grid h-5 w-7 place-items-center rounded text-muted-foreground disabled:opacity-20" aria-label="تأخير المستوى"><ArrowDown size={12} /></button>
+                        <button type="button" onClick={() => quickSection(s, { isLocked: !s.isLocked })} className={`grid h-7 w-7 place-items-center rounded-lg transition-colors ${locked ? 'bg-[#b7791f]/20 text-[#b7791f]' : 'text-muted-foreground hover:bg-secondary'}`} aria-label={locked ? 'فتح القفل' : 'قفل المستوى'} title={locked ? 'فتح' : 'قفل'}>
+                          {locked ? <LockOpen size={14} /> : <Lock size={14} />}
+                        </button>
+                      </span>
                     </span>
                   </span>
-                ))}
+                  );
+                })}
               </div>
             </section>
           ) : null}
@@ -10737,15 +10767,16 @@ function TeacherFoundationPage() {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <button type="button" onClick={() => setSectionForm({ ...sectionForm, isVisible: !sectionForm.isVisible })} className={`flex min-h-[60px] items-center gap-3 rounded-2xl border-2 p-4 text-right transition-colors ${sectionForm.isVisible !== false ? 'border-primary bg-primary/8' : 'border-border bg-card'}`}>
-                <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg ${sectionForm.isVisible !== false ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>{sectionForm.isVisible !== false ? <Check size={16} /> : null}</span>
-                <span><span className="block text-sm font-extrabold text-primary">ظاهر للطالب</span><span className="block text-[11px] text-muted-foreground">أطفئه ليجهّز دون نشر</span></span>
+              <button type="button" onClick={() => setSectionForm({ ...sectionForm, isVisible: !sectionForm.isVisible })} data-testid="button-section-visible" className={`flex min-h-[60px] items-center gap-3 rounded-2xl border-2 p-4 text-right transition-colors ${sectionForm.isVisible !== false ? 'border-primary bg-primary/8' : 'border-destructive/50 bg-destructive/5'}`}>
+                <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg ${sectionForm.isVisible !== false ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>{sectionForm.isVisible !== false ? <Check size={16} /> : <EyeOff size={15} />}</span>
+                <span><span className="block text-sm font-extrabold text-primary">{sectionForm.isVisible !== false ? 'ظاهر للطلاب الأعضاء' : 'مخفي عن الكل — سرّي'}</span><span className="block text-[11px] text-muted-foreground">{sectionForm.isVisible !== false ? 'يراه كل عضو في مستوياته' : 'لا يراه أي طالب إطلاقاً حتى تفتحه'}</span></span>
               </button>
-              <button type="button" onClick={() => setSectionForm({ ...sectionForm, isLocked: !sectionForm.isLocked })} className={`flex min-h-[60px] items-center gap-3 rounded-2xl border-2 p-4 text-right transition-colors ${sectionForm.isLocked ? 'border-[#b7791f] bg-[#b7791f]/10' : 'border-border bg-card'}`}>
+              <button type="button" onClick={() => setSectionForm({ ...sectionForm, isLocked: !sectionForm.isLocked })} data-testid="button-section-locked" className={`flex min-h-[60px] items-center gap-3 rounded-2xl border-2 p-4 text-right transition-colors ${sectionForm.isLocked ? 'border-[#b7791f] bg-[#b7791f]/10' : 'border-border bg-card'}`}>
                 <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg ${sectionForm.isLocked ? 'bg-[#b7791f] text-white' : 'bg-muted text-muted-foreground'}`}>{sectionForm.isLocked ? <Lock size={15} /> : null}</span>
-                <span><span className="block text-sm font-extrabold text-primary">مقفل مؤقتاً</span><span className="block text-[11px] text-muted-foreground">يرون العنوان ولا يفتحون</span></span>
+                <span><span className="block text-sm font-extrabold text-primary">مقفل مؤقتاً</span><span className="block text-[11px] text-muted-foreground">يرى الطلاب الاسم فقط</span></span>
               </button>
             </div>
+
 
             <div className="sticky bottom-0 -mx-4 flex gap-3 border-t border-border bg-card/95 px-4 pb-2 pt-4 backdrop-blur sm:-mx-7 sm:px-7">
               <button type="submit" disabled={savingSection} className={`${touchBtnPrimary} flex-1`}><Save size={18} /> {savingSection ? 'جارٍ الحفظ...' : 'حفظ الفاصل'}</button>

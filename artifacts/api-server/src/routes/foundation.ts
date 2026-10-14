@@ -477,6 +477,23 @@ router.get("/foundation/sections/:id", requireAuth, requireFoundationAccess, asy
   }
 });
 
+/** هل القسم ظاهر؟ — حارس السرية: الدرس المخفي قسمُه لا يُفتح برابط مباشر
+ *  ولو كان الطالب عضواً فيه ولو كان الدرس نفسه ظاهراً. القسم المخفي = ميت
+ *  تماماً عند كل طالب: لا قائمة ولا صفحة ولا رابط ولا إنجاز. */
+async function sectionIsVisible(sectionId: string): Promise<boolean> {
+  if (!sectionId) return false;
+  try {
+    const { data } = await supabaseQuery<any[]>(
+      `foundation_sections?id=eq.${enc(sectionId)}&select=is_visible&limit=1`,
+    );
+    const row = data?.[0];
+    return !!row && row.is_visible !== false;
+  } catch {
+    // عند الشك نمنع — الأستاذ يرى كل شيء على أي حال
+    return false;
+  }
+}
+
 /** درس واحد بمحتواه الكامل — محمي بنفس القاعدة */
 router.get("/foundation/lessons/:id", requireAuth, async (req, res) => {
   try {
@@ -491,9 +508,15 @@ router.get("/foundation/lessons/:id", requireAuth, async (req, res) => {
       res.status(404).json({ error: "الدرس غير موجود." });
       return;
     }
-    if (auth.role !== "admin" && !(await hasAccess(lesson.section_id, auth.userId))) {
-      res.status(404).json({ error: "هذا الدرس غير متاح لحسابك." });
-      return;
+    if (auth.role !== "admin") {
+      if (!(await hasAccess(lesson.section_id, auth.userId))) {
+        res.status(404).json({ error: "هذا الدرس غير متاح لحسابك." });
+        return;
+      }
+      if (!(await sectionIsVisible(lesson.section_id))) {
+        res.status(404).json({ error: "هذا الدرس غير متاح لحسابك." });
+        return;
+      }
     }
 
     const { data: progress } = await supabaseQuery<any[]>(
@@ -517,9 +540,15 @@ router.post("/foundation/lessons/:id/complete", requireAuth, async (req, res) =>
       res.status(404).json({ error: "الدرس غير موجود." });
       return;
     }
-    if (auth.role !== "admin" && !(await hasAccess(lesson.section_id, auth.userId))) {
-      res.status(404).json({ error: "هذا الدرس غير متاح لحسابك." });
-      return;
+    if (auth.role !== "admin") {
+      if (!(await hasAccess(lesson.section_id, auth.userId))) {
+        res.status(404).json({ error: "هذا الدرس غير متاح لحسابك." });
+        return;
+      }
+      if (!(await sectionIsVisible(lesson.section_id))) {
+        res.status(404).json({ error: "هذا الدرس غير متاح لحسابك." });
+        return;
+      }
     }
 
     const { data: existing } = await supabaseQuery<any[]>(
@@ -551,9 +580,15 @@ router.get("/foundation/lessons/:id/open", requireAuth, async (req, res) => {
       res.status(404).json({ error: "الدرس غير موجود." });
       return;
     }
-    if (auth.role !== "admin" && !(await hasAccess(lesson.section_id, auth.userId))) {
-      res.status(404).json({ error: "هذا الدرس غير متاح لحسابك." });
-      return;
+    if (auth.role !== "admin") {
+      if (!(await hasAccess(lesson.section_id, auth.userId))) {
+        res.status(404).json({ error: "هذا الدرس غير متاح لحسابك." });
+        return;
+      }
+      if (!(await sectionIsVisible(lesson.section_id))) {
+        res.status(404).json({ error: "هذا الدرس غير متاح لحسابك." });
+        return;
+      }
     }
     res.json({ success: true, lessonId: lesson.id });
   } catch (err: any) {
@@ -657,7 +692,9 @@ router.post("/teacher/foundation/sections", requireAdmin, async (req, res) => {
           icon: String(b.icon || "sparkles"),
           sort_order: Number(b.sortOrder) || nextOrder,
           is_locked: !!b.isLocked,
-          is_visible: b.isVisible !== false,
+          // القاعدة الذهبية: القسم الجديد سرّي — مخفي عن الكل حتى يفتحه
+          // الأستاذ صراحة. لا يُرى في أي مسار طالب قبل ذلك، ولو كانوا أعضاء.
+          is_visible: b.isVisible === true,
           is_published: b.isPublished !== false,
         },
       ],

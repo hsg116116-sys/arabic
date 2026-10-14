@@ -37623,6 +37623,18 @@ router7.get("/foundation/sections/:id", requireAuth, requireFoundationAccess, as
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062D\u0645\u064A\u0644 \u0627\u0644\u0642\u0633\u0645 \u2014 " + V7_HINT });
   }
 });
+async function sectionIsVisible(sectionId) {
+  if (!sectionId) return false;
+  try {
+    const { data } = await supabaseQuery(
+      `foundation_sections?id=eq.${enc3(sectionId)}&select=is_visible&limit=1`
+    );
+    const row = data?.[0];
+    return !!row && row.is_visible !== false;
+  } catch {
+    return false;
+  }
+}
 router7.get("/foundation/lessons/:id", requireAuth, async (req, res) => {
   try {
     const auth = req.auth;
@@ -37635,9 +37647,15 @@ router7.get("/foundation/lessons/:id", requireAuth, async (req, res) => {
       res.status(404).json({ error: "\u0627\u0644\u062F\u0631\u0633 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F." });
       return;
     }
-    if (auth.role !== "admin" && !await hasAccess(lesson.section_id, auth.userId)) {
-      res.status(404).json({ error: "\u0647\u0630\u0627 \u0627\u0644\u062F\u0631\u0633 \u063A\u064A\u0631 \u0645\u062A\u0627\u062D \u0644\u062D\u0633\u0627\u0628\u0643." });
-      return;
+    if (auth.role !== "admin") {
+      if (!await hasAccess(lesson.section_id, auth.userId)) {
+        res.status(404).json({ error: "\u0647\u0630\u0627 \u0627\u0644\u062F\u0631\u0633 \u063A\u064A\u0631 \u0645\u062A\u0627\u062D \u0644\u062D\u0633\u0627\u0628\u0643." });
+        return;
+      }
+      if (!await sectionIsVisible(lesson.section_id)) {
+        res.status(404).json({ error: "\u0647\u0630\u0627 \u0627\u0644\u062F\u0631\u0633 \u063A\u064A\u0631 \u0645\u062A\u0627\u062D \u0644\u062D\u0633\u0627\u0628\u0643." });
+        return;
+      }
     }
     const { data: progress } = await supabaseQuery(
       `foundation_progress?user_id=eq.${enc3(auth.userId)}&lesson_id=eq.${enc3(lessonId)}&select=id&limit=1`
@@ -37658,9 +37676,15 @@ router7.post("/foundation/lessons/:id/complete", requireAuth, async (req, res) =
       res.status(404).json({ error: "\u0627\u0644\u062F\u0631\u0633 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F." });
       return;
     }
-    if (auth.role !== "admin" && !await hasAccess(lesson.section_id, auth.userId)) {
-      res.status(404).json({ error: "\u0647\u0630\u0627 \u0627\u0644\u062F\u0631\u0633 \u063A\u064A\u0631 \u0645\u062A\u0627\u062D \u0644\u062D\u0633\u0627\u0628\u0643." });
-      return;
+    if (auth.role !== "admin") {
+      if (!await hasAccess(lesson.section_id, auth.userId)) {
+        res.status(404).json({ error: "\u0647\u0630\u0627 \u0627\u0644\u062F\u0631\u0633 \u063A\u064A\u0631 \u0645\u062A\u0627\u062D \u0644\u062D\u0633\u0627\u0628\u0643." });
+        return;
+      }
+      if (!await sectionIsVisible(lesson.section_id)) {
+        res.status(404).json({ error: "\u0647\u0630\u0627 \u0627\u0644\u062F\u0631\u0633 \u063A\u064A\u0631 \u0645\u062A\u0627\u062D \u0644\u062D\u0633\u0627\u0628\u0643." });
+        return;
+      }
     }
     const { data: existing } = await supabaseQuery(
       `foundation_progress?user_id=eq.${enc3(auth.userId)}&lesson_id=eq.${enc3(lessonId)}&select=id&limit=1`
@@ -37689,9 +37713,15 @@ router7.get("/foundation/lessons/:id/open", requireAuth, async (req, res) => {
       res.status(404).json({ error: "\u0627\u0644\u062F\u0631\u0633 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F." });
       return;
     }
-    if (auth.role !== "admin" && !await hasAccess(lesson.section_id, auth.userId)) {
-      res.status(404).json({ error: "\u0647\u0630\u0627 \u0627\u0644\u062F\u0631\u0633 \u063A\u064A\u0631 \u0645\u062A\u0627\u062D \u0644\u062D\u0633\u0627\u0628\u0643." });
-      return;
+    if (auth.role !== "admin") {
+      if (!await hasAccess(lesson.section_id, auth.userId)) {
+        res.status(404).json({ error: "\u0647\u0630\u0627 \u0627\u0644\u062F\u0631\u0633 \u063A\u064A\u0631 \u0645\u062A\u0627\u062D \u0644\u062D\u0633\u0627\u0628\u0643." });
+        return;
+      }
+      if (!await sectionIsVisible(lesson.section_id)) {
+        res.status(404).json({ error: "\u0647\u0630\u0627 \u0627\u0644\u062F\u0631\u0633 \u063A\u064A\u0631 \u0645\u062A\u0627\u062D \u0644\u062D\u0633\u0627\u0628\u0643." });
+        return;
+      }
     }
     res.json({ success: true, lessonId: lesson.id });
   } catch (err) {
@@ -37775,7 +37805,9 @@ router7.post("/teacher/foundation/sections", requireAdmin, async (req, res) => {
           icon: String(b.icon || "sparkles"),
           sort_order: Number(b.sortOrder) || nextOrder,
           is_locked: !!b.isLocked,
-          is_visible: b.isVisible !== false,
+          // القاعدة الذهبية: القسم الجديد سرّي — مخفي عن الكل حتى يفتحه
+          // الأستاذ صراحة. لا يُرى في أي مسار طالب قبل ذلك، ولو كانوا أعضاء.
+          is_visible: b.isVisible === true,
           is_published: b.isPublished !== false
         }
       ]
