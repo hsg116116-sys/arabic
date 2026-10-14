@@ -11235,7 +11235,28 @@ function FoundationHtmlView({ content, fileUrl, title }: { content?: string; fil
   const [full, setFull] = useState(false);
   const [zoom, setZoom] = useState(1);
 
+  // الحزم المضغوطة (موقع كامل) تُبنى داخل المتصفح قبل العرض — نفس محرك المعاينة
+  const resolved = resolveLessonHtml({ htmlContent: content, htmlFileUrl: fileUrl });
+  const bundleOn = !content && resolved.mode === 'bundle';
+  const bundle = useBundleHtml(bundleOn ? resolved.url : null);
+  const sourceOn = !content && resolved.mode === 'source';
+  const source = useSourceContainer(sourceOn ? resolved.url : null);
+
   useEffect(() => {
+    if (bundleOn) {
+      setLoading(bundle.loading);
+      if (bundle.error) { setFailed(true); return; }
+      setFailed(false);
+      if (bundle.html) setText(bundle.html);
+      return;
+    }
+    if (sourceOn) {
+      setLoading(!source.srcdoc && !source.error);
+      if (source.error) { setFailed(true); return; }
+      setFailed(false);
+      if (source.srcdoc) setText(source.srcdoc);
+      return;
+    }
     if (content) { setText(content); setFailed(false); return; }
     if (!fileUrl) { setText(null); setFailed(false); return; }
     let live = true;
@@ -11248,7 +11269,7 @@ function FoundationHtmlView({ content, fileUrl, title }: { content?: string; fil
       .catch(() => { window.clearTimeout(timer); if (live) setFailed(true); })
       .finally(() => { window.clearTimeout(timer); if (live) setLoading(false); });
     return () => { live = false; window.clearTimeout(timer); ctrl.abort(); };
-  }, [content, fileUrl]);
+  }, [content, fileUrl, bundleOn, sourceOn, bundle.html, bundle.loading, bundle.error, source.srcdoc, source.error]);
 
   const body = failed
     ? <p className="p-8 text-center text-sm font-bold text-destructive">تعذر تحميل المحتوى — أعد رفع الملف أو الصق الكود مباشرة.</p>
@@ -11745,7 +11766,7 @@ function TeacherFoundationPage() {
                             {l.isLocked ? <span className="rounded-lg bg-[#b7791f]/15 px-2 py-0.5 text-[10px] font-extrabold text-[#b7791f]">مقفل</span> : null}
                             {!l.isVisible ? <span className="rounded-lg bg-muted px-2 py-0.5 text-[10px] font-extrabold text-muted-foreground">مخفي</span> : null}
                           </div>
-                          <p className="mt-1 truncate text-[15px] font-extrabold text-primary">{l.title}</p>
+                          <button type="button" onClick={() => openLessonEdit(l)} className="mt-1 block max-w-full truncate text-right text-[15px] font-extrabold text-primary underline-offset-4 hover:underline" title="ادخل للدرس وعدل محتواه">{l.title}</button>
                           {l.textPreview ? <p className="mt-0.5 line-clamp-1 text-[11px] leading-5 text-muted-foreground">{l.textPreview}</p> : null}
                         </div>
                         <div className="flex shrink-0 flex-col items-center gap-0.5">
@@ -12239,6 +12260,142 @@ function FoundationVideoUploader({ value, onUploaded }: {
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   رافع الموقع المضغوط لدرس التأسيس — نفس ميزة المناهج نسخاً.
+   ───────────────────────────────────────────────────────────────────────
+   يقبل ملف TAR (مفضّل) أو TAR.GZ أو ZIP يحوي موقعاً كاملاً (html + css +
+   js + صور). إن كان موقعاً جاهزاً رُفع مباشرة، وإن كان مشروع React/TS
+   بُني داخل المتصفح ثم رُفع. الناتج رابط يُحفظ في htmlFileUrl ويعرضه
+   الطالب كصفحة تفاعلية داخل الدرس.
+   ═══════════════════════════════════════════════════════════════════════ */
+function FoundationBundleUploader({ value, onUploaded }: {
+  value: string; onUploaded: (url: string) => void;
+}) {
+  const [progress, setProgress] = useState<number | false>(false);
+  const [stage, setStage] = useState('');
+  const [info, setInfo] = useState<any>(null);
+  const [error, setError] = useState('');
+
+  const busy = progress !== false;
+
+  const start = async (f: File | undefined, resetInput: () => void) => {
+    if (!f || busy) return;
+    if (!isArchiveFileName(f.name)) {
+      setError('الملف ليس أرشيفاً: اختر TAR أو TAR.GZ (مفضل) أو ZIP.');
+      resetInput();
+      return;
+    }
+    setProgress(0);
+    setError('');
+    setInfo(null);
+    let stageText = 'قراءة الملف المضغوط';
+    const setStage = (s: string) => { stageText = s; setStage(s); };
+    try {
+      const prevUrl: string = value || '';
+      const dropOld = async (newUrl: string) => {
+        if (prevUrl && prevUrl !== newUrl && (isBundleUrl(prevUrl) || isSourceBundleUrl(prevUrl))) {
+          setStage('حذف النسخة القديمة من التخزين');
+          await deleteStoredUrl(prevUrl);
+        }
+      };
+      setStage('قراءة الملف المضغوط');
+      const buf = await f.arrayBuffer();
+      const raw = await extractRawArchive(buf, f.name);
+      const prep = classifyAndPrepare(raw.files, raw.warnings);
+      if (prep.kind === 'site') {
+        const entry = findSiteEntry(prep.files);
+        setInfo({ mode: 'site', name: f.name, sizeKB: Math.round(f.size / 1024), files: prep.files.size, entry, warnings: prep.warnings });
+        setStage('رفع الموقع المضغوط');
+        const res = await uploadBundleDirect(f, '/ard-al-lughah/bundles', (p) => setProgress(p), (file) => uploadFileToCloud(file, '/ard-al-lughah/bundles'));
+        await dropOld(res.url);
+        onUploaded(res.url);
+        setStage('');
+      } else {
+        setInfo({ mode: 'source', name: f.name, sizeKB: Math.round(f.size / 1024), files: prep.files.size, entry: prep.entry, warnings: prep.warnings });
+        setStage('تجهيز محرك البناء (أول مرة فقط)');
+        await ensureSourceEngine({ wasmURL: ESBUILD_WASM_CDN }, { worker: true });
+        setStage('بناء الموقع داخل المتصفح');
+        const built = await buildSourceBundle(prep, (m) => setStage(m));
+        setStage('ضغط النسخة النهائية');
+        const packed = await packSourceContainer(built);
+        const gzKB = Math.round(packed.bytes.length / 1024);
+        setInfo((b: any) => ({ ...b, gzKB, hash: packed.hash.slice(0, 12) }));
+        setStage(`رفع النسخة المضغوطة (${gzKB}KB)`);
+        const up = await uploadSourceContainer(packed.bytes, f.name, (p) => setProgress(p), (file) => uploadFileToCloud(file, '/ard-al-lughah/bundles'));
+        await dropOld(up.url);
+        onUploaded(up.url);
+        setStage('');
+      }
+    } catch (err: any) {
+      const diag = buildUploadDiag(err, stageText, f);
+      setError(`${err?.message || 'تعذر رفع الموقع المضغوط'} (رمز: ${diag.code})`);
+    } finally {
+      setProgress(false);
+      setStage('');
+      resetInput();
+    }
+  };
+
+  return (
+    <div className="mt-3 rounded-2xl border-2 border-dashed border-[#6a1b9a]/40 bg-[#6a1b9a]/[0.05] p-4">
+      <div className="flex flex-wrap items-center gap-2.5">
+        <label className={`inline-flex min-h-[52px] cursor-pointer items-center gap-2 rounded-2xl bg-gradient-to-l from-[#6a1b9a] to-[#8a508f] px-5 text-sm font-extrabold text-white shadow-md transition-all hover:brightness-110 active:scale-[.98] ${busy ? 'pointer-events-none opacity-60' : ''}`} title="ارفع موقعاً كاملاً مضغوطاً — TAR أو TAR.GZ مفضل، أو ZIP: html + css + js + صور">
+          {busy ? <RefreshCw size={17} className="animate-spin" /> : <Package size={17} />}
+          {busy ? (stage || `جارٍ الرفع ${progress}%...`) : '📦 ارفع موقعاً (TAR مفضّل)'}
+          <input
+            type="file"
+            accept=".tar,.tar.gz,.tgz,.zip,application/x-tar,application/zip"
+            className="hidden"
+            data-testid="input-foundation-bundle"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              const t = e.target;
+              void start(f, () => { t.value = ''; });
+            }}
+          />
+        </label>
+        {value && (isBundleUrl(value) || isSourceBundleUrl(value)) ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-green-600/10 px-3 py-1.5 text-[11px] font-extrabold text-green-800">
+            <Check size={13} /> موقع مرفوع وجاهز
+          </span>
+        ) : null}
+      </div>
+
+      {busy ? (
+        <div className="mt-3" data-testid="foundation-bundle-progress">
+          <div className="mb-1.5 flex items-center justify-between text-[11px] font-extrabold">
+            <span className="text-primary">{stage || 'جارٍ الرفع...'}</span>
+            {typeof progress === 'number' ? <span className="tabular-nums text-primary">{progress}%</span> : null}
+          </div>
+          <div className="h-2.5 overflow-hidden rounded-full bg-secondary">
+            <div
+              className="h-full rounded-full bg-gradient-to-l from-[#6a1b9a] to-[#b06ab3] transition-[width] duration-200"
+              style={{ width: `${typeof progress === 'number' ? progress : 50}%` }}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {info ? (
+        <p className="mt-3 rounded-xl border border-[#6a1b9a]/25 bg-card px-4 py-2.5 text-[11px] font-bold leading-6 text-primary">
+          {info.mode === 'source' ? 'مشروع React/TS (يُبنى داخل المتصفح)' : 'موقع جاهز'} · <span dir="ltr" className="font-mono">{info.name}</span> · {info.sizeKB}KB · {info.files} ملف
+          {info.gzKB != null ? <span className="mt-0.5 block text-green-800">مضغوط إلى {info.gzKB}KB</span> : null}
+        </p>
+      ) : null}
+
+      {error ? (
+        <p className="mt-3 flex items-start gap-2 rounded-2xl bg-destructive/10 px-4 py-3 text-xs font-extrabold leading-6 text-destructive" data-testid="foundation-bundle-error">
+          <CircleAlert size={15} className="mt-0.5 shrink-0" /> {error}
+        </p>
+      ) : (
+        <p className="mt-2.5 text-[11px] font-semibold leading-5 text-muted-foreground">
+          موقعك الكبير ارفعه مضغوطاً: كل الملفات في أرشيف واحد، ورابطه يُحفظ في الدرس ويُعرض للطالب صفحة تفاعلية.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function FoundationLessonForm({ form, setForm, saving, error, submitLabel, onSubmit, onCancel }: {
   form: any;
   setForm: (updater: any) => void;
@@ -12440,6 +12597,11 @@ function FoundationLessonForm({ form, setForm, saving, error, submitLabel, onSub
               </Field2>
             </div>
           )}
+          <FoundationBundleUploader
+            value={form.htmlFileUrl || ''}
+            onUploaded={(url) => setForm({ ...form, htmlFileUrl: url, htmlContent: '' })}
+          />
+
 
           {(form.htmlContent || form.htmlFileUrl) ? (
             <div className="mt-4">
