@@ -244,10 +244,12 @@ const UNIT_GROUPS = [
   ],
 ];
 
-/** معرّف قسم فرعي ثابت — نفس المنطق في ملف V10 حتى لا يتكرر الزرع مرتين */
+/** معرّف قسم فرعي ثابت — نفس المنطق في ملف V10 حتى لا يتكرر الزرع مرتين.
+ *  خانات UUID لا تقبل إلا 0-9 و a-f، فالبادئة 'a' (Aquam) وليس 'u'. */
 function unitId(levelIndex, unitIndex) {
-  const hex = (n) => n.toString(16).padStart(4, "0");
-  return `u${hex(levelIndex + 1)}${hex(unitIndex + 1)}-0000-4000-8000-${String(levelIndex + 1).padStart(8, "0")}${String(unitIndex + 1).padStart(4, "0")}`;
+  const lv = levelIndex + 1; // 1..5
+  const un = unitIndex + 1; // 1..3
+  return `a${lv}00000${un}-0000-4000-8000-0000000000${String(un).padStart(2, "0")}`;
 }
 
 // ──────────────────────────────────────────────────────────────────────

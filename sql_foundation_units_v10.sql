@@ -78,123 +78,84 @@ END $$;
 
 
 -- ────────────────────────────────────────────────────────────────────
--- 5) قسم فرعي افتراضي لكل مستوى قائم — فينتقل التأسيس فوراً إلى
---    البنية الثلاثية بلا أن يلمس الأستاذ درساً واحداً.
- --    المعرّف ثابت (بادئة u + أول 12 خانة من معرّف المستوى) فيبقى قابلاً للتحديث لا للتكرار.
 -- ────────────────────────────────────────────────────────────────────
-INSERT INTO public.foundation_units (id, section_id, title, description, icon, sort_order, is_locked, is_visible)
-SELECT
-    ('u0000000-0000-4000-8000-' || substr(replace(s.id::text, '-', ''), 1, 12))::uuid,
-    s.id,
-    'المحاور الأساسية',
-    'كل دروس هذا المستوى مجموعها — قسّمها إلى أقسام فرعية أكثر من هنا.',
-    'book-open',
-    1,
-    FALSE,
-    TRUE
-FROM public.foundation_sections s
-WHERE s.id IN (
-    'f1000000-0000-4000-8000-000000000001'::uuid,
-    'f1000000-0000-4000-8000-000000000002'::uuid,
-    'f1000000-0000-4000-8000-000000000003'::uuid,
-    'f1000000-0000-4000-8000-000000000004'::uuid,
-    'f1000000-0000-4000-8000-000000000005'::uuid
-)
-ON CONFLICT (id) DO NOTHING;
-
-
--- ────────────────────────────────────────────────────────────────────
--- 6) توزيع دروس المستويات الخمسة على أقسامها الفرعية
---    القسمة منطقية لا عددية: كل مستوى عشرة دروس فعلياً مجموعة محاور.
---    نmatched765 الدروس بلا unit_id لتبقى نتيجتها بلا تغيير.
+-- 5) الأقسام الفرعية الخمسة عشر + توزيع الدروس عليها
+--    ────────────────────────────────────────────────────────────────
+--    المعرّفات تُولَّد هنا ولا تُكتب يدوياً — كتابة 15 ثابتاً باليد هي
+--    مصدر الخطأ الوحيد في هذا الملف.
+--    تنبيه: خانة UUID لا تقبل إلا 0-9 و a-f (hex)، فالبادئة 'a' لا 'u'.
+--    الصيغة:  a + رقم المستوى + 00000 + رقم القسم الفرعي
+--             -0000-4000-8000-0000000000 + رقم القسم الفرعي (خانتين)
+--    مثال المستوى ٢ القسم ٣ = a2000003-0000-4000-8000-000000000003
 -- ────────────────────────────────────────────────────────────────────
 DO $$
 DECLARE
-  -- المستوى الأول: الجملة ← الكلمة ← أدوات
-  l1a CONSTANT uuid := 'u1000001-0000-4000-8000-000000000001';
-  l1b CONSTANT uuid := 'u1000001-0000-4000-8000-000000000002';
-  l1c CONSTANT uuid := 'u1000001-0000-4000-8000-000000000003';
-  -- المستوى الثاني: الجملة المركّبة ← الإعراب ← التطبيقات
-  l2a CONSTANT uuid := 'u1000002-0000-4000-8000-000000000001';
-  l2b CONSTANT uuid := 'u1000002-0000-4000-8000-000000000002';
-  l2c CONSTANT uuid := 'u1000002-0000-4000-8000-000000000003';
-  -- المستوى الثالث: بنية الكلمة ← المشتقات ← التطبيقات
-  l3a CONSTANT uuid := 'u1000003-0000-4000-8000-000000000001';
-  l3b CONSTANT uuid := 'u1000003-0000-4000-8000-000000000002';
-  l3c CONSTANT uuid := 'u1000003-0000-4000-8000-000000000003';
-  -- المستوى الرابع: الصورة البيانية ← المحسّنات ← الأساليب
-  l4a CONSTANT uuid := 'u1000004-0000-4000-8000-000000000001';
-  l4b CONSTANT uuid := 'u1000004-0000-4000-8000-000000000002';
-  l4c CONSTANT uuid := 'u1000004-0000-4000-8000-000000000003';
-  -- المستوى الخامس: الإملاء ← الكتابة ← القراءة
-  l5a CONSTANT uuid := 'u1000005-0000-4000-8000-000000000001';
-  l5b CONSTANT uuid := 'u1000005-0000-4000-8000-000000000002';
-  l5c CONSTANT uuid := 'u1000005-0000-4000-8000-000000000003';
+  lv   INT;   -- رقم المستوى 1..5
+  un   INT;   -- رقم القسم الفرعي داخل المستوى 1..3
+  idx  INT;   -- الفهرس في المصفوفات 1..15
+  uid  UUID;
+  sid  UUID;
 
-  s1 CONSTANT uuid := 'f1000000-0000-4000-8000-000000000001';
-  s2 CONSTANT uuid := 'f1000000-0000-4000-8000-000000000002';
-  s3 CONSTANT uuid := 'f1000000-0000-4000-8000-000000000003';
-  s4 CONSTANT uuid := 'f1000000-0000-4000-8000-000000000004';
-  s5 CONSTANT uuid := 'f1000000-0000-4000-8000-000000000005';
+  titles TEXT[] := ARRAY[
+    'الجملة وأنواعها',        'أقسام الكلمة وعددها',      'أدوات المعاني',
+    'الجملة المركّبة',        'العلاقات النحوية',         'الإعراب والتطبيقات',
+    'بنية الكلمة صرفياً',     'المشتقات',                 'صيغ الكلمة وتطبيقاتها',
+    'الصورة البيانية',        'المحسّنات البديعية',       'أساليب الخطاب',
+    'قواعد الإملاء',          'فنون الكتابة',             'القراءة والتلخيص'
+  ];
+  descs  TEXT[] := ARRAY[
+    'ما الجملة؟ وكيف تختلف الاسمية عن الفعلية في التركيب والإعراب.',
+    'الكلمة وحدها: نوعها وعددها وتذكيرها وتأنيثها.',
+    'الضمائر والإشارة والوصل والنكرة والمعرفة وحروف الجر.',
+    'كان وأخواتها، وإن وأخواتها، والإضافة والعطف.',
+    'النعت والعطف والشرط والمفعول به والمفعول المطلق.',
+    'الحال والتمييز وعلامات الإعراب ثم تطبيقات شاملة.',
+    'الجذر والميزان والمجرد والمزيد والفعل الصحيح والمعتل.',
+    'المصادر واسم الفاعل والمفعول والصفة المشبهة والآلة.',
+    'التصغير وجمع التكسير والاشتقاق.',
+    'التشبيه والاستعارة والكناية والمجاز المرسل.',
+    'المحسّنات اللفظية والمعنوية.',
+    'الخبر والإنشاء، والتقديم والتأخير، والإيجاز والإطناب.',
+    'الهمزة والتاء والألف اللينة واللام والتنوين والترقيم.',
+    'كتابة الفقرة والمقال والرسالة.',
+    'الفهم القرائي ثم التلخيص والتوسع.'
+  ];
+  icons  TEXT[] := ARRAY[
+    'book-open', 'library', 'scroll-text',
+    'landmark', 'target', 'award',
+    'scroll-text', 'library', 'sparkles',
+    'sparkles', 'award', 'target',
+    'shield-check', 'book-open', 'library'
+  ];
+  froms  INT[] := ARRAY[ 1, 4,  6,  1, 3,  8,  1, 5,  9,  1, 5,  7,  1, 6,  9];
+  tos    INT[] := ARRAY[ 3, 5, 10,  2, 7, 10,  4, 8, 10,  4, 6, 10,  5, 8, 10];
 BEGIN
-  -- 1) إنشاء الأقسام الفرعية الـ 15 (وإن سبق وجودها فلا نكررها)
-  INSERT INTO public.foundation_units (id, section_id, title, description, icon, sort_order)
-  VALUES
-    (l1a, s1, 'الجملة وأنواعها',            'ما الجملة؟ وكيف تختلف الاسمية عن الفعلية في التركيب والإعراب.', 'book-open', 1),
-    (l1b, s1, 'أقسام الكلمة وعددها',        'الكلمة وحدها: نوعها وعددها وتذكيرها وتأنيثها.',                 'library',  2),
-    (l1c, s1, 'أدوات المعاني',              'الضمائر والإشارة والوصل والنكرة والمعرفة وحروف الجر.',      'scroll-text', 3),
-    (l2a, s2, 'الجملة المركّبة',            'كان وأخواتها، وإن وأخواتها، والإضافة والعطف.',               'landmark', 1),
-    (l2b, s2, 'العلاقات النحوية',            'النعت والعطف والشرط والمفعول به والمفعول المطلق.',           'target',   2),
-    (l2c, s2, 'الإعراب والتطبيقات',         'الحال والتمييز وعلامات الإعراب ثم تطبيقات شاملة.',           'award',    3),
-    (l3a, s3, 'بنية الكلمة صرفياً',         'الجذر والميزان والمجرد والمزيد والفعل الصحيح والمعتل.',      'scroll-text', 1),
-    (l3b, s3, 'المشتقات',                   'المصادر واسم الفاعل والمفعول والصفة المشبهة والآلة.',        'library',  2),
-    (l3c, s3, 'صيغ الكلمة وتطبيقاتها',     'التصغير وجمع التكسير والاشتقاق.',                              'sparkles', 3),
-    (l4a, s4, 'الصورة البيانية',            'التشبيه والاستعارة والكناية والمجاز المرسل.',                 'sparkles', 1),
-    (l4b, s4, 'المحسّنات البديعية',         'اللفظية والمعنوية.',                                          'award',    2),
-    (l4c, s4, 'أساليب الخطاب',              'الخبر والإنشاء، والتقديم والتأخير، والإيجاز والإطناب.',       'target',   3),
-    (l5a, s5, 'قواعد الإملاء',              'الهمزة والتاء والألف اللينة واللام والتنوين والترقيم.',      'shield-check', 1),
-    (l5b, s5, 'فنون الكتابة',               'الفقرة والمقال والرسالة.',                                    'book-open', 2),
-    (l5c, s5, 'القراءة والتلخيص',           'الفهم القرائي ثم التلخيص والتوسع.',                           'library',  3)
-  ON CONFLICT (id) DO NOTHING;
+  FOR lv IN 1..5 LOOP
+    sid := ('f1000000-0000-4000-8000-00000000000' || lv)::uuid;
+    FOR un IN 1..3 LOOP
+      idx  := ((lv - 1) * 3) + un;
+      uid  := ('a' || lv || '00000' || un || '-0000-4000-8000-0000000000'
+               || lpad(un::TEXT, 2, '0'))::uuid;
 
-  -- 2) توزيع الدروس — من 1 إلى 10 داخل كل مستوى
-  UPDATE public.foundation_lessons SET unit_id = l1a, updated_at = NOW()
-    WHERE section_id = s1 AND position BETWEEN 1 AND 3;
-  UPDATE public.foundation_lessons SET unit_id = l1b, updated_at = NOW()
-    WHERE section_id = s1 AND position BETWEEN 4 AND 5;
-  UPDATE public.foundation_lessons SET unit_id = l1c, updated_at = NOW()
-    WHERE section_id = s1 AND position BETWEEN 6 AND 10;
+      -- 1) أنشئ القسم الفرعي (وإن سبق وجوده فلا نكرّره ولا نمسّ ما عدّله الأستاذ)
+      INSERT INTO public.foundation_units
+        (id, section_id, title, description, icon, sort_order, is_locked, is_visible)
+      VALUES
+        (uid, sid, titles[idx], descs[idx], icons[idx], un, FALSE, TRUE)
+      ON CONFLICT (id) DO NOTHING;
 
-  UPDATE public.foundation_lessons SET unit_id = l2a, updated_at = NOW()
-    WHERE section_id = s2 AND position BETWEEN 1 AND 2;
-  UPDATE public.foundation_lessons SET unit_id = l2b, updated_at = NOW()
-    WHERE section_id = s2 AND position BETWEEN 3 AND 7;
-  UPDATE public.foundation_lessons SET unit_id = l2c, updated_at = NOW()
-    WHERE section_id = s2 AND position BETWEEN 8 AND 10;
-
-  UPDATE public.foundation_lessons SET unit_id = l3a, updated_at = NOW()
-    WHERE section_id = s3 AND position BETWEEN 1 AND 4;
-  UPDATE public.foundation_lessons SET unit_id = l3b, updated_at = NOW()
-    WHERE section_id = s3 AND position BETWEEN 5 AND 8;
-  UPDATE public.foundation_lessons SET unit_id = l3c, updated_at = NOW()
-    WHERE section_id = s3 AND position BETWEEN 9 AND 10;
-
-  UPDATE public.foundation_lessons SET unit_id = l4a, updated_at = NOW()
-    WHERE section_id = s4 AND position BETWEEN 1 AND 4;
-  UPDATE public.foundation_lessons SET unit_id = l4b, updated_at = NOW()
-    WHERE section_id = s4 AND position BETWEEN 5 AND 6;
-  UPDATE public.foundation_lessons SET unit_id = l4c, updated_at = NOW()
-    WHERE section_id = s4 AND position BETWEEN 7 AND 10;
-
-  UPDATE public.foundation_lessons SET unit_id = l5a, updated_at = NOW()
-    WHERE section_id = s5 AND position BETWEEN 1 AND 5;
-  UPDATE public.foundation_lessons SET unit_id = l5b, updated_at = NOW()
-    WHERE section_id = s5 AND position BETWEEN 6 AND 8;
-  UPDATE public.foundation_lessons SET unit_id = l5c, updated_at = NOW()
-    WHERE section_id = s5 AND position BETWEEN 9 AND 10;
+      -- 2) ضع دروس هذا المدى تحته — والدرس بلا قسم أولاً حتى لا نمسّ توزيعاً سابقاً
+      UPDATE public.foundation_lessons
+         SET unit_id = uid, updated_at = NOW()
+       WHERE section_id = sid
+         AND position BETWEEN froms[idx] AND tos[idx]
+         AND unit_id IS NULL;
+    END LOOP;
+  END LOOP;
 
   RAISE NOTICE 'تم — 15 قسماً فرعياً و 50 درساً موزّعة.';
 END $$;
+
 
 
 -- ────────────────────────────────────────────────────────────────────
