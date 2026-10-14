@@ -55,6 +55,7 @@ import {
   Layers,
   LayoutDashboard,
   Leaf,
+  Link2,
   Library,
   Lightbulb,
   Lock,
@@ -160,7 +161,11 @@ async function jsonFetch(path: string, options?: { method?: string; body?: unkno
     body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) return Promise.reject(new Error(data?.error || data?.message || 'حدث خطأ غير متوقع.'));
+  if (!res.ok) {
+    const err = new Error(data?.error || data?.message || 'حدث خطأ غير متوقع.') as Error & { status?: number };
+    err.status = res.status;
+    return Promise.reject(err);
+  }
   return data;
 }
 
@@ -168,15 +173,153 @@ async function fetchAuthMe(): Promise<any> {
   return jsonFetch('/api/auth/me');
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   روابط العودة (return-URL): طالب يفتح رابط واجب/اختبار وهو خارج الدخول
+   يُحفظ مساره، وبعد تسجيل الدخول أو إنشاء الحساب (بريد أو Google) يرجع
+   لنفس الصفحة مباشرة بدل الصفحة الرئيسية. تُحفظ في sessionStorage فتبقى
+   حتى مع رحلة Google ذهاباً وإياباً.
+   ═══════════════════════════════════════════════════════════════════════ */
+const RETURN_URL_KEY = 'ard-return-url';
+
+function isSafeReturnUrl(v: unknown): v is string {
+  if (typeof v !== 'string' || !v.startsWith('/')) return false;
+  if (v.startsWith('//')) return false;
+  if (/[\\]/.test(v)) return false;
+  // الداخل فقط: صفحات الطالب المسموحة — لا لوحات ولا API ولا روابط خارجية
+  return /^\/(student|auth\/complete)(\/|$|\?)/.test(v);
+}
+
+/** تُستدعى قبل رمي المستخدم لصفحة الدخول — تحفظ أين كان */
+function saveReturnUrl(path?: string) {
+  try {
+    const current = path ?? `${window.location.pathname}${window.location.search}`;
+    if (isSafeReturnUrl(current)) sessionStorage.setItem(RETURN_URL_KEY, current);
+  } catch { /* تجاهل */ }
+}
+
+/** تُستهلك مرة واحدة بعد نجاح الدخول — ثم تُمسح */
+function takeReturnUrl(): string | null {
+  try {
+    const v = sessionStorage.getItem(RETURN_URL_KEY);
+    sessionStorage.removeItem(RETURN_URL_KEY);
+    return isSafeReturnUrl(v) ? v : null;
+  } catch { return null; }
+}
+
+/** اذهب للدخول مع حفظ الرجوع — تُستخدم بدل setLocation('/login') المباشر */
+function goLogin(setLocation: (to: string) => void) {
+  saveReturnUrl();
+  setLocation('/login');
+}
+
+/** اذهب لإنشاء حساب مع حفظ الرجوع */
+function goRegister(setLocation: (to: string) => void) {
+  saveReturnUrl();
+  setLocation('/register');
+}
+
 function redirectAfterAuth(setLocation: (to: string) => void, fallback = '/student') {
+  const next = takeReturnUrl();
   fetchAuthMe()
     .then((me) => {
       if (!me.authenticated) { setLocation(fallback); return; }
       if (me.needsSetup) { setLocation('/auth/complete'); return; }
-      setLocation(me.role === 'admin' ? '/teacher' : fallback);
+      if (me.role === 'admin') { setLocation('/teacher'); return; }
+      setLocation(next && next.startsWith('/student') ? next : fallback);
     })
     .catch(() => setLocation(fallback));
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   نسخ روابط المشاركة: زر واحد يعطي رابطاً مباشراً للطالب.
+   ═══════════════════════════════════════════════════════════════════════ */
+async function copyShareLink(path: string): Promise<{ ok: boolean; url: string }> {
+  const url = `${window.location.origin}${path}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    return { ok: true, url };
+  } catch { /* fallback */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = url;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+    return { ok: true, url };
+  } catch {
+    return { ok: false, url };
+  }
+}
+/* بطاقة بوابة الدخول: تُعرض عند محاولة التسليم بلا جلسة — زرّا دخول/حساب
+   يحفظان الرجوع أولاً فيدخل الطالب ويكمل من حيث توقف بسرعة. */
+function LoginGate({ title, compact = false }: { title?: string; compact?: boolean }) {
+  const [, setLocation] = useLocation();
+  return (
+    <div className={`overflow-hidden rounded-3xl border border-accent/40 bg-gradient-to-b from-accent/15 to-card ${compact ? 'p-4' : 'p-6'} text-center`} data-testid="login-gate">
+      <span className={`mx-auto grid place-items-center rounded-2xl bg-primary text-primary-foreground shadow-md ${compact ? 'mb-3 h-12 w-12' : 'mb-4 h-16 w-16'}`}>
+        <LogOut size={compact ? 20 : 26} className="-scale-x-100" />
+      </span>
+      <p className="font-display text-lg font-extrabold text-primary">{title || 'هذه الصفحة للطلاب المسجلين'}</p>
+      <p className="mx-auto mt-2 max-w-sm text-sm leading-7 text-muted-foreground">
+        يجب عليك تسجيل الدخول أو إنشاء حساب للمتابعة — وبعد الدخول نرجعك إلى هنا مباشرة.
+      </p>
+      <div className="mt-4 flex flex-wrap justify-center gap-2.5">
+        <button
+          type="button"
+          onClick={() => goLogin(setLocation)}
+          className="inline-flex min-h-[52px] items-center gap-2 rounded-2xl bg-primary px-6 text-sm font-extrabold text-primary-foreground shadow-md transition-all hover:-translate-y-0.5 active:scale-[.98]"
+          data-testid="button-gate-login"
+        >
+          تسجيل الدخول <ArrowLeft size={16} />
+        </button>
+        <button
+          type="button"
+          onClick={() => goRegister(setLocation)}
+          className="inline-flex min-h-[52px] items-center gap-2 rounded-2xl border-2 border-border bg-card px-6 text-sm font-extrabold text-primary transition-colors hover:border-primary/40"
+          data-testid="button-gate-register"
+        >
+          إنشاء حساب جديد
+        </button>
+      </div>
+    </div>
+  );
+}
+/* زر نسخ رابط الطالب: يعطي المعلم رابطاً مباشراً يفتح العنصر بوجه الطالب.
+   ينسخ للذاكرة مع إشارة نجاح، وإن تعذّر النسخ يعرض الرابط للنسخ اليدوي. */
+function CopyLinkButton({ path, testId, title, className = '' }: {
+  path: string; testId?: string; title?: string; className?: string;
+}) {
+  const [done, setDone] = useState(false);
+  const timer = useRef<number | null>(null);
+  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
+  return (
+    <button
+      type="button"
+      title={title || 'نسخ رابط الطالب المباشر'}
+      data-testid={testId}
+      onClick={async () => {
+        const r = await copyShareLink(path);
+        if (r.ok) {
+          setDone(true);
+          if (timer.current) window.clearTimeout(timer.current);
+          timer.current = window.setTimeout(() => setDone(false), 2200);
+        } else {
+          window.prompt('انسخ رابط الطالب:', r.url);
+        }
+      }}
+      className={`inline-flex items-center justify-center gap-1.5 transition-all active:scale-95 ${done ? 'bg-green-600 text-white shadow' : ''} ${className}`}
+    >
+      {done ? <Check size={15} /> : <Link2 size={15} />}
+      {done ? 'تم النسخ!' : null}
+    </button>
+  );
+}
+
+/* بطاقة بوابة الدخول: تُعرض عند محاولة التسليم بلا جلسة — زرّا دخول/حساب
+   يحفظان الرجوع أولاً فيدخل الطالب ويكمل من حيث توقف بسرعة. */
 const teacherImageUrl = '/teacher-ahmed.jpg';
 const APP_VERSION = 'v25.10-SRC';
 const platformLogoUrl = '/ard-al-lughah-logo-transparent.png';
@@ -1285,7 +1428,10 @@ function useRedirectIfAuthenticated() {
       .then((me) => {
         if (cancelled || !me?.authenticated) return;
         if (me.needsSetup) { setLocation('/auth/complete'); return; }
-        setLocation(me.role === 'admin' ? '/teacher' : '/student');
+        if (me.needsSetup) { setLocation('/auth/complete'); return; }
+        if (me.role === 'admin') { setLocation('/teacher'); return; }
+        const back = takeReturnUrl();
+        setLocation(back && back.startsWith('/student') ? back : '/student');
       })
       .catch(() => undefined);
     return () => { cancelled = true; };
@@ -2120,7 +2266,10 @@ function AuthCallback() {
         window.setTimeout(() => {
           if (cancelled) return;
           resetAuthGate();
-          setLocation(result.needsSetup ? '/auth/complete' : '/student');
+          if (result.needsSetup) { setLocation('/auth/complete'); return; }
+          const back = takeReturnUrl();
+          setLocation(back && back.startsWith('/student') ? back : '/student');
+          setLocation(back && back.startsWith('/student') ? back : '/student');
         }, 800);
       } catch (err: any) {
         if (!cancelled) {
@@ -2302,12 +2451,12 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
             setAuthReady(true);
           } else if (!me?.authenticated) {
             authGateCache = null;
-            setLocation('/login');
+            goLogin(setLocation);
           }
         })
         .catch(() => {
           // بلا ذاكرة صالحة ولا شبكة: لا نطرد فوراً — نعرض زر إعادة بدل شاشة عالقة
-          if (!cancelled && !authGateCache) setLocation('/login');
+          if (!cancelled && !authGateCache) goLogin(setLocation);
         });
     }
     return () => { cancelled = true; };
@@ -2965,6 +3114,17 @@ function AssignmentsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitFeedback, setSubmitFeedback] = useState('');
   const [submitOk, setSubmitOk] = useState(true);
+  const { assignmentId = '' } = useParams();
+  const deepOpened = useRef(false);
+
+  // رابط مباشر: /student/assignments/:id يفتح الواجب بوجه الطالب فوراً
+  useEffect(() => {
+    if (!assignmentId || deepOpened.current || !query.data?.length) return;
+    const hit = query.data.find((a: any) => String(a.id) === assignmentId);
+    if (hit) { deepOpened.current = true; openAssignment(hit); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignmentId, query.data]);
+  const [needLogin, setNeedLogin] = useState(false);
 
   // حالة الموعد: متأخر / اليوم / متبقٍ
   const dueInfo = (due: string) => {
@@ -2987,6 +3147,7 @@ function AssignmentsPage() {
     setAnswerErr('');
     setSubmitFeedback('');
     setSubmitOk(true);
+    setNeedLogin(false);
     setMySub(null);
     setLoadingMine(true);
     fetch(`/api/assignments/${a.id}/mine`, { credentials: 'include' })
@@ -3033,7 +3194,7 @@ function AssignmentsPage() {
     if (!selectedAssignment || submitting) return;
     if (!studentAnswer.trim() && !answerPhotos.length) {
       setSubmitOk(false);
-      setSubmitFeedback('اكتب حلّك أو أرفق صورة واحدة على الأقل');
+      setSubmitFeedback('اكتب حلك أو أرفق صورة واحدة على الأقل');
       return;
     }
     setSubmitting(true);
@@ -3046,10 +3207,16 @@ function AssignmentsPage() {
         body: JSON.stringify({ answer: studentAnswer, photos: answerPhotos }),
       });
       const resData = await res.json().catch(() => ({}));
-      if (res.status === 404) throw new Error('السيرفر يحتاج تحديثاً — أعد تشغيل سيرفر API ثم حاول مجدداً');
+      if (res.status === 401) {
+        // انتهت الجلسة أثناء الكتابة — بوابة دخول واضحة بدل رسالة مبهمة
+        setSubmitOk(false);
+        setNeedLogin(true);
+        return;
+      }
+      if (res.status === 404) throw new Error('الواجب غير موجود - قد يكون المعلم حذف API أو غيّر الرابط');
       if (!res.ok) throw new Error(resData.error || resData.message || 'تعذر إرسال الواجب');
       setSubmitOk(true);
-      setSubmitFeedback(resData.message || 'تم إرسال الحل بنجاح!');
+      setSubmitFeedback(resData.message || 'تم إرسال حلك بنجاح!');
       query.refetch();
       openAssignment({ ...selectedAssignment });
       setTimeout(() => {
@@ -3060,7 +3227,7 @@ function AssignmentsPage() {
       }, 2500);
     } catch (e: any) {
       setSubmitOk(false);
-      setSubmitFeedback(e?.message || 'تعذر إرسال الواجب حالياً.');
+      setSubmitFeedback(e?.message || 'تعذر إرسال الواجب. حاول مجدداً.');
     } finally {
       setSubmitting(false);
     }
@@ -3214,6 +3381,9 @@ function AssignmentsPage() {
                 {submitFeedback}
               </div>
             )}
+            {needLogin ? (
+              <LoginGate compact title="انتهت جلستك أثناء الكتابة" />
+            ) : null}
 
             <div className="flex items-center justify-end gap-3 pt-3">
               <Button onClick={() => setSelectedAssignment(null)} variant="ghost">
@@ -3255,7 +3425,7 @@ function QuizRunner({ assessment, onClose, onFinished }: { assessment: any; onCl
   const [result, setResult] = useState<any | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [ringOn, setRingOn] = useState(false);
-
+  const [needLogin, setNeedLogin] = useState(false);
   useEffect(() => {
     try {
       if (!localStorage.getItem(deadlineKey)) {
@@ -3307,6 +3477,12 @@ function QuizRunner({ assessment, onClose, onFinished }: { assessment: any; onCl
         body: JSON.stringify({ answers: finalAnswers }),
       });
       const data = await res.json();
+      if (res.status === 401) {
+        // انتهت الجلسة قبل التسليم — نحفظ الإجابات محلياً ونطلب الدخول
+        setNeedLogin(true);
+        setResult({ authError: true });
+        return;
+      }
       try {
         localStorage.removeItem(deadlineKey);
         localStorage.removeItem(answersKey);
@@ -3384,7 +3560,13 @@ function QuizRunner({ assessment, onClose, onFinished }: { assessment: any; onCl
   if (loading) return <StateNotice type="loading" />;
 
   /* ---------- شاشة النتيجة ---------- */
+  /* ---------- عرض النتيجة ---------- */
   if (result) {
+    if (result.authError || needLogin) {
+      // الجلسة انتهت قبل تسليم الاختبار — الإجابات محفوظة محلياً،
+      // وبعد الدخول يرجع الطالب لنفس الاختبار ويعيد التسليم بضغطة
+      return <LoginGate title="انتهت جلستك قبل تسليم الاختبار" />;
+    }
     if (result.error) {
       return (
         <div className="rounded-2xl border border-dashed border-border bg-card px-6 py-12 text-center">
@@ -3561,6 +3743,16 @@ function AssessmentsPage() {
   // gradeExams أولاً دائماً (ولو فارغة) — والقائمة العامة احتياط التحميل فقط.
   const examList = gradeExams ?? query.data;
   const [activeQuiz, setActiveQuiz] = useState<any | null>(null);
+  const { assessmentId = '' } = useParams();
+  const quizOpened = useRef(false);
+
+  // رابط مباشر: /student/assessments/:id يفتح الاختبار بوجه الطالب فوراً
+  useEffect(() => {
+    if (!assessmentId || quizOpened.current || !examList?.length) return;
+    const hit = examList.find((a: any) => String(a.id) === assessmentId);
+    if (hit) { quizOpened.current = true; setActiveQuiz(hit); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assessmentId, examList]);
 
   return (
     <Shell mode="student">
@@ -7333,6 +7525,16 @@ function StudentCoursesPage() {
     }
   };
 
+  const { courseId = '' } = useParams();
+  const courseOpened = useRef(false);
+
+  // رابط مباشر: /student/courses/:courseId يفتح الوحدة ودروسها فوراً
+  useEffect(() => {
+    if (!courseId || courseOpened.current || !courses.length) return;
+    const hit = courses.find((c: any) => String(c.id) === courseId);
+    if (hit && !hit.locked && !hit.isEmpty) { courseOpened.current = true; void openCourse(hit); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courseId, courses]);
   const markComplete = async (lessonId: string) => {
     try {
       await fetch(`/api/lessons/${lessonId}/complete`, {
@@ -8448,6 +8650,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                         {course.isVisible ? <Eye size={16} /> : <EyeOff size={16} />}
                       </button>
                       <span className="mr-auto flex items-center gap-1">
+                      <CopyLinkButton path={`/student/courses/${course.id}`} testId={`button-copy-course-${course.id}`} title="نسخ رابط الوحدة للطلاب" className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-primary" />
                         <Button onClick={() => openUnitEdit(course)} variant="ghost" className="px-2" data-testid={`button-edit-content-${course.id}`}><Pencil size={16} /></Button>
                         <Button onClick={() => deleteUnit(course)} variant="ghost" className="px-2 text-destructive" data-testid={`button-delete-${course.id}`}><Trash2 size={16} /></Button>
                       </span>
@@ -8505,8 +8708,9 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                       </p>
                     </div>
                     <span className="flex shrink-0 items-center gap-1">
-                      <button type="button" onClick={() => setPreviewLesson(lesson)} title="معاينة كما يراها الطالب" className="rounded-xl bg-secondary/70 p-2.5 text-primary transition-colors hover:bg-secondary active:scale-95"><Eye size={16} /></button>
+                      <button type="button" onClick={() => setPreviewLesson(lesson)} title="معاينة سريعة للدرس" className="rounded-xl bg-secondary/70 p-2.5 text-primary transition-colors hover:bg-secondary active:scale-95"><Eye size={16} /></button>
                       <button type="button" onClick={() => openLessonEdit(lesson)} title="تعديل الدرس" className="rounded-xl bg-secondary/70 p-2.5 text-primary transition-colors hover:bg-secondary active:scale-95"><Pencil size={16} /></button>
+                      <CopyLinkButton path={`/student/courses/${selectedCourse?.id || ''}/lessons/${lesson.id}`} testId={`button-copy-lesson-${lesson.id}`} title="نسخ رابط الدرس للطلاب" className="rounded-xl bg-secondary/70 p-2.5 text-primary transition-colors hover:bg-secondary active:scale-95" />
                       <button type="button" onClick={() => deleteLesson(lesson)} title="حذف الدرس" className="rounded-xl bg-destructive/10 p-2.5 text-destructive transition-colors hover:bg-destructive/20 active:scale-95"><Trash2 size={16} /></button>
                     </span>
                   </div>
@@ -8563,7 +8767,8 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                   <div className="mt-4 flex items-center gap-2 border-t border-border/60 pt-4">
                     <span className="flex items-center gap-1.5 rounded-xl bg-secondary px-3 py-2 text-xs font-extrabold text-primary"><HelpCircle size={14} /> {exam.questions} أسئلة</span>
                     <span className="mr-auto flex items-center gap-1.5">
-                      <Button onClick={() => openExamDetail(exam)} variant="primary" className="px-4 py-2 text-xs shadow-sm">إدارة الأسئلة <ArrowLeft size={14} /></Button>
+                      <Button onClick={() => openExamDetail(exam)} variant="primary" className="px-4 py-2 text-xs shadow-sm">عرض التفاصيل <ArrowLeft size={14} /></Button>
+                      <CopyLinkButton path={`/student/assessments/${exam.id}`} testId={`button-copy-exam-${exam.id}`} title="نسخ رابط الاختبار للطلاب" className="rounded-xl bg-secondary px-3 py-2 text-xs font-bold text-primary hover:bg-accent/40" />
                       <Button onClick={() => deleteExam(exam)} variant="ghost" className="px-2 text-destructive" title="حذف الاختبار"><Trash2 size={16} /></Button>
                     </span>
                   </div>
@@ -8609,6 +8814,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                     </Button>
                     <span className="mr-auto flex items-center gap-1">
                       <Button onClick={() => openHwEdit(hw)} variant="soft" className="px-3 py-2 text-xs"><Pencil size={14} /></Button>
+                      <CopyLinkButton path={`/student/assignments/${hw.id}`} testId={`button-copy-hw-${hw.id}`} title="نسخ رابط الواجب للطلاب" className="rounded-xl bg-secondary px-3 py-2 text-xs font-bold text-primary hover:bg-accent/40" />
                       <Button onClick={() => deleteHw(hw)} variant="ghost" className="px-2 text-destructive"><Trash2 size={16} /></Button>
                     </span>
                   </div>
@@ -10043,6 +10249,7 @@ function StudentNotebookPage() {
   const [msgOk, setMsgOk] = useState(true);
   const [mine, setMine] = useState<any | null>(null);
   const [deepOpened, setDeepOpened] = useState(false);
+  const [needLogin, setNeedLogin] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -10074,6 +10281,7 @@ function StudentNotebookPage() {
     setPhotos([]);
     setNote('');
     setMsg('');
+    setNeedLogin(false);
     setMine(null);
     if (task.myStatus && student?.id) {
       jsonFetch(`/api/notebooks/${task.id}/mine?user_id=${student.id}`)
@@ -10117,7 +10325,13 @@ function StudentNotebookPage() {
       setTimeout(() => { setActive(null); setMsg(''); }, 2000);
     } catch (e: any) {
       setMsgOk(false);
-      setMsg(e?.message || 'تعذر التسليم');
+      if ((e as any)?.status === 401) {
+        // انتهت الجلسة أثناء التجهيز — بوابة دخول واضحة بدل رسالة مبهمة
+        setNeedLogin(true);
+        setMsg('');
+      } else {
+        setMsg(e?.message || 'تعذر التسليم');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -10263,6 +10477,8 @@ function StudentNotebookPage() {
                 <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثال: أكملت حتى درس الحال" className={inputCls} />
               </Field2>
               {msg ? <p className={`rounded-xl px-4 py-2.5 text-center text-sm font-bold ${msgOk ? 'bg-accent/20 text-accent-foreground' : 'bg-destructive/10 text-destructive'}`}>{msg}</p> : null}
+              {msg ? <p className={`rounded-xl px-4 py-2.5 text-center text-sm font-bold ${msgOk ? 'bg-accent/20 text-accent-foreground' : 'bg-destructive/10 text-destructive'}`}>{msg}</p> : null}
+              {needLogin ? <LoginGate compact title="انتهت جلستك أثناء التجهيز" /> : null}
               <div className="flex items-center justify-end gap-3">
                 <Button onClick={() => setActive(null)} variant="ghost">إغلاق</Button>
                 <Button type="submit" disabled={submitting || !photos.length} variant="primary" className="px-6 py-2.5" data-testid="button-submit-notebook">
@@ -10777,12 +10993,13 @@ function TeacherNotebooksPage() {
               <p className="mt-2.5 line-clamp-2 text-sm leading-6 text-muted-foreground">{task.description}</p>
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <Button onClick={() => openReview(task)} variant="primary" className="px-4 py-2 text-xs" data-testid={`button-review-${task.id}`}>
-                  <Camera size={14} /> مراجعة الدفاتر ({task.submissionsCount || 0})
+                  <Camera size={14} /> مراجعة التسليمات ({task.submissionsCount || 0})
                 </Button>
+                <CopyLinkButton path={`/student/notebook?task=${task.id}`} testId={`button-copy-notebook-${task.id}`} title="نسخ رابط المهمة للطلاب" className="rounded-xl bg-secondary px-3 py-2 text-xs font-bold text-primary hover:bg-accent/40" />
                 <Button onClick={() => openEdit(task)} variant="soft" className="px-3 py-2 text-xs"><Pencil size={13} /></Button>
                 <Button onClick={() => remove(task)} variant="ghost" className="px-2 py-2 text-xs text-destructive"><Trash2 size={14} /></Button>
-              </div>
             </div>
+              </div>
           ))}
         </div>
       )}
@@ -13707,15 +13924,17 @@ function Router() {
         <Route path="/auth/complete" component={CompleteProfilePage} />
         <Route path="/student" component={StudentDashboardNew} />
         <Route path="/student/courses" component={StudentCoursesPage} />
+        <Route path="/student/courses/:courseId" component={StudentCoursesPage} />
         <Route path="/student/courses/:courseId/lessons/:lessonId" component={StudentLessonPage} />
         <Route path="/student/foundation" component={StudentFoundationPage} />
         <Route path="/student/foundation/section/:sectionId" component={FoundationSectionPage} />
         <Route path="/student/foundation/lesson/:lessonId" component={FoundationLessonPage} />
         <Route path="/student/notebook" component={StudentNotebookPage} />
         <Route path="/student/assignments" component={AssignmentsPage} />
+        <Route path="/student/assignments/:assignmentId" component={AssignmentsPage} />
         <Route path="/student/announcements" component={StudentAnnouncementsPage} />
         <Route path="/student/assessments" component={AssessmentsPage} />
-        <Route path="/student/profile" component={ProfilePage} />
+        <Route path="/student/assessments/:assessmentId" component={AssessmentsPage} />
         <Route path="/teacher" component={TeacherDashboardNew} />
         <Route path="/teacher/students" component={StudentsPage} />
         <Route path="/teacher/students/grade/:grade" component={GradeStudentsRoute} />
