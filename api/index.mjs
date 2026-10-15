@@ -29525,6 +29525,7 @@ var init_ai = __esm({
 // src/routes/curriculum.ts
 var curriculum_exports = {};
 __export(curriculum_exports, {
+  deadlineState: () => deadlineState,
   default: () => curriculum_default,
   foldName: () => foldName,
   getSchoolsOfGrade: () => getSchoolsOfGrade,
@@ -29607,11 +29608,29 @@ async function getSchoolsOfGrade(gradeName) {
     return [];
   }
 }
+function deadlineState(dueDate) {
+  const raw = String(dueDate || "").trim();
+  if (!raw) return { passed: false, endOfDay: "", daysLeft: Infinity };
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return { passed: false, endOfDay: "", daysLeft: Infinity };
+  const end = /* @__PURE__ */ new Date(`${m[1]}-${m[2]}-${m[3]}T23:59:59.999`);
+  if (Number.isNaN(end.getTime())) return { passed: false, endOfDay: "", daysLeft: Infinity };
+  const now = /* @__PURE__ */ new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const daysLeft = Math.ceil((end.getTime() - startOfToday.getTime()) / 864e5);
+  return { passed: now.getTime() > end.getTime(), endOfDay: end.toISOString(), daysLeft };
+}
 function itemVisible(itemGrade, itemSection, studentGrade, studentGender, splitMap, itemSchool, studentSchool) {
   if (!schoolVisible(itemSchool, studentSchool ?? null)) return false;
+  const igRaw = String(itemGrade || "").trim();
+  const ig = foldName(igRaw);
+  const pg = foldName(studentGrade);
+  if (ig && ig !== "\u0627\u0644\u062C\u0645\u064A\u0639") {
+    if (!pg || pg === "\u0627\u0644\u062C\u0645\u064A\u0639" || pg !== ig) return false;
+  }
   const section = itemSection || "\u0627\u0644\u062C\u0645\u064A\u0639";
   if (section === "\u0627\u0644\u062C\u0645\u064A\u0639") return true;
-  const relevant = itemGrade && itemGrade !== "\u0627\u0644\u062C\u0645\u064A\u0639" ? itemGrade : studentGrade;
+  const relevant = ig && ig !== "\u0627\u0644\u062C\u0645\u064A\u0639" ? igRaw : pg;
   if (splitMap[relevant] !== true) return true;
   if (!studentGender) return true;
   return section === studentGender;
@@ -29704,10 +29723,11 @@ async function tolerantWrite(table, method, query, full, baseKeys) {
   const base = {};
   for (const k of baseKeys) if (full[k] !== void 0) base[k] = full[k];
   logger.warn({ table, msg }, "tolerantWrite fallback to base columns");
-  return supabaseQuery(query || table, {
+  const retry = await supabaseQuery(query || table, {
     method,
     body: method === "POST" ? [base] : base
   });
+  return { ...retry, warned: true };
 }
 function announcementToJson(a) {
   return {
@@ -30104,7 +30124,18 @@ var init_curriculum = __esm({
           school: String(a.school || "").trim()
         }));
         if (student === "1") list = list.filter((a) => a.published && a.isVisible);
-        if (student_id) {
+        if (student === "1") {
+          if (!student_id) {
+            res.json([]);
+            return;
+          }
+          const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
+          if (!profile) {
+            res.json([]);
+            return;
+          }
+          list = list.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school));
+        } else if (student_id) {
           const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
           if (profile) list = list.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school));
         }
@@ -30259,6 +30290,95 @@ var init_curriculum = __esm({
         res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0627\u0644\u0623\u0633\u0626\u0644\u0629" });
       }
     });
+    router2.get("/teacher/curriculum/assessments/:id/attempts", requireAdmin, async (req, res) => {
+      try {
+        const { data, error } = await supabaseQuery(
+          `assessment_attempts?assessment_id=eq.${enc(req.params.id)}&order=completed_at.desc&limit=2000`
+        );
+        if (error) throw new Error(String(error));
+        const uids = [...new Set((data || []).map((a) => a.user_id).filter(Boolean))];
+        let profiles = {};
+        if (uids.length) {
+          try {
+            const { data: profs } = await supabaseQuery(
+              `profiles?id=in.(${uids.map(enc).join(",")})&select=id,full_name,grade,school,section,avatar_url&limit=2000`
+            );
+            for (const p of profs || []) profiles[p.id] = p;
+          } catch {
+          }
+        }
+        const best = {};
+        for (const a of data || []) {
+          const prev = best[a.user_id];
+          if (!prev || Number(a.score) > Number(prev.score)) best[a.user_id] = a;
+        }
+        res.json(
+          Object.values(best).map((a) => ({
+            userId: a.user_id,
+            score: Number(a.score) || 0,
+            status: a.status || "\u0645\u0643\u062A\u0645\u0644",
+            completedAt: a.completed_at || "",
+            attempts: (data || []).filter((x) => x.user_id === a.user_id).length,
+            student: {
+              id: a.user_id,
+              name: profiles[a.user_id]?.full_name || "\u0637\u0627\u0644\u0628",
+              grade: profiles[a.user_id]?.grade || "",
+              school: profiles[a.user_id]?.school || "",
+              section: profiles[a.user_id]?.section || "",
+              avatarUrl: profiles[a.user_id]?.avatar_url || ""
+            }
+          }))
+        );
+      } catch (err) {
+        logger.error({ err }, "GET assessment attempts failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u0645\u062D\u0627\u0648\u0644\u0627\u062A \u0627\u0644\u0637\u0644\u0627\u0628" });
+      }
+    });
+    router2.post("/teacher/curriculum/assignments/:id/record", requireAdmin, async (req, res) => {
+      try {
+        const assignmentId = String(req.params.id || "");
+        const userId = String(req.body?.userId || "").trim();
+        if (!assignmentId || !userId) {
+          res.status(400).json({ error: "\u0627\u0644\u0648\u0627\u062C\u0628 \u0648\u0627\u0644\u0637\u0627\u0644\u0628 \u0645\u0637\u0644\u0648\u0628\u0627\u0646" });
+          return;
+        }
+        const score = req.body?.score === null || req.body?.score === "" || req.body?.score === void 0 ? null : Number(req.body.score);
+        const { data: existing } = await supabaseQuery(
+          `assignment_submissions?assignment_id=eq.${enc(assignmentId)}&user_id=eq.${enc(userId)}&select=id&limit=1`
+        );
+        if (existing?.[0]?.id) {
+          const { error } = await supabaseQuery(`assignment_submissions?id=eq.${enc(existing[0].id)}`, {
+            method: "PATCH",
+            body: {
+              ...req.body?.score !== void 0 ? { score } : {},
+              ...typeof req.body?.feedback === "string" ? { feedback: req.body.feedback } : {},
+              status: score !== null ? "\u062A\u0645 \u0627\u0644\u062A\u0642\u064A\u064A\u0645" : "\u0645\u064F\u0633\u0644\u064E\u0651\u0645",
+              reviewed_at: (/* @__PURE__ */ new Date()).toISOString()
+            }
+          });
+          if (error) throw new Error(String(error));
+        } else {
+          const { error } = await supabaseQuery("assignment_submissions", {
+            method: "POST",
+            body: [{
+              assignment_id: assignmentId,
+              user_id: userId,
+              answer: "",
+              score,
+              feedback: typeof req.body?.feedback === "string" ? req.body.feedback : "",
+              status: score !== null ? "\u062A\u0645 \u0627\u0644\u062A\u0642\u064A\u064A\u0645" : "\u0645\u064F\u0633\u0644\u064E\u0651\u0645",
+              submitted_at: (/* @__PURE__ */ new Date()).toISOString(),
+              reviewed_at: (/* @__PURE__ */ new Date()).toISOString()
+            }]
+          });
+          if (error) throw new Error(String(error));
+        }
+        res.json({ success: true, message: "\u062A\u0645 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u0639\u0644\u0627\u0645\u0629!" });
+      } catch (err) {
+        logger.error({ err }, "POST hw manual record failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u0639\u0644\u0627\u0645\u0629" });
+      }
+    });
     router2.post("/teacher/curriculum/assessments/:id/questions", requireAdmin, async (req, res) => {
       try {
         const b = req.body || {};
@@ -30319,16 +30439,25 @@ var init_curriculum = __esm({
         res.json({ semester: "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644", genderSplit: false });
       }
     });
-    router2.get("/curriculum/announcements", async (req, res) => {
+    router2.get("/curriculum/announcements", requireAuth, async (req, res) => {
       try {
-        const { grade, student_id } = req.query;
+        const { grade } = req.query;
+        const auth = req.auth || null;
         const { data } = await supabaseQuery("announcements?order=published_at.desc&limit=100");
-        let list = (data || []).filter((a) => a.published !== false).map(announcementToJson);
-        if (grade) list = list.filter((a) => a.grade === "\u0627\u0644\u062C\u0645\u064A\u0639" || a.grade === grade);
-        if (student_id) {
-          const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
-          if (profile) list = list.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school));
+        const all = (data || []).filter((a) => a.published !== false).map(announcementToJson);
+        if (!auth || auth.role === "admin") {
+          res.json(grade ? all.filter((a) => a.grade === "\u0627\u0644\u062C\u0645\u064A\u0639" || a.grade === grade) : all);
+          return;
         }
+        const profile = await getStudentProfile(auth.userId);
+        if (!profile) {
+          res.json([]);
+          return;
+        }
+        const splitMap = await getSplitMap();
+        let list = all.filter(
+          (a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school)
+        );
         res.json(list);
       } catch (err) {
         logger.error({ err }, "GET /curriculum/announcements failed");
@@ -30355,6 +30484,14 @@ var init_curriculum = __esm({
         };
         const r = await tolerantWrite("announcements", "POST", "announcements", full, ["title", "body", "announcement_type", "audience", "published", "published_at"]);
         if (r.error) throw new Error(String(r.error));
+        if (r.warned) {
+          res.json({
+            success: true,
+            partial: true,
+            message: "\u0646\u064F\u0634\u0631 \u0627\u0644\u0625\u0639\u0644\u0627\u0646\u060C \u0644\u0643\u0646 \u062D\u0642\u0644\u0627 \u0627\u0644\u0635\u0641 \u0648\u0627\u0644\u0645\u062F\u0631\u0633\u0629 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F\u064A\u0646 \u0641\u064A \u0642\u0627\u0639\u062F\u0629 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A \u2014 \u0638\u0647\u0631 \u0644\u0644\u062C\u0645\u064A\u0639 \u0628\u062F\u0644 \u0627\u0644\u0635\u0641 \u0648\u0627\u0644\u0645\u062F\u0631\u0633\u0629 \u0627\u0644\u0645\u062D\u062F\u062F\u064A\u0646. \u0646\u0641\u0651\u0630 sql_announcements_scope.sql \u0641\u064A Supabase."
+          });
+          return;
+        }
         res.json({ success: true, message: "\u062A\u0645 \u0646\u0634\u0631 \u0627\u0644\u0625\u0639\u0644\u0627\u0646 \u0628\u0646\u062C\u0627\u062D!" });
       } catch (err) {
         logger.error({ err }, "POST curriculum announcement failed");
@@ -30375,6 +30512,10 @@ var init_curriculum = __esm({
         if (b.published !== void 0) full.published = !!b.published;
         const r = await tolerantWrite("announcements", "PATCH", `announcements?id=eq.${enc(req.params.id)}`, full, ["title", "body", "announcement_type", "audience", "published"]);
         if (r.error) throw new Error(String(r.error));
+        if (r.warned) {
+          res.json({ success: true, partial: true, message: "\u062D\u064F\u0641\u0638 \u0627\u0644\u062A\u0639\u062F\u064A\u0644\u060C \u0644\u0643\u0646 \u062D\u0642\u0644\u0627 \u0627\u0644\u0635\u0641 \u0648\u0627\u0644\u0645\u062F\u0631\u0633\u0629 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F\u064A\u0646 \u2014 \u0646\u0641\u0651\u0630 sql_announcements_scope.sql \u0641\u064A Supabase." });
+          return;
+        }
         res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u0625\u0639\u0644\u0627\u0646!" });
       } catch (err) {
         logger.error({ err }, "PATCH curriculum announcement failed");
@@ -30509,6 +30650,125 @@ var init_curriculum = __esm({
         res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u062A\u0642\u064A\u064A\u0645" });
       }
     });
+    router2.post("/teacher/curriculum/:kind/:id/deduct", requireAdmin, async (req, res) => {
+      try {
+        const kind = String(req.params.kind || "");
+        const id = enc(String(req.params.id));
+        const { points, studentIds, percent, floorAtZero = true } = req.body || {};
+        const pts = Number(points);
+        if (!Number.isFinite(pts) || pts === 0) {
+          res.status(400).json({ error: "\u062D\u062F\u062F \u0639\u062F\u062F \u0646\u0642\u0627\u0637 \u0627\u0644\u062E\u0635\u0645" });
+          return;
+        }
+        const table = kind === "assignments" ? "assignment_submissions" : kind === "notebooks" ? "notebook_submissions" : kind === "assessments" ? "assessment_attempts" : null;
+        if (!table) {
+          res.status(400).json({ error: "\u0646\u0648\u0639 \u0627\u0644\u0628\u0646\u062F \u063A\u064A\u0631 \u0645\u0639\u0631\u0648\u0641" });
+          return;
+        }
+        const itemTable = kind === "assignments" ? "assignments" : kind === "notebooks" ? "notebook_tasks" : "assessments";
+        const itemIdCol = kind === "assignments" ? "assignment_id" : kind === "notebooks" ? "task_id" : "assessment_id";
+        const { data: itemRows } = await supabaseQuery(
+          `${itemTable}?id=eq.${id}&select=id,title,grade,school&limit=1`
+        );
+        const item = itemRows?.[0];
+        if (!item) {
+          res.status(404).json({ error: "\u0627\u0644\u0628\u0646\u062F \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F" });
+          return;
+        }
+        const rows = [];
+        try {
+          const { data } = await supabaseQuery(
+            `${table}?${itemIdCol}=eq.${id}&select=*&limit=5000`
+          );
+          rows.push(...data || []);
+        } catch {
+          res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062C\u0644\u0628 \u062A\u0633\u0644\u064A\u0645\u0627\u062A \u0647\u0630\u0627 \u0627\u0644\u0628\u0646\u062F" });
+          return;
+        }
+        const wanted = Array.isArray(studentIds) && studentIds.length ? new Set(studentIds.map(String)) : null;
+        if (percent !== void 0 && percent !== null && percent !== "") {
+          const pct = Math.max(-100, Math.min(100, Number(percent)));
+          if (!Number.isFinite(pct) || pct === 0) {
+            res.status(400).json({ error: "\u062D\u062F\u062F \u0646\u0633\u0628\u0629 \u0627\u0644\u062E\u0635\u0645" });
+            return;
+          }
+          const updates2 = rows.filter((r) => wanted ? wanted.has(String(r.user_id)) : true).filter((r) => r.score !== null && r.score !== void 0).map((r) => {
+            const cur = Number(r.score) || 0;
+            const next = floorAtZero === false ? Math.round(cur * (1 - pct / 100)) : Math.max(0, Math.round(cur * (1 - pct / 100)));
+            return { id: r.id, score: next };
+          }).filter((u) => Number.isFinite(u.score));
+          if (!updates2.length) {
+            res.json({ success: true, updated: 0, message: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0639\u0644\u0627\u0645\u0627\u062A \u0628\u0639\u062F \u0644\u0644\u062E\u0635\u0645 \u0645\u0646\u0647\u0627" });
+            return;
+          }
+          let ok2 = 0;
+          for (const u of updates2) {
+            await supabaseQuery(`${table}?id=eq.${enc(u.id)}`, { method: "PATCH", body: { score: u.score } });
+            ok2++;
+          }
+          res.json({ success: true, updated: ok2, message: `\u062A\u0645 \u062E\u0635\u0645 ${pct}% \u0645\u0646 ${ok2} \u0639\u0644\u0627\u0645\u0629` });
+          return;
+        }
+        const updates = rows.filter((r) => wanted ? wanted.has(String(r.user_id)) : true).map((r) => {
+          const cur = Number(r.score) || 0;
+          const next = floorAtZero ? Math.max(0, cur - Math.abs(pts)) : cur - Math.abs(pts);
+          return { id: r.id, score: next };
+        });
+        if (!updates.length) {
+          res.json({ success: true, updated: 0, message: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0639\u0644\u0627\u0645\u0627\u062A \u0628\u0639\u062F \u0644\u0644\u062E\u0635\u0645 \u0645\u0646\u0647\u0627" });
+          return;
+        }
+        let ok = 0;
+        for (const u of updates) {
+          await supabaseQuery(`${table}?id=eq.${enc(u.id)}`, { method: "PATCH", body: { score: u.score } });
+          ok++;
+        }
+        res.json({ success: true, updated: ok, message: `\u062A\u0645 \u062E\u0635\u0645 ${Math.abs(pts)} \u0646\u0642\u0637\u0629 \u0645\u0646 ${ok} \u0637\u0627\u0644\u0628` });
+      } catch (err) {
+        logger.error({ err }, "POST deduct failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u0646\u0641\u064A\u0630 \u0627\u0644\u062E\u0635\u0645 \u0627\u0644\u062C\u0645\u0627\u0639\u064A" });
+      }
+    });
+    router2.post("/teacher/curriculum/assessments/:id/record", requireAdmin, async (req, res) => {
+      try {
+        const { userId, score } = req.body || {};
+        if (!userId) {
+          res.status(400).json({ error: "\u062D\u062F\u062F \u0627\u0644\u0637\u0627\u0644\u0628" });
+          return;
+        }
+        const s = score === null || score === void 0 || score === "" ? null : Math.max(0, Math.min(100, Number(score)));
+        if (s !== null && !Number.isFinite(s)) {
+          res.status(400).json({ error: "\u0627\u0644\u0639\u0644\u0627\u0645\u0629 \u064A\u062C\u0628 \u0623\u0646 \u062A\u0643\u0648\u0646 \u0631\u0642\u0645\u0627\u064B \u0628\u064A\u0646 0 \u0648100" });
+          return;
+        }
+        const assessmentId = enc(String(req.params.id));
+        const { data: prev } = await supabaseQuery(
+          `assessment_attempts?assessment_id=eq.${assessmentId}&user_id=eq.${enc(String(userId))}&limit=1`
+        );
+        if (prev?.[0]) {
+          await supabaseQuery(`assessment_attempts?id=eq.${enc(prev[0].id)}`, {
+            method: "PATCH",
+            body: { score: s, status: s === null ? "\u0644\u0645 \u064A\u062C\u0631\u0651\u0628\u0647" : "\u0645\u0643\u062A\u0645\u0644" }
+          });
+        } else {
+          await supabaseQuery("assessment_attempts", {
+            method: "POST",
+            body: [{
+              assessment_id: String(req.params.id),
+              user_id: String(userId),
+              status: s === null ? "\u0644\u0645 \u064A\u062C\u0631\u0651\u0628\u0647" : "\u0645\u0643\u062A\u0645\u0644",
+              score: s,
+              answers: [],
+              completed_at: (/* @__PURE__ */ new Date()).toISOString()
+            }]
+          });
+        }
+        res.json({ success: true, message: "\u062A\u0645 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u0646\u062A\u064A\u062C\u0629" });
+      } catch (err) {
+        logger.error({ err }, "POST assessment record failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u0646\u062A\u064A\u062C\u0629" });
+      }
+    });
     curriculum_default = router2;
   }
 });
@@ -30625,9 +30885,17 @@ var init_study = __esm({
         const { data, error } = await supabaseQuery(endpoint);
         if (error) throw new Error(String(error));
         let list = (data || []).filter((s) => s.published !== false).map(summaryToJson);
-        if (student_id) {
+        if (!student_id) {
+          res.json([]);
+          return;
+        }
+        {
           const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
-          if (profile) list = list.filter((s) => itemVisible(s.grade, s.section, profile.grade, profile.gender, splitMap, s.school, profile.school));
+          if (!profile) {
+            res.json([]);
+            return;
+          }
+          list = list.filter((s) => itemVisible(s.grade, s.section, profile.grade, profile.gender, splitMap, s.school, profile.school));
         }
         res.json(list);
       } catch (err) {
@@ -30740,7 +31008,11 @@ var init_study = __esm({
         }
         const lessonTitles = await lessonTitlesFor((data || []).map((t) => t.lesson_id));
         let list = (data || []).filter((t) => t.published !== false).map((t) => taskToJson(t, subs[t.id], lessonTitles));
-        if (profile) list = list.filter((t) => itemVisible(t.grade, t.section, profile.grade, profile.gender, splitMap, t.school, profile.school));
+        if (!profile) {
+          res.json([]);
+          return;
+        }
+        list = list.filter((t) => itemVisible(t.grade, t.section, profile.grade, profile.gender, splitMap, t.school, profile.school));
         res.json(list);
       } catch (err) {
         logger.error({ err }, "GET /curriculum/notebooks failed");
@@ -30901,6 +31173,21 @@ var init_study = __esm({
           res.status(400).json({ error: "\u0635\u0648\u0651\u0631 \u062F\u0641\u062A\u0631\u0643 \u0648\u0623\u0631\u0641\u0642 \u0635\u0648\u0631\u0629 \u0648\u0627\u062D\u062F\u0629 \u0639\u0644\u0649 \u0627\u0644\u0623\u0642\u0644" });
           return;
         }
+        try {
+          const { data: taskRows } = await supabaseQuery(
+            `notebook_tasks?id=eq.${enc2(req.params.id)}&select=id,title,due_date&limit=1`
+          );
+          const dl = deadlineState(taskRows?.[0]?.due_date);
+          if (dl.passed) {
+            res.status(403).json({
+              error: "\u0627\u0646\u062A\u0647\u062A \u0645\u0647\u0644\u0629 \u062A\u0633\u0644\u064A\u0645 \u0627\u0644\u062F\u0641\u062A\u0631 \u26D4 \u2014 \u0644\u0645 \u064A\u0639\u062F \u0627\u0644\u062A\u0633\u0644\u064A\u0645 \u0645\u062A\u0627\u062D\u0627\u064B. \u0631\u0627\u062C\u0639 \u0623\u0633\u062A\u0627\u0630\u0643 \u0625\u0646 \u0643\u0627\u0646 \u062B\u0645 \u062E\u0637\u0623.",
+              code: "DEADLINE_PASSED",
+              dueDate: taskRows?.[0]?.due_date || ""
+            });
+            return;
+          }
+        } catch {
+        }
         let initChecks = [];
         try {
           const { data: task } = await supabaseQuery(
@@ -31008,6 +31295,52 @@ var init_study = __esm({
       } catch (err) {
         logger.error({ err }, "POST /api/student/upload failed");
         res.status(500).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u0631\u0641\u0639 \u0627\u0644\u0635\u0648\u0631\u0629" });
+      }
+    });
+    router3.post("/teacher/curriculum/notebooks/:id/record", requireAdmin, async (req, res) => {
+      try {
+        const taskId = String(req.params.id || "");
+        const userId = String(req.body?.userId || "").trim();
+        if (!taskId || !userId) {
+          res.status(400).json({ error: "\u0627\u0644\u0645\u0647\u0645\u0629 \u0648\u0627\u0644\u0637\u0627\u0644\u0628 \u0645\u0637\u0644\u0648\u0628\u0627\u0646" });
+          return;
+        }
+        const score = req.body?.score === null || req.body?.score === "" || req.body?.score === void 0 ? null : Number(req.body.score);
+        const { data: existing } = await supabaseQuery(
+          `notebook_submissions?task_id=eq.${enc2(taskId)}&user_id=eq.${enc2(userId)}&select=id&limit=1`
+        );
+        if (existing?.[0]?.id) {
+          const { error } = await supabaseQuery(`notebook_submissions?id=eq.${enc2(existing[0].id)}`, {
+            method: "PATCH",
+            body: {
+              ...req.body?.score !== void 0 ? { score } : {},
+              ...typeof req.body?.feedback === "string" ? { feedback: req.body.feedback } : {},
+              status: score !== null ? "\u062A\u0645 \u0627\u0644\u062A\u0642\u064A\u064A\u0645" : "\u0645\u0633\u0644\u0651\u0645",
+              reviewed_at: (/* @__PURE__ */ new Date()).toISOString()
+            }
+          });
+          if (error) throw new Error(String(error));
+        } else {
+          const { error } = await supabaseQuery("notebook_submissions", {
+            method: "POST",
+            body: [{
+              task_id: taskId,
+              user_id: userId,
+              photos: [],
+              note: "",
+              score,
+              feedback: typeof req.body?.feedback === "string" ? req.body.feedback : "",
+              status: score !== null ? "\u062A\u0645 \u0627\u0644\u062A\u0642\u064A\u064A\u0645" : "\u0645\u0633\u0644\u0651\u0645",
+              submitted_at: (/* @__PURE__ */ new Date()).toISOString(),
+              reviewed_at: (/* @__PURE__ */ new Date()).toISOString()
+            }]
+          });
+          if (error) throw new Error(String(error));
+        }
+        res.json({ success: true, message: "\u062A\u0645 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u0639\u0644\u0627\u0645\u0629!" });
+      } catch (err) {
+        logger.error({ err }, "POST notebook manual record failed");
+        res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u0639\u0644\u0627\u0645\u0629" });
       }
     });
     study_default = router3;
@@ -35621,15 +35954,17 @@ router4.get("/assignments", async (req, res) => {
         school: a.school || ""
       };
     });
-    if (activeStudent) {
+    {
       const { getStudentProfile: getStudentProfile2, getSplitMap: getSplitMap2, itemVisible: itemVisible2 } = await Promise.resolve().then(() => (init_curriculum(), curriculum_exports));
       const [profile, splitMap] = await Promise.all([
-        getStudentProfile2(activeStudent.id),
+        activeStudent ? getStudentProfile2(activeStudent.id) : Promise.resolve(null),
         getSplitMap2()
       ]);
-      if (profile) {
-        parsed = parsed.filter((a) => itemVisible2(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school));
+      if (!profile) {
+        res.json(ListAssignmentsResponse.parse([]));
+        return;
       }
+      parsed = parsed.filter((a) => itemVisible2(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school));
     }
     res.json(ListAssignmentsResponse.parse(parsed));
   } catch (err) {
@@ -35639,12 +35974,28 @@ router4.get("/assignments", async (req, res) => {
 });
 router4.post("/assignments/:id/submit", requireAuth, async (req, res) => {
   try {
-    const assignmentId = req.params.id;
+    const assignmentId = Array.isArray(req.params.id) ? req.params.id[0] : String(req.params.id);
     const { answer, userId, photos } = req.body;
     const studentId = await resolveStudentId(userId, req);
     if (!studentId) {
       res.status(404).json({ error: "\u0644\u0645 \u064A\u062A\u0645 \u0627\u0644\u0639\u062B\u0648\u0631 \u0639\u0644\u0649 \u0627\u0644\u0637\u0627\u0644\u0628 \u0627\u0644\u0646\u0634\u0637" });
       return;
+    }
+    try {
+      const { data: hwRows } = await supabaseQuery(
+        `assignments?id=eq.${encodeURIComponent(assignmentId)}&select=id,title,due_date&limit=1`
+      );
+      const { deadlineState: deadlineState2 } = await Promise.resolve().then(() => (init_curriculum(), curriculum_exports));
+      const dl = deadlineState2(hwRows?.[0]?.due_date);
+      if (dl.passed) {
+        res.status(403).json({
+          error: "\u0627\u0646\u062A\u0647\u062A \u0645\u0647\u0644\u0629 \u0627\u0644\u062A\u0633\u0644\u064A\u0645 \u26D4 \u2014 \u0644\u0645 \u064A\u0639\u062F \u0627\u0644\u062A\u0633\u0644\u064A\u0645 \u0645\u062A\u0627\u062D\u0627\u064B \u0644\u0647\u0630\u0627 \u0627\u0644\u0648\u0627\u062C\u0628. \u0631\u0627\u062C\u0639 \u0623\u0633\u062A\u0627\u0630\u0643 \u0625\u0646 \u0643\u0627\u0646 \u062B\u0645 \u062E\u0637\u0623.",
+          code: "DEADLINE_PASSED",
+          dueDate: hwRows?.[0]?.due_date || ""
+        });
+        return;
+      }
+    } catch {
     }
     const cleanPhotos = Array.isArray(photos) ? photos.filter((u) => String(u || "").trim()) : [];
     if (!String(answer || "").trim() && !cleanPhotos.length) {
@@ -35760,17 +36111,19 @@ router4.get("/assessments", async (req, res) => {
       };
     });
     let visible = parsed;
-    if (activeStudent) {
+    {
       const { getStudentProfile: getStudentProfile2, getSplitMap: getSplitMap2, itemVisible: itemVisible2 } = await Promise.resolve().then(() => (init_curriculum(), curriculum_exports));
       const [profile, splitMap] = await Promise.all([
-        getStudentProfile2(activeStudent.id),
+        activeStudent ? getStudentProfile2(activeStudent.id) : Promise.resolve(null),
         getSplitMap2()
       ]);
-      if (profile) {
-        visible = parsed.filter(
-          (a) => itemVisible2(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school)
-        );
+      if (!profile) {
+        res.json(ListAssessmentsResponse.parse([]));
+        return;
       }
+      visible = parsed.filter(
+        (a) => itemVisible2(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school)
+      );
     }
     res.json(ListAssessmentsResponse.parse(visible));
   } catch (err) {
@@ -35796,6 +36149,22 @@ router4.post("/assessments/:id/attempt", requireAuth, async (req, res) => {
     if (!studentId) {
       res.status(404).json({ error: "\u0644\u0645 \u064A\u062A\u0645 \u0627\u0644\u0639\u062B\u0648\u0631 \u0639\u0644\u0649 \u0627\u0644\u0637\u0627\u0644\u0628 \u0627\u0644\u0646\u0634\u0637" });
       return;
+    }
+    try {
+      const { data: exRows } = await supabaseQuery(
+        `assessments?id=eq.${encodeURIComponent(assessmentId)}&select=id,title,due_date,closed_at&limit=1`
+      );
+      const { deadlineState: deadlineState2 } = await Promise.resolve().then(() => (init_curriculum(), curriculum_exports));
+      const dl = deadlineState2(exRows?.[0]?.due_date ?? exRows?.[0]?.closed_at);
+      if (dl.passed) {
+        res.status(403).json({
+          error: "\u0627\u0646\u062A\u0647\u062A \u0645\u0647\u0644\u0629 \u0627\u0644\u0627\u062E\u062A\u0628\u0627\u0631 \u26D4 \u2014 \u0644\u0645 \u064A\u0639\u062F \u0627\u0644\u062A\u0633\u0644\u064A\u0645 \u0645\u062A\u0627\u062D\u0627\u064B. \u0631\u0627\u062C\u0639 \u0623\u0633\u062A\u0627\u0630\u0643 \u0625\u0646 \u0643\u0627\u0646 \u062B\u0645 \u062E\u0637\u0623.",
+          code: "DEADLINE_PASSED",
+          dueDate: exRows?.[0]?.due_date ?? exRows?.[0]?.closed_at ?? ""
+        });
+        return;
+      }
+    } catch {
     }
     const questions = await getAssessmentQuestions(assessmentId);
     if (!questions.length) {
@@ -38958,9 +39327,11 @@ function levelOf(pct) {
 function appliesTo(item, profile, splitMap) {
   if (item.published === false) return false;
   if (item.is_visible === false) return false;
-  const ig = String(item.grade || "").trim();
-  const pg = String(profile.grade || "").trim();
-  if (ig && pg && ig !== "\u0627\u0644\u062C\u0645\u064A\u0639" && pg !== "\u0627\u0644\u062C\u0645\u064A\u0639" && ig !== pg) return false;
+  const ig = foldName(item.grade);
+  const pg = foldName(profile.grade);
+  if (ig && ig !== "\u0627\u0644\u062C\u0645\u064A\u0639") {
+    if (!pg || pg === "\u0627\u0644\u062C\u0645\u064A\u0639" || pg !== ig) return false;
+  }
   return itemVisible(item.grade, item.section, profile.grade, profile.gender, splitMap, item.school, profile.school);
 }
 async function loadReportCtx() {
