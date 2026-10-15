@@ -7946,48 +7946,60 @@ function StudentCoursesPage() {
                 const tOpen = !!expandedLessons[lesson.id];
                 return (
                   <div key={lesson.id} className={`overflow-hidden rounded-2xl border bg-background transition-colors ${tOpen ? 'border-accent shadow-md' : 'border-border'} ${locked ? 'opacity-70' : ''}`}>
-                    <div className={`flex flex-wrap items-center justify-between gap-3 p-4 ${!locked ? 'hover:border-primary/40' : ''}`}>
-                      <div className="flex min-w-[200px] flex-1 items-center gap-3">
-                        {lesson.coverUrl ? (
-                          <img src={lesson.coverUrl} alt="" className="h-12 w-12 shrink-0 rounded-xl object-cover" />
-                        ) : (
-                          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-secondary text-primary"><TypeIcon size={17} /></span>
-                        )}
-                        <div className="min-w-0">
-                          <p className="flex items-center gap-2 text-sm font-bold text-primary">
-                            <span className="truncate">{lesson.title}</span>
-                            {locked ? <Lock size={13} className="shrink-0 text-muted-foreground" /> : null}
-                          </p>
-                          <p className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                            <span className="rounded-md bg-secondary px-2 py-0.5 font-bold text-primary">{lesson.lessonType}</span>
-                            <span className="truncate">{lesson.description || 'شرح الدرس والتدريبات المرافقة'}</span>
-                          </p>
-                        </div>
+                    {/* الصف الأول: هوية الدرس فقط — بلا أزرار، فلا فيض شيء خارج الإطار */}
+                    <div className={`flex items-center gap-3 p-4 pb-3 ${!locked ? 'hover:border-primary/40' : ''}`}>
+                      {lesson.coverUrl ? (
+                        <img src={lesson.coverUrl} alt="" className="h-12 w-12 shrink-0 rounded-xl object-cover" />
+                      ) : (
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-secondary text-primary"><TypeIcon size={17} /></span>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="flex items-center gap-2 text-sm font-bold text-primary">
+                          <span className="truncate">{lesson.title}</span>
+                          {locked ? <Lock size={13} className="shrink-0 text-muted-foreground" /> : null}
+                        </p>
+                        <p className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                          <span className="shrink-0 rounded-md bg-secondary px-2 py-0.5 font-bold text-primary">{lesson.lessonType}</span>
+                          <span className="truncate">{lesson.description || 'شرح الدرس والتدريبات المرافقة'}</span>
+                        </p>
                       </div>
-                      <span className="flex shrink-0 items-center gap-1.5">
-                        {tCount > 0 ? (
-                          <button
-                            type="button"
-                            onClick={() => toggleLessonTasks(lesson.id)}
-                            title={tOpen ? 'إخفاء مهام الدرس' : 'عرض مهام الدرس (واجبات ودفتر واختبارات)'}
-                            className={`relative inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-extrabold shadow-sm transition-all hover:scale-105 active:scale-95 ${tOpen ? 'bg-primary text-primary-foreground' : tPend ? 'animate-pulse bg-destructive text-white' : 'bg-accent text-[#3a2c07]'}`}
-                          >
-                            <ChevronLeft size={15} className={`transition-transform duration-300 ${tOpen ? '-rotate-90' : ''}`} />
-                            مهام الدرس
-                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold tabular-nums ${tOpen || tPend ? 'bg-white/25 text-white' : 'bg-black/15 text-[#3a2c07]'}`}>{tCount}</span>
-                            {tPend && !tOpen ? <span className="absolute -left-1 -top-1 h-3 w-3 animate-ping rounded-full bg-destructive" /> : null}
-                            {tPend && !tOpen ? <span className="absolute -left-1 -top-1 h-3 w-3 rounded-full bg-destructive" /> : null}
-                          </button>
-                        ) : null}
-                        {!locked ? (
-                          <Link href={`/student/courses/${selectedCourse.id}/lessons/${lesson.id}`} className="inline-flex items-center gap-1 rounded-xl bg-primary px-3 py-2 text-xs font-bold text-primary-foreground shadow-sm transition-transform hover:scale-105" data-testid={`link-lesson-page-${lesson.id}`}>
-                            صفحة كاملة <ArrowUpLeft size={14} />
-                          </Link>
-                        ) : null}
-                      <Button onClick={() => !locked && openLessonQuick(lesson)} disabled={locked} variant="outline" className="px-3 py-2 text-xs">
+                    </div>
+
+                    {/* الصف الثاني: الأزرار في سطر مستقل يلتفّ ولا يفيض أبداً.
+                        إن وُجبت مهام، يأخذ زر "مهام الدرس" السطر كاملاً وينزل
+                        الباقي تحته — لا يزاحم ولا يخرج عن الإطار. */}
+                    <div className="flex flex-wrap items-center gap-2 px-4 pb-4">
+                      {tCount > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleLessonTasks(lesson.id)}
+                          title={tOpen ? 'إخفاء مهام الدرس' : 'عرض مهام الدرس (واجبات ودفتر واختبارات)'}
+                          className={`relative inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-extrabold shadow-sm transition-all active:scale-[.97] sm:w-auto ${tOpen ? 'bg-primary text-primary-foreground' : tPend ? 'animate-pulse bg-destructive text-white' : 'bg-accent text-[#3a2c07]'}`}
+                        >
+                          <ChevronLeft size={15} className={`transition-transform duration-300 ${tOpen ? '-rotate-90' : ''}`} />
+                          مهام الدرس
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold tabular-nums ${tOpen || tPend ? 'bg-white/25 text-white' : 'bg-black/15 text-[#3a2c07]'}`}>{tCount}</span>
+                          {tPend && !tOpen ? <span className="absolute -left-1 -top-1 h-3 w-3 animate-ping rounded-full bg-destructive" /> : null}
+                          {tPend && !tOpen ? <span className="absolute -left-1 -top-1 h-3 w-3 rounded-full bg-destructive" /> : null}
+                        </button>
+                      ) : null}
+                      {!locked ? (
+                        <Link
+                          href={`/student/courses/${selectedCourse.id}/lessons/${lesson.id}`}
+                          className={`inline-flex min-h-[44px] items-center justify-center gap-1 rounded-xl bg-primary px-3.5 py-2 text-xs font-bold text-primary-foreground shadow-sm transition-all active:scale-[.97] ${tCount > 0 ? 'flex-1 sm:flex-none' : 'flex-1'}`}
+                          data-testid={`link-lesson-page-${lesson.id}`}
+                        >
+                          صفحة كاملة <ArrowUpLeft size={14} />
+                        </Link>
+                      ) : null}
+                      <Button
+                        onClick={() => !locked && openLessonQuick(lesson)}
+                        disabled={locked}
+                        variant="outline"
+                        className={`min-h-[44px] flex-1 px-3 py-2 text-xs sm:flex-none`}
+                      >
                         {locked ? 'مقفل' : (<>عرض سريع <BookOpen size={14} /></>)}
                       </Button>
-                      </span>
                     </div>
                     {tOpen && tCount > 0 ? (
                       <div className="space-y-2.5 border-t border-dashed border-border bg-gradient-to-b from-secondary/40 to-secondary/20 p-3">
