@@ -329,7 +329,7 @@ const APP_VERSION = 'v25.10-SRC';
    الاسم يُعرض كنص حقيقي بجواره — فالنص المطبوخ داخل الصورة كان
    يظهر مصغّراً غير مقروء إلى جانب الاسم فيصير الازدحام والازدواج. */
 const platformLogoUrl = '/ard-al-lughah-emblem.png';
-const platformBannerUrl = '/ard-al-lughah-banner.jpg';
+const platformBannerUrl = '/ard-al-lughah-banner.png';
 const bookNineUrl = '/arab-9.jpg';
 const bookTenUrl = '/arab-10.jpg';
 
@@ -1592,21 +1592,20 @@ function Home() {
               </div>
             </div>
             <div className="relative order-1 animate-rise [animation-delay:120ms] lg:order-2">
-              {/* البانر بنسبته الأصلية 1600×684 — بلا قصّ ولا إزاحة.
-                  كان الشعار القديم بخلفية شفافة فيُزاح بـ -top-[20%] ليُبرز. */}
-              <div className="relative overflow-hidden rounded-[2rem] border border-border bg-primary shadow-2xl">
-                <img
-                  src={platformBannerUrl}
-                  width={1600}
-                  height={684}
-                  alt="أرض اللغة — منصة عربية للتعلم من قلب فلسطين مع الأستاذ أحمد يحيى الأسطل"
-                  className="block w-full"
-                  data-testid="img-platform-banner"
-                />
-              </div>
-              <div className="absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-full bg-primary/95 px-3.5 py-1.5 text-xs font-bold text-primary-foreground shadow-md backdrop-blur-sm" data-testid="badge-hero-semester">
+              {/* الصورة PNG شفافة — بلا إطار ولا خلفية ولا قصّ.
+                  (البانر السابق JPEG بنسبة 2.34 وكان يحتاج حاوية؛
+                   هذا 1.34 شفافة فلا يحتاج شيئاً سوى ظل خفيف.) */}
+              <img
+                src={platformBannerUrl}
+                width={1452}
+                height={1083}
+                alt="أرض اللغة — منصة عربية للتعلم من قلب فلسطين مع الأستاذ أحمد يحيى الأسطل"
+                className="mx-auto block w-full max-w-xl select-none object-contain drop-shadow-[0_20px_45px_rgba(23,65,63,.22)]"
+                data-testid="img-platform-banner"
+              />
+              <span className="mx-auto mt-3 flex w-fit items-center gap-1.5 rounded-full bg-primary/95 px-3.5 py-1.5 text-xs font-bold text-primary-foreground shadow-sm backdrop-blur-sm" data-testid="badge-hero-semester">
                 <BookOpen size={13} className="text-accent" /> كتب {semester}
-              </div>
+              </span>
             </div>
           </div>
         </section>
@@ -1771,17 +1770,17 @@ function Home() {
 
         {/* Teacher */}
         <section id="teacher" className="mx-auto grid max-w-7xl gap-10 px-5 py-16 lg:grid-cols-[.8fr_1.2fr] lg:items-center lg:px-8 lg:py-24">
-<div className="relative mx-auto w-full max-w-lg">
-            {/* الصورة شفافة (PNG) فلا إطار ولا تدرّج: تظهر كما هي.
-                الإطار السابق كان ضرورياً لصورة JPEG بخلفية، ويرتجف الآن. */}
-            <img
-              src="/teacher-ahmed.png"
-              alt={tName}
-              width={1452}
-              height={1083}
-              className="relative mx-auto block w-full select-none object-contain drop-shadow-[0_18px_38px_rgba(23,65,63,.18)]"
-data-testid="img-teacher-public"
-            />
+<div className="relative mx-auto w-full max-w-sm">
+            <div className="absolute -inset-4 rotate-3 rounded-[2rem] bg-accent/25" />
+            <div className="relative aspect-[4/5] overflow-hidden rounded-[2rem] bg-primary text-primary-foreground shadow-lg">
+              <img src={tImg} alt={tName} className="h-full w-full object-cover object-[center_18%]" data-testid="img-teacher-public" />
+              <div className="absolute inset-0 bg-gradient-to-t from-primary via-primary/25 to-transparent" />
+              <div className="absolute bottom-7 right-7 left-7">
+                <p className="text-sm text-primary-foreground/70">معلم لغة عربية مدرّس</p>
+                <h2 className="mt-1 font-display text-3xl font-bold">{tName}</h2>
+              </div>
+              <div className="absolute left-7 top-7 h-3 w-3 rounded-full bg-accent shadow-[0_0_0_6px_hsl(var(--accent)/.18)]" />
+            </div>
           </div>
           <div>
             <p className="text-sm font-bold text-accent-foreground">تعلم إنساني</p>
