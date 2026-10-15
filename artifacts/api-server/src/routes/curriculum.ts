@@ -115,11 +115,14 @@ export async function getSchoolsOfGrade(gradeName: string): Promise<string[]> {
 }
 
 /**
- * هل هذا العنصر ظاهر لهذا الطالب؟
- * - القسم "الجميع" ظاهر دائماً.
- * - القسم المحدد (طلاب/طالبات) يُطبَّق فقط إن كان الصف المعني مقسّماً، وإلا يراه الجميع.
- * - الصف المعني: صف العنصر نفسه، أو صف الطالب إن كان العنصر عاماً (grade = الجميع).
- * - المدرسة: إن كان العنصر موجهاً لمدرسة بعينها فلا يراه إلا طلابها.
+ * هل هذا العنصر ظاهر لهذا الطالب؟ — تطابق صارم: صف ثم مدرسة ثم قسم.
+ *
+ * القاعدة الحرفية التي طلبها الأستاذ:
+ *  • العنصر لصف معيّن (غير "الجميع") يظهر لطلاب ذلك الصف فقط.
+ *    → لا يظهر لصف آخر في نفس المدرسة إطلاقاً.
+ *  • العنصر عام (grade = "الجميع" أو فارغ) يظهر لكل الصفوف، بشرط تطابق المدرسة.
+ *  • المدرسة: إن كان العنصر موجهاً لمدرسة بعينها فلا يراه إلا طلابها.
+ *  • القسم (طلاب/طالبات): يُطبَّق فقط إن كان الصف المعني مقسّماً، وإلا يراه الجميع.
  */
 export function itemVisible(
   itemGrade: string | undefined,
@@ -130,10 +133,23 @@ export function itemVisible(
   itemSchool?: string,
   studentSchool?: string | null,
 ): boolean {
+  // 1) المدرسة أولاً (أرخص فحص وأعمّ أثراً).
   if (!schoolVisible(itemSchool, studentSchool ?? null)) return false;
+
+// 2) الصف: تطابق حرفي مُطبَّع (الهمزات/التاء المربوطة/التشكيل).
+  //    عنصر لصف محدّد لا يظهر لصف آخر في نفس المدرسة.
+  const igRaw = String(itemGrade || "").trim();
+  const ig = foldName(igRaw);
+  const pg = foldName(studentGrade);
+  if (ig && ig !== "الجميع") {
+    // طالب بلا صف محدّد لا يرى عنصراً مربوطاً بصف.
+    if (!pg || pg === "الجميع" || pg !== ig) return false;
+  }
+
+  // 3) القسم: الصف المعني هو صف العنصر، أو صف الطالب إن كان العنصر عاماً.
   const section = itemSection || "الجميع";
   if (section === "الجميع") return true;
-  const relevant = itemGrade && itemGrade !== "الجميع" ? itemGrade : studentGrade;
+  const relevant = ig && ig !== "الجميع" ? igRaw : pg;
   if (splitMap[relevant] !== true) return true;
   if (!studentGender) return true;
   return section === studentGender;
@@ -623,9 +639,21 @@ router.get("/curriculum/assessments", async (req, res) => {
     school: String(a.school || "").trim(),
     }));
     if (student === "1") list = list.filter((a) => a.published && a.isVisible);
-    if (student_id) {
+    // طالب بلا ملف تعريف لا يرى إلا بنود صفه ومدرسته — بلا ملف، لا شيء يُكشف.
+    if (student === "1") {
+      if (!student_id) {
+        res.json([]);
+        return;
+      }
       const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
-      if (profile) list = list.filter((a) => itemVisible(a.grade, a.section, profile!.grade, profile!.gender, splitMap, a.school, profile!.school));
+      if (!profile) {
+        res.json([]);
+        return;
+      }
+      list = list.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school));
+    } else if (student_id) {
+      const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
+      if (profile) list = list.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school));
     }
     res.json(list);
   } catch (err: any) {
@@ -973,9 +1001,18 @@ router.get("/curriculum/announcements", async (req, res) => {
     const { data } = await supabaseQuery<any[]>("announcements?order=published_at.desc&limit=100");
     let list = (data || []).filter((a) => a.published !== false).map(announcementToJson);
     if (grade) list = list.filter((a) => a.grade === "الجميع" || a.grade === grade);
-    if (student_id) {
+    // بلا ملف طالب لا تُكشف إعلانات صف/مدرسة أخرى.
+    if (!student_id) {
+      res.json([]);
+      return;
+    }
+    {
       const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
-      if (profile) list = list.filter((a) => itemVisible(a.grade, a.section, profile!.grade, profile!.gender, splitMap, a.school, profile!.school));
+      if (!profile) {
+        res.json([]);
+        return;
+      }
+      list = list.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school));
     }
     res.json(list);
   } catch (err: any) {

@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { supabaseQuery } from "../lib/supabase";
 import { requireAdmin, type AuthedRequest } from "../middlewares/auth";
 import { logger } from "../lib/logger";
-import { getSplitMap, itemVisible } from "./curriculum";
+import { getSplitMap, itemVisible, foldName } from "./curriculum";
 
 const router: IRouter = Router();
 
@@ -44,8 +44,8 @@ function levelOf(pct: number | null): string {
 }
 
 /** هل هذا البند موجّه لهذا الطالب؟ (صف/مدرسة/جنس — نفس منطق الظهور للطالب)
- *  تنبيه: itemVisible تقارن المدرسة والقسم فقط — الصف يُقارَن هنا صراحة،
- *  وإلا حُسب طالب التاسع على واجبات العاشر (وهو الخطأ الذي كان). */
+ *  itemVisible يتحقق من الصف والمدرسة والقسم معاً؛ الفحص الصريح هنا طبقة
+ *  إضافية تحرس كشف العلامات (وإلا حُسب طالب التاسع على واجبات العاشر). */
 function appliesTo(
   item: { grade?: string; section?: string; school?: string; published?: boolean; is_visible?: boolean },
   profile: { grade: string; gender: string | null; school: string },
@@ -53,10 +53,12 @@ function appliesTo(
 ): boolean {
   if (item.published === false) return false;
   if (item.is_visible === false) return false;
-  const ig = String(item.grade || "").trim();
-  const pg = String(profile.grade || "").trim();
+  const ig = foldName(item.grade);
+  const pg = foldName(profile.grade);
   // صف محدد + صف طالب محدد ومختلف = ليس له. الفارغ أو "الجميع" = للكل.
-  if (ig && pg && ig !== "الجميع" && pg !== "الجميع" && ig !== pg) return false;
+  if (ig && ig !== "الجميع") {
+    if (!pg || pg === "الجميع" || pg !== ig) return false;
+  }
   return itemVisible(item.grade, item.section, profile.grade, profile.gender, splitMap, item.school, profile.school);
 }
 

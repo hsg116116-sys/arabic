@@ -92,9 +92,18 @@ router.get("/curriculum/summaries", async (req, res) => {
     const { data, error } = await supabaseQuery<any[]>(endpoint);
     if (error) throw new Error(String(error));
     let list = (data || []).filter((s) => s.published !== false).map(summaryToJson);
-    if (student_id) {
+    // بلا طالب محدّد لا نكشف بنود صف/مدرسة أخرى — القائمة تُفرَّغ.
+    if (!student_id) {
+      res.json([]);
+      return;
+    }
+    {
       const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
-      if (profile) list = list.filter((s) => itemVisible(s.grade, s.section, profile!.grade, profile!.gender, splitMap, s.school, profile!.school));
+      if (!profile) {
+        res.json([]);
+        return;
+      }
+      list = list.filter((s) => itemVisible(s.grade, s.section, profile.grade, profile.gender, splitMap, s.school, profile.school));
     }
     res.json(list);
   } catch (err: any) {
@@ -260,7 +269,12 @@ router.get("/curriculum/notebooks", async (req, res) => {
     }
     const lessonTitles = await lessonTitlesFor((data || []).map((t) => t.lesson_id));
     let list = (data || []).filter((t) => t.published !== false).map((t) => taskToJson(t, subs[t.id], lessonTitles));
-    if (profile) list = list.filter((t) => itemVisible(t.grade, t.section, profile!.grade, profile!.gender, splitMap, t.school, profile!.school));
+    // بلا ملف طالب لا نكشف دفاتر صف/مدرسة أخرى — القائمة تُفرَّغ.
+    if (!profile) {
+      res.json([]);
+      return;
+    }
+    list = list.filter((t) => itemVisible(t.grade, t.section, profile!.grade, profile!.gender, splitMap, t.school, profile!.school));
     res.json(list);
   } catch (err: any) {
     logger.error({ err }, "GET /curriculum/notebooks failed");

@@ -569,16 +569,19 @@ router.get("/assignments", async (req, res) => {
       };
     });
 
-    // فلترة الأقسام للواجبات — التقسيم لكل صف لحاله (صف الطالب النشط)
-    if (activeStudent) {
+    // فلترة الأقسام للواجبات — تطابق صارم بالصف ثم المدرسة.
+    // بلا طالب نشط لا نكشف شيئاً: القائمة تُفرَّغ بدل تسريب بنود صف/مدرسة أخرى.
+    {
       const { getStudentProfile, getSplitMap, itemVisible } = await import("./curriculum");
       const [profile, splitMap] = await Promise.all([
-        getStudentProfile(activeStudent.id),
+        activeStudent ? getStudentProfile(activeStudent.id) : Promise.resolve(null),
         getSplitMap(),
       ]);
-      if (profile) {
-        parsed = parsed.filter((a) => itemVisible(a.grade, a.section, profile!.grade, profile!.gender, splitMap, a.school, profile!.school));
+      if (!profile) {
+        res.json(ListAssignmentsResponse.parse([]));
+        return;
       }
+      parsed = parsed.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school));
     }
 
     res.json(ListAssignmentsResponse.parse(parsed));
@@ -723,19 +726,21 @@ router.get("/assessments", async (req, res) => {
     });
 
     // قائمة الطالب = اختبارات صفه ومدرسته فقط — لا اختبارات الصفوف الأخرى.
-    // (بلا ملف طالب، كالأدمن، تُعرض الكل كما كانت)
+    // بلا ملف طالب نشط لا نكشف شيئاً: القائمة تُفرَّغ بدل عرض بنود صف/مدرسة أخرى.
     let visible = parsed;
-    if (activeStudent) {
+    {
       const { getStudentProfile, getSplitMap, itemVisible } = await import("./curriculum");
       const [profile, splitMap] = await Promise.all([
-        getStudentProfile(activeStudent.id),
+        activeStudent ? getStudentProfile(activeStudent.id) : Promise.resolve(null),
         getSplitMap(),
       ]);
-      if (profile) {
-        visible = parsed.filter((a) =>
-          itemVisible(a.grade, a.section, profile!.grade, profile!.gender, splitMap, a.school, profile!.school),
-        );
+      if (!profile) {
+        res.json(ListAssessmentsResponse.parse([]));
+        return;
       }
+      visible = parsed.filter((a) =>
+        itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school),
+      );
     }
 
     res.json(ListAssessmentsResponse.parse(visible));
