@@ -67,6 +67,7 @@ LayoutDashboard,
   Medal,
   Menu,
   MessagesSquare,
+  MinusCircle,
   MoreHorizontal,
   NotebookPen,
   NotebookText,
@@ -3213,19 +3214,8 @@ function AssignmentsPage() {
   }, [assignmentId, query.data]);
   const [needLogin, setNeedLogin] = useState(false);
 
-  // حالة الموعد: متأخر / اليوم / متبقٍ
-  const dueInfo = (due: string) => {
-    if (!due) return null;
-    const t = new Date(); t.setHours(0, 0, 0, 0);
-    const d = new Date(`${due}T00:00:00`);
-    if (Number.isNaN(d.getTime())) return null;
-    const diff = Math.round((d.getTime() - t.getTime()) / 86400000);
-    if (diff < 0) return { label: 'انتهى الموعد', cls: 'bg-destructive/10 text-destructive' };
-    if (diff === 0) return { label: 'التسليم اليوم!', cls: 'bg-destructive/10 text-destructive' };
-    if (diff === 1) return { label: 'متبقٍ يوم واحد', cls: 'bg-amber-500/15 text-amber-800' };
-    if (diff === 2) return { label: 'متبقٍ يومان', cls: 'bg-amber-500/15 text-amber-800' };
-    return { label: `متبقٍ ${diff} أيام`, cls: 'bg-secondary text-muted-foreground' };
-  };
+  // حالة الموعد — تستعمل نفس منطق deadlineInfo المحوري (المهلة تُغلق آخر لحظة من اليوم)
+  const dueInfo = (due: string) => deadlineInfo(due);
 
   const openAssignment = (a: any) => {
     setSelectedAssignment(a);
@@ -3279,6 +3269,12 @@ function AssignmentsPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!selectedAssignment || submitting) return;
+    // تحقّق فوري: لا نضيّع وقت الطالب إن كانت المهلة قد انتهت
+    if (deadlineInfo(selectedAssignment.dueDate)?.passed) {
+      setSubmitOk(false);
+      setSubmitFeedback('انتهت مهلة التسليم — الواجب مغلق ولا يقبل حلاً جديداً');
+      return;
+    }
     if (!studentAnswer.trim() && !answerPhotos.length) {
       setSubmitOk(false);
       setSubmitFeedback('اكتب حلك أو أرفق صورة واحدة على الأقل');
@@ -3301,6 +3297,7 @@ function AssignmentsPage() {
         return;
       }
       if (res.status === 404) throw new Error('الواجب غير موجود - قد يكون المعلم حذف API أو غيّر الرابط');
+      if (res.status === 403) throw new Error(resData.error || 'انتهت المهلة — التسليم مغلق');
       if (!res.ok) throw new Error(resData.error || resData.message || 'تعذر إرسال الواجب');
       setSubmitOk(true);
       setSubmitFeedback(resData.message || 'تم إرسال حلك بنجاح!');
@@ -3364,7 +3361,7 @@ function AssignmentsPage() {
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
                   <Clock3 size={15} /> {a.dueDate}
                 </p>
-                {due ? <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-extrabold ${due.cls}`}>{due.label}</span> : null}
+                {due ? <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-extrabold ${due.tone}`}>{due.passed ? <Lock size={11} /> : <Clock3 size={11} />} {due.label}</span> : null}
               </div>
               <div className="flex flex-col items-start gap-1.5">
                 <span className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${a.status.includes('تم') ? 'bg-green-100 text-green-800' : 'bg-accent/30 text-accent-foreground'}`}>
@@ -3390,8 +3387,16 @@ function AssignmentsPage() {
             // قيّمك الأستاذ؟ علامة موجودة أو حالة تقييم صريحة — عندها يُفتح التعديل ويُعرض التقييم
             const reviewed = !!(mySub && (mySub.score != null || mySub.status === 'تم التقييم'));
             const lockedForReview = !!(mySub && !reviewed);
+            // المهلة انتهت؟ يغلق التسليم نهائياً ونُخبر الطالب بوضوح
+            const dl = deadlineInfo(selectedAssignment.dueDate);
+            const deadlinePassed = !!dl?.passed;
             return (
           <form onSubmit={handleSubmit} className="space-y-4">
+            {dl && (
+              <p className={`flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm font-extrabold ${dl.tone}`} data-testid="hw-deadline-banner">
+                <Clock3 size={16} /> {dl.label}
+              </p>
+            )}
             <div className="rounded-2xl bg-secondary/40 p-4 text-xs leading-6 text-muted-foreground">
               <p className="font-bold text-primary mb-1">تعليمات الواجب:</p>
               <p>{selectedAssignment.description}</p>
@@ -3476,8 +3481,8 @@ function AssignmentsPage() {
               <Button onClick={() => setSelectedAssignment(null)} variant="ghost">
                 إلغاء
               </Button>
-              <Button type="submit" disabled={submitting || lockedForReview} variant="primary" className="py-2.5 px-6">
-                {submitting ? 'جارٍ الإرسال...' : lockedForReview ? (<><Lock size={15} /> قيد المراجعة — بانتظار الأستاذ</>) : mySub ? 'إعادة الإرسال بعد التعديل' : 'إرسال للأستاذ أحمد الأسطل'} <ArrowLeft size={16} />
+              <Button type="submit" disabled={submitting || lockedForReview || deadlinePassed} variant="primary" className="py-2.5 px-6">
+                {submitting ? 'جارٍ الإرسال...' : deadlinePassed ? (<><Lock size={15} /> انتهت المهلة — مغلق</>) : lockedForReview ? (<><Lock size={15} /> قيد المراجعة — بانتظار الأستاذ</>) : mySub ? 'إعادة الإرسال بعد التعديل' : 'إرسال للأستاذ أحمد الأسطل'} <ArrowLeft size={16} />
               </Button>
             </div>
           </form>
@@ -3883,8 +3888,13 @@ function AssessmentsPage() {
                   </div>
                 ))}
               </div>
-              <Button onClick={() => setActiveQuiz(assessment)} variant="primary" className="mt-5 w-full py-3.5 shadow-md" data-testid={`button-assessment-${assessment.id}`}>
-                {done ? 'إعادة الاختبار وتحسين النتيجة' : 'ابدأ الاختبار التفاعلي الآن'} <ArrowLeft size={16} />
+              {(() => { const d = deadlineInfo(assessment.date); return d ? (
+                <p className={`mt-3 flex items-center gap-2 rounded-2xl border px-3.5 py-2.5 text-xs font-extrabold ${d.tone}`} data-testid={`exam-deadline-${assessment.id}`}>
+                  {d.passed ? <Lock size={14} /> : <Clock3 size={14} />} {d.label}
+                </p>
+              ) : null; })()}
+              <Button onClick={() => setActiveQuiz(assessment)} disabled={!!deadlineInfo(assessment.date)?.passed} variant="primary" className="mt-5 w-full py-3.5 shadow-md disabled:opacity-60" data-testid={`button-assessment-${assessment.id}`}>
+                {deadlineInfo(assessment.date)?.passed ? (<><Lock size={16} /> انتهت المهلة — مغلق</>) : done ? 'إعادة الاختبار وتحسين النتيجة' : 'ابدأ الاختبار التفاعلي الآن'} <ArrowLeft size={16} />
               </Button>
             </div>
             );
@@ -8553,6 +8563,17 @@ function CurriculumManagerPage({ onlyTab, hero }: {
       setExamDetailQuestions(Array.isArray(data) ? data : []);
     } catch { setExamDetailQuestions([]); }
   };
+
+  // ══ مراجعة الاختبار: من اجتاز ومن لم يجرّب (نفسه الواجب والدفتر) ══
+  const [examReview, setExamReview] = useState<any | null>(null);
+  const [examAttempts, setExamAttempts] = useState<any[]>([]);
+  const openExamReview = async (exam: any) => {
+    setExamReview(exam);
+    try {
+      const data = await jsonFetch(`/api/teacher/curriculum/assessments/${exam.id}/attempts`);
+      setExamAttempts(Array.isArray(data) ? data : []);
+    } catch { setExamAttempts([]); }
+  };
   const addQuestionToExam = async (e: FormEvent) => {
     e.preventDefault();
     if (!examDetail || !newQ.question.trim() || newQ.options.filter((o) => o.trim()).length < 2) { flash('أكمل السؤال وخيارين على الأقل'); return; }
@@ -8854,6 +8875,9 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                   <div className="mt-4 flex items-center gap-2 border-t border-border/60 pt-4">
                     <span className="flex items-center gap-1.5 rounded-xl bg-secondary px-3 py-2 text-xs font-extrabold text-primary"><HelpCircle size={14} /> {exam.questions} أسئلة</span>
                     <span className="mr-auto flex items-center gap-1.5">
+                      <Button onClick={() => openExamReview(exam)} variant="primary" className="px-3 py-2 text-xs shadow-sm" title="من اجتاز ومن لم يجرّب" data-testid={`button-exam-review-${exam.id}`}>
+                        <UsersRound size={14} /> من اجتاز
+                      </Button>
                       <Button onClick={() => openExamDetail(exam)} variant="primary" className="px-4 py-2 text-xs shadow-sm">عرض التفاصيل <ArrowLeft size={14} /></Button>
                       <CopyLinkButton path={`/student/assessments/${exam.id}`} testId={`button-copy-exam-${exam.id}`} title="نسخ رابط الاختبار للطلاب" className="rounded-xl bg-secondary px-3 py-2 text-xs font-bold text-primary hover:bg-accent/40" />
                       <Button onClick={() => deleteExam(exam)} variant="ghost" className="px-2 text-destructive" title="حذف الاختبار"><Trash2 size={16} /></Button>
@@ -9550,6 +9574,16 @@ function CurriculumManagerPage({ onlyTab, hero }: {
             </div>
           </form>
         </Modal>
+      )}
+
+      {/* ---------- مراجعة الاختبار: من اجتاز + من لم يجرّب + خصم جماعي ---------- */}
+      {examReview && (
+        <ExamReviewModal
+          exam={examReview}
+          attempts={examAttempts}
+          onClose={() => setExamReview(null)}
+          onReload={() => examReview && openExamReview(examReview)}
+        />
       )}
 
       {/* ---------- إدارة أسئلة اختبار موجود ---------- */}
@@ -10372,6 +10406,12 @@ function StudentNotebookPage() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!active || !photos.length || !student?.id) return;
+    // تحقّق فوري قبل أي رفع: لا نضيّع وقت الطالب إن كانت المهلة قد انتهت
+    if (deadlineInfo(active.dueDate)?.passed) {
+      setMsgOk(false);
+      setMsg('انتهت مهلة تسليم الدفتر — التسليم مغلق');
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await jsonFetch(`/api/notebooks/${active.id}/submit`, {
@@ -10440,6 +10480,7 @@ function StudentNotebookPage() {
                 {task.lessonTitle ? <span className="inline-flex items-center gap-1 rounded-lg bg-[#6a1b9a]/10 px-2.5 py-1 text-[#6a1b9a]"><BookCopy size={12} /> {task.lessonTitle}</span> : null}
                 {task.requirements?.length ? <span className="rounded-lg bg-accent/20 px-2.5 py-1 text-accent-foreground">🎯 {task.requirements.length} بنود</span> : null}
                 {task.dueDate ? <span className="flex items-center gap-1 rounded-lg bg-secondary px-2.5 py-1"><Clock3 size={12} /> حتى {task.dueDate}</span> : null}
+                {(() => { const d = deadlineInfo(task.dueDate); return d ? <span className={`flex items-center gap-1 rounded-lg border px-2.5 py-1 ${d.tone}`}>{d.passed ? <Lock size={12} /> : <Clock3 size={12} />} {d.label}</span> : null; })()}
                 <span className="rounded-lg bg-secondary px-2.5 py-1">{task.points} نقاط</span>
               </div>
               <Button onClick={() => openTask(task)} variant={task.myStatus ? 'soft' : 'primary'} className="mt-5 w-full py-3">
@@ -10536,12 +10577,12 @@ function StudentNotebookPage() {
                 <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثال: أكملت حتى درس الحال" className={inputCls} />
               </Field2>
               {msg ? <p className={`rounded-xl px-4 py-2.5 text-center text-sm font-bold ${msgOk ? 'bg-accent/20 text-accent-foreground' : 'bg-destructive/10 text-destructive'}`}>{msg}</p> : null}
-              {msg ? <p className={`rounded-xl px-4 py-2.5 text-center text-sm font-bold ${msgOk ? 'bg-accent/20 text-accent-foreground' : 'bg-destructive/10 text-destructive'}`}>{msg}</p> : null}
+              {(() => { const d = deadlineInfo(active?.dueDate); return d?.passed ? <p className="flex items-center justify-center gap-2 rounded-xl border border-destructive/25 bg-destructive/10 px-4 py-2.5 text-center text-sm font-extrabold text-destructive"><Lock size={15} /> {d.label} — التسليم مغلق</p> : null; })()}
               {needLogin ? <LoginGate compact title="انتهت جلستك أثناء التجهيز" /> : null}
               <div className="flex items-center justify-end gap-3">
                 <Button onClick={() => setActive(null)} variant="ghost">إغلاق</Button>
-                <Button type="submit" disabled={submitting || !photos.length} variant="primary" className="px-6 py-2.5" data-testid="button-submit-notebook">
-                  {submitting ? 'جارٍ التسليم...' : 'تسليم الدفتر للأستاذ'} <ArrowLeft size={16} />
+                <Button type="submit" disabled={submitting || !photos.length || !!deadlineInfo(active?.dueDate)?.passed} variant="primary" className="px-6 py-2.5" data-testid="button-submit-notebook">
+                  {submitting ? 'جارٍ التسليم...' : deadlineInfo(active?.dueDate)?.passed ? (<><Lock size={15} /> انتهت المهلة — مغلق</>) : 'تسليم الدفتر للأستاذ'} <ArrowLeft size={16} />
                 </Button>
               </div>
             </form>
@@ -10549,6 +10590,105 @@ function StudentNotebookPage() {
         </Modal>
       )}
     </Shell>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   حالة المهلة — نفس منطق السيرفر: ننتهي في آخر لحظة من يوم الموعد.
+   ═══════════════════════════════════════════════════════════════════════ */
+function deadlineInfo(due: string | undefined | null): { passed: boolean; label: string; tone: string; daysLeft: number } | null {
+  const raw = String(due || '').trim();
+  if (!raw) return null;
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const end = new Date(`${m[1]}-${m[2]}-${m[3]}T23:59:59.999`);
+  if (Number.isNaN(end.getTime())) return null;
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const daysLeft = Math.ceil((end.getTime() - startOfToday.getTime()) / 86400000);
+  if (now.getTime() > end.getTime()) {
+    return { passed: true, daysLeft, label: 'انتهت المهلة — التسليم مغلق', tone: 'bg-destructive/12 text-destructive border-destructive/25' };
+  }
+  if (daysLeft === 0) return { passed: false, daysLeft, label: 'التسليم اليوم — آخر يوم!', tone: 'bg-destructive/10 text-destructive border-destructive/20' };
+  if (daysLeft === 1) return { passed: false, daysLeft, label: 'باقٍ يوم واحد', tone: 'bg-amber-500/15 text-amber-800 border-amber-500/25' };
+  if (daysLeft <= 3) return { passed: false, daysLeft, label: `باقٍ ${daysLeft} أيام`, tone: 'bg-amber-500/12 text-amber-800 border-amber-500/20' };
+  return { passed: false, daysLeft, label: `باقٍ ${daysLeft} يوماً`, tone: 'bg-secondary text-muted-foreground border-border' };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   الخصم الجماعي — خصم نقاط أو نسبة من كل طلاب بند واحد دفعة واحدة.
+   يعمل للواجبات والدفاتر والاختبارات معاً (نفس الـ endpoint).
+   ═══════════════════════════════════════════════════════════════════════ */
+function BulkDeductBar({ kind, itemId, gradedCount, onDone }: {
+  kind: 'assignments' | 'notebooks' | 'assessments';
+  itemId: string;
+  gradedCount: number;
+  onDone?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<'points' | 'percent'>('points');
+  const [amount, setAmount] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const run = async () => {
+    const n = Number(amount);
+    if (!Number.isFinite(n) || n <= 0) { setMsg('اكتب رقماً أكبر من صفر'); return; }
+    setBusy(true); setMsg('');
+    try {
+      const body: any = mode === 'percent'
+        ? { percent: Math.min(100, n), floorAtZero: true }
+        : { points: n, floorAtZero: true };
+      const r = await jsonFetch(`/api/teacher/curriculum/${kind}/${itemId}/deduct`, { method: 'POST', body });
+      setMsg(r?.message || 'تم الخصم');
+      setAmount('');
+      onDone?.();
+      window.setTimeout(() => setMsg(''), 3500);
+    } catch (e: any) {
+      setMsg(e?.message || 'تعذر تنفيذ الخصم');
+    } finally { setBusy(false); }
+  };
+
+  if (!itemId) return null;
+
+  return (
+    <div className="mb-4 overflow-hidden rounded-2xl border border-border bg-card" data-testid="bulk-deduct-bar">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-3 px-4 py-3 text-sm font-extrabold text-primary transition-colors hover:bg-secondary/40"
+      >
+        <span className="grid h-9 w-9 place-items-center rounded-xl bg-destructive/12 text-destructive"><MinusCircle size={17} /></span>
+        <span className="flex-1 text-right">خصم جماعي على الجميع</span>
+        <span className="rounded-full bg-secondary px-2.5 py-0.5 text-[11px] font-bold text-muted-foreground">{gradedCount} مُقيَّم</span>
+        <ChevronLeft size={16} className={`text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`} />
+      </button>
+      {open && (
+        <div className="animate-rise border-t border-border bg-background/60 p-4">
+          <div className="mb-3 flex gap-2 rounded-xl bg-muted/50 p-1">
+            <button type="button" onClick={() => setMode('points')} className={`flex-1 rounded-lg py-2 text-xs font-extrabold transition-colors ${mode === 'points' ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`}>خصم نقاط</button>
+            <button type="button" onClick={() => setMode('percent')} className={`flex-1 rounded-lg py-2 text-xs font-extrabold transition-colors ${mode === 'percent' ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`}>خصم نسبة %</button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <input
+              type="number" min={1} max={mode === 'percent' ? 100 : undefined}
+              value={amount} onChange={(e) => setAmount(e.target.value)}
+              placeholder={mode === 'percent' ? 'مثال: 10' : 'مثال: 3'}
+              className="h-12 w-28 rounded-xl border border-input bg-card px-3 text-center font-display text-base font-extrabold tabular-nums outline-none focus:border-primary"
+              data-testid="input-deduct-amount"
+            />
+            <span className="text-xs font-bold text-muted-foreground">
+              {mode === 'percent' ? 'نسبة تُخصم من كل علامة' : 'نقطة تُخصم من كل علامة'}
+            </span>
+            <Button onClick={run} disabled={busy || !amount} variant="primary" className="mr-auto px-5 py-2.5 text-xs" data-testid="button-run-deduct">
+              {busy ? <><RefreshCw size={14} className="animate-spin" /> جارٍ الخصم...</> : <><MinusCircle size={14} /> نفّذ الخصم</>}
+            </Button>
+          </div>
+          <p className="mt-2.5 text-[11px] font-bold text-muted-foreground">لا تجعل العلامة سالبة — تتوقف عند الصفر.</p>
+          {msg && <p className="mt-2 rounded-lg bg-accent/15 px-3 py-2 text-xs font-extrabold text-accent-foreground">{msg}</p>}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -10603,6 +10743,13 @@ function HwReviewModal({ hw, subs, grading, setGrading, saveGrade, onClose, onRe
           <span className="text-xs font-extrabold text-destructive">لم يحلوا<br />بعد</span>
         </div>
       </div>
+
+      <BulkDeductBar
+        kind="assignments"
+        itemId={hw?.id || ''}
+        gradedCount={subs.length}
+        onDone={onReload}
+      />
 
       <div className="mb-4 flex gap-2 rounded-2xl border border-border bg-card p-1.5" data-testid="hw-review-tabs">
         <button
@@ -10729,6 +10876,129 @@ function useGradeRoster(grade?: string, school?: string) {
     return () => { live = false; };
   }, [grade, school]);
   return { students, loading };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   نافذة مراجعة الاختبار: من اجتاز (مع علامته ومحاولاته) + من لم يجرّب.
+   تسجيل يدوي لعلامة من لم يجرّب، وخصم جماعي على المجتازين.
+   ═══════════════════════════════════════════════════════════════════════ */
+function ExamReviewModal({ exam, attempts, onClose, onReload }: {
+  exam: any;
+  attempts: any[];
+  onClose: () => void;
+  onReload?: () => void;
+}) {
+  const [rosterTab, setRosterTab] = useState<'done' | 'missing'>('done');
+  const [recordingId, setRecordingId] = useState('');
+  const [search, setSearch] = useState('');
+
+  const { students: roster, loading: rosterLoading } = useGradeRoster(exam?.grade, exam?.school);
+  const attemptedIds = useMemo(() => new Set(attempts.map((a) => a.userId || a.student?.id).filter(Boolean)), [attempts]);
+  const missing = useMemo(() => {
+    const needle = String(search || '').trim();
+    return roster.filter((s) => !attemptedIds.has(s.id) && (!needle || (s.name || '').includes(needle)));
+  }, [roster, attemptedIds, search]);
+
+  const recordManual = async (userId: string, score: string) => {
+    if (!exam?.id || !userId || recordingId) return;
+    setRecordingId(userId);
+    try {
+      await jsonFetch(`/api/teacher/curriculum/assessments/${exam.id}/record`, {
+        method: 'POST',
+        body: { userId, score: score === '' ? null : Number(score) },
+      });
+      onReload?.();
+    } finally { setRecordingId(''); }
+  };
+
+  const dl = deadlineInfo(exam?.date);
+
+  return (
+    <Modal title={exam?.title || 'مراجعة الاختبار'} eyebrow={`اجتاز ${attempts.length} · لم يجرّب ${missing.length}`} onClose={onClose} maxWidth="max-w-4xl">
+      <div className="mb-4 grid grid-cols-2 gap-2.5">
+        <div className="flex items-center gap-3 rounded-2xl bg-green-600/10 px-4 py-3">
+          <span className="font-display text-2xl font-extrabold tabular-nums text-green-800">{attempts.length}</span>
+          <span className="text-xs font-extrabold text-green-800">اجتازوا<br />الاختبار</span>
+        </div>
+        <div className="flex items-center gap-3 rounded-2xl bg-destructive/10 px-4 py-3">
+          <span className="font-display text-2xl font-extrabold tabular-nums text-destructive">{missing.length}</span>
+          <span className="text-xs font-extrabold text-destructive">لم يجرّبو<br />بعد</span>
+        </div>
+      </div>
+
+      {dl && (
+        <p className={`mb-4 flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-xs font-extrabold ${dl.tone}`}>
+          <Clock3 size={14} /> {dl.label} — {exam?.date || ''}
+        </p>
+      )}
+
+      <BulkDeductBar kind="assessments" itemId={exam?.id || ''} gradedCount={attempts.length} onDone={onReload} />
+
+      <div className="mb-4 flex gap-2 rounded-2xl border border-border bg-card p-1.5" data-testid="exam-review-tabs">
+        <button
+          type="button" onClick={() => setRosterTab('done')} data-testid="button-exam-tab-done"
+          className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-extrabold transition-colors ${rosterTab === 'done' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-primary'}`}
+        >
+          اجتازوا ({attempts.length})
+        </button>
+        <button
+          type="button" onClick={() => setRosterTab('missing')} data-testid="button-exam-tab-missing"
+          className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-extrabold transition-colors ${rosterTab === 'missing' ? 'bg-destructive text-white shadow-sm' : 'text-muted-foreground hover:text-primary'}`}
+        >
+          لم يجرّبو ({missing.length})
+        </button>
+      </div>
+
+      {rosterTab === 'missing' ? (
+        rosterLoading ? <StateNotice type="loading" /> : !missing.length ? (
+          <div className="rounded-3xl border border-green-500/30 bg-green-500/8 px-6 py-12 text-center">
+            <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-green-600/15 text-green-800"><CheckCircle2 size={30} /></span>
+            <p className="font-display text-xl font-bold text-green-800">الكل اجتاز — لا متأخرين</p>
+            <p className="mt-2 text-sm text-muted-foreground">كل طلاب هذا الصف والمدرسة اجتازوا الاختبار.</p>
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            <div className="relative">
+              <Search size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={search} onChange={(e) => setSearch(e.target.value)}
+                placeholder="ابحث باسم الطالب..."
+                className="w-full rounded-xl border border-input bg-card py-2.5 pl-3 pr-9 text-sm outline-none placeholder:text-muted-foreground/60 focus:border-primary"
+              />
+            </div>
+            <p className="rounded-2xl bg-destructive/8 px-4 py-3 text-sm font-extrabold text-destructive">
+              {missing.length} طالب لم يجرّب — ضع العلامة لمن يستحق فيُسجَّل نتيجته فوراً
+            </p>
+            {missing.map((st) => (
+              <MissingStudentRow
+                key={st.id} student={st} points={100}
+                onRecord={recordManual} saving={recordingId === st.id}
+              />
+            ))}
+          </div>
+        )
+      ) : !attempts.length ? (
+        <p className="rounded-3xl border border-border bg-muted/40 px-6 py-12 text-center text-sm font-bold text-muted-foreground">
+          لا محاولات بعد — ستظهر نتائج الطلاب هنا فور اجتيازهم.
+        </p>
+      ) : (
+        <div className="space-y-2.5">
+          {attempts.map((a) => (
+            <div key={a.userId || a.student?.id} className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-background p-4">
+              <Avatar name={a.student?.name} src={a.student?.avatarUrl} size="sm" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold text-primary">{a.student?.name || 'طالب'}</p>
+                <p className="text-xs text-muted-foreground">{[a.student?.grade, a.student?.school].filter(Boolean).join(' · ')}{a.completedAt ? ` · ${String(a.completedAt).slice(0, 10)}` : ''}</p>
+              </div>
+              <span className="rounded-xl bg-[#0d47a1]/10 px-3 py-1.5 font-display text-sm font-extrabold tabular-nums text-[#0d47a1]">{a.score ?? 0}%</span>
+              {a.attempts > 1 && <span className="rounded-full bg-secondary px-2.5 py-1 text-[10px] font-extrabold text-muted-foreground">{a.attempts} محاولات</span>}
+              <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${a.status === 'مكتمل' ? 'bg-green-500/15 text-green-800' : 'bg-accent/25 text-accent-foreground'}`}>{a.status}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
+  );
 }
 
 /* صف طالب لم يسلّم + تسجيل سريع لعلامته (ينشئ التسليم ويقيّمه دفعة واحدة) */
@@ -10882,6 +11152,13 @@ function NotebookReviewModal({ task, submissions, grading, setGrading, saveGrade
         </span>
         <span className="text-xs font-extrabold tabular-nums text-muted-foreground">{reviewPct}%</span>
       </div>
+
+      <BulkDeductBar
+        kind="notebooks"
+        itemId={task?.id || ''}
+        gradedCount={submissions.length}
+        onDone={onReload}
+      />
 
       {/* تبويبا القائمتين */}
       <div className="mb-4 flex gap-2 rounded-2xl border border-border bg-card p-1.5" data-testid="review-tabs">

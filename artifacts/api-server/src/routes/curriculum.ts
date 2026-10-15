@@ -115,6 +115,25 @@ export async function getSchoolsOfGrade(gradeName: string): Promise<string[]> {
 }
 
 /**
+ * حالة المهلة — هل انتهى موعد التسليم؟
+ * due_date عمود DATE بلا وقت، فننتهي في نهاية يوم الموعد نفسه (23:59:59).
+ * بلا موعد = مفتوح بلا حد.
+ */
+export function deadlineState(dueDate: unknown): { passed: boolean; endOfDay: string; daysLeft: number } {
+  const raw = String(dueDate || "").trim();
+  if (!raw) return { passed: false, endOfDay: "", daysLeft: Infinity };
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return { passed: false, endOfDay: "", daysLeft: Infinity };
+  const end = new Date(`${m[1]}-${m[2]}-${m[3]}T23:59:59.999`);
+  if (Number.isNaN(end.getTime())) return { passed: false, endOfDay: "", daysLeft: Infinity };
+  const now = new Date();
+  // شريط "اليوم" يبدأ بمنتصف ليل اليوم لتفادي انحراف المناطق الزمنية
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const daysLeft = Math.ceil((end.getTime() - startOfToday.getTime()) / 86400000);
+  return { passed: now.getTime() > end.getTime(), endOfDay: end.toISOString(), daysLeft };
+}
+
+/**
  * هل هذا العنصر ظاهر لهذا الطالب؟ — تطابق صارم: صف ثم مدرسة ثم قسم.
  *
  * القاعدة الحرفية التي طلبها الأستاذ:
@@ -1239,6 +1258,169 @@ router.patch("/teacher/curriculum/assignment-submissions/:id", requireAdmin, asy
   } catch (err: any) {
     logger.error({ err }, "PATCH hw submission failed");
     res.status(500).json({ error: "تعذر حفظ التقييم" });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   الخصم الجماعي — خصم نقاط من كل طلاب بند واحد دفعة واحدة.
+   يطبَّق على من سلّم فقط (Bulkمن لم يسلّم غير مُقيَّمين أصلاً)،
+   والعلامة لا تصبح سالبة أبداً افتراضياً.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+router.post("/teacher/curriculum/:kind/:id/deduct", requireAdmin, async (req, res) => {
+  try {
+    const kind = String(req.params.kind || "");
+    const id = enc(String(req.params.id));
+    const { points, studentIds, percent, floorAtZero = true } = req.body || {};
+
+    const pts = Number(points);
+    if (!Number.isFinite(pts) || pts === 0) {
+      res.status(400).json({ error: "حدد عدد نقاط الخصم" });
+      return;
+    }
+
+    // جداول التسليم حسب نوع البند
+    const table =
+      kind === "assignments" ? "assignment_submissions"
+      : kind === "notebooks" ? "notebook_submissions"
+      : kind === "assessments" ? "assessment_attempts"
+      : null;
+    if (!table) {
+      res.status(400).json({ error: "نوع البند غير معروف" });
+      return;
+    }
+
+    // اعرف عمود العلامة والصف والمدرسة في هذا الجدول
+    const itemTable =
+      kind === "assignments" ? "assignments"
+      : kind === "notebooks" ? "notebook_tasks"
+      : "assessments";
+    const itemIdCol =
+      kind === "assignments" ? "assignment_id"
+      : kind === "notebooks" ? "task_id"
+      : "assessment_id";
+
+    const { data: itemRows } = await supabaseQuery<any[]>(
+      `${itemTable}?id=eq.${id}&select=id,title,grade,school&limit=1`,
+    );
+    const item = itemRows?.[0];
+    if (!item) {
+      res.status(404).json({ error: "البند غير موجود" });
+      return;
+    }
+
+    // قائمة التسليمات المشمولة
+    const rows: any[] = [];
+    try {
+      const { data } = await supabaseQuery<any[]>(
+        `${table}?${itemIdCol}=eq.${id}&select=*&limit=5000`,
+      );
+      rows.push(...(data || []));
+    } catch {
+      res.status(500).json({ error: "تعذر جلب تسليمات هذا البند" });
+      return;
+    }
+
+    // فلترة اختيارية على طلاب محددين
+    const wanted = Array.isArray(studentIds) && studentIds.length ? new Set(studentIds.map(String)) : null;
+
+    // ── خصم نسبة مئوية ──
+    if (percent !== undefined && percent !== null && percent !== "") {
+      const pct = Math.max(-100, Math.min(100, Number(percent)));
+      if (!Number.isFinite(pct) || pct === 0) {
+        res.status(400).json({ error: "حدد نسبة الخصم" });
+        return;
+      }
+      const updates = rows
+        .filter((r) => (wanted ? wanted.has(String(r.user_id)) : true))
+        .filter((r) => r.score !== null && r.score !== undefined)
+        .map((r) => {
+          const cur = Number(r.score) || 0;
+          const next = floorAtZero === false ? Math.round(cur * (1 - pct / 100)) : Math.max(0, Math.round(cur * (1 - pct / 100)));
+          return { id: r.id, score: next };
+        })
+        .filter((u) => Number.isFinite(u.score));
+      if (!updates.length) {
+        res.json({ success: true, updated: 0, message: "لا توجد علامات بعد للخصم منها" });
+        return;
+      }
+      // Supabase لا يPATCH كل صف بقيمة مختلفة في نداء واحد — نحدّث صفاً صفاً
+      let ok = 0;
+      for (const u of updates) {
+        await supabaseQuery(`${table}?id=eq.${enc(u.id)}`, { method: "PATCH", body: { score: u.score } });
+        ok++;
+      }
+      res.json({ success: true, updated: ok, message: `تم خصم ${pct}% من ${ok} علامة` });
+      return;
+    }
+
+    // ── خصم نقاط ثابتة ──
+    const updates = rows
+      .filter((r) => (wanted ? wanted.has(String(r.user_id)) : true))
+      .map((r) => {
+        const cur = Number(r.score) || 0;
+        const next = floorAtZero ? Math.max(0, cur - Math.abs(pts)) : cur - Math.abs(pts);
+        return { id: r.id, score: next };
+      });
+    if (!updates.length) {
+      res.json({ success: true, updated: 0, message: "لا توجد علامات بعد للخصم منها" });
+      return;
+    }
+    let ok = 0;
+    for (const u of updates) {
+      await supabaseQuery(`${table}?id=eq.${enc(u.id)}`, { method: "PATCH", body: { score: u.score } });
+      ok++;
+    }
+    res.json({ success: true, updated: ok, message: `تم خصم ${Math.abs(pts)} نقطة من ${ok} طالب` });
+  } catch (err: any) {
+    logger.error({ err }, "POST deduct failed");
+    res.status(500).json({ error: "تعذر تنفيذ الخصم الجماعي" });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   تسجيل يدوي لاختبار — من لم يجرّبه: يُنشأ له سجل بنتيجة يضعها الأستاذ.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+router.post("/teacher/curriculum/assessments/:id/record", requireAdmin, async (req, res) => {
+  try {
+    const { userId, score } = req.body || {};
+    if (!userId) {
+      res.status(400).json({ error: "حدد الطالب" });
+      return;
+    }
+    const s = score === null || score === undefined || score === "" ? null : Math.max(0, Math.min(100, Number(score)));
+    if (s !== null && !Number.isFinite(s)) {
+      res.status(400).json({ error: "العلامة يجب أن تكون رقماً بين 0 و100" });
+      return;
+    }
+    const assessmentId = enc(String(req.params.id));
+
+    // لا يُنشأ سجل مكرر: إن وُجد محاولة نحدّثها
+    const { data: prev } = await supabaseQuery<any[]>(
+      `assessment_attempts?assessment_id=eq.${assessmentId}&user_id=eq.${enc(String(userId))}&limit=1`,
+    );
+
+    if (prev?.[0]) {
+      await supabaseQuery(`assessment_attempts?id=eq.${enc(prev[0].id)}`, {
+        method: "PATCH",
+        body: { score: s, status: s === null ? "لم يجرّبه" : "مكتمل" },
+      });
+    } else {
+      await supabaseQuery("assessment_attempts", {
+        method: "POST",
+        body: [{
+          assessment_id: String(req.params.id),
+          user_id: String(userId),
+          status: s === null ? "لم يجرّبه" : "مكتمل",
+          score: s,
+          answers: [],
+          completed_at: new Date().toISOString(),
+        }],
+      });
+    }
+    res.json({ success: true, message: "تم تسجيل النتيجة" });
+  } catch (err: any) {
+    logger.error({ err }, "POST assessment record failed");
+    res.status(500).json({ error: "تعذر تسجيل النتيجة" });
   }
 });
 

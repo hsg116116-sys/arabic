@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { supabaseQuery } from "../lib/supabase";
 import { uploadFile } from "../lib/imagekit";
-import { getStudentProfile, getSplitMap, itemVisible } from "./curriculum";
+import { getStudentProfile, getSplitMap, itemVisible, deadlineState } from "./curriculum";
 import { requireAuth, requireAdmin } from "../middlewares/auth";
 import { logger } from "../lib/logger";
 
@@ -447,6 +447,22 @@ router.post("/notebooks/:id/submit", requireAuth, async (req, res) => {
       res.status(400).json({ error: "صوّر دفترك وأرفق صورة واحدة على الأقل" });
       return;
     }
+
+    // ══ المهلة: بعد انتهاء موعد التسليم يُمنع تسليم الدفتر نهائياً ══
+    try {
+      const { data: taskRows } = await supabaseQuery<any[]>(
+        `notebook_tasks?id=eq.${enc(req.params.id)}&select=id,title,due_date&limit=1`,
+      );
+      const dl = deadlineState(taskRows?.[0]?.due_date);
+      if (dl.passed) {
+        res.status(403).json({
+          error: "انتهت مهلة تسليم الدفتر ⛔ — لم يعد التسليم متاحاً. راجع أستاذك إن كان ثم خطأ.",
+          code: "DEADLINE_PASSED",
+          dueDate: taskRows?.[0]?.due_date || "",
+        });
+        return;
+      }
+    } catch { /* جدول بلا عمود due_date أو خطأ شبكة: لا نمنع التسليم */ }
     // تهيئة تقييم البنود من بنود المهمة (كلها غير منجزة)
     let initChecks: any[] = [];
     try {

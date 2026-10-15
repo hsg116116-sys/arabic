@@ -594,13 +594,32 @@ router.get("/assignments", async (req, res) => {
 // 5.1 Submit Assignment (صور الحل + إنشاء أو تحديث التسليم)
 router.post("/assignments/:id/submit", requireAuth, async (req, res) => {
   try {
-    const assignmentId = req.params.id;
+    const assignmentId = Array.isArray(req.params.id) ? req.params.id[0] : String(req.params.id);
     const { answer, userId, photos } = req.body;
     const studentId = await resolveStudentId(userId, req);
     if (!studentId) {
       res.status(404).json({ error: "لم يتم العثور على الطالب النشط" });
       return;
     }
+
+    // ══ المهلة: بعد انتهاء موعد التسليم يُمنع التسليم نهائياً (مصدر-truth على السيرفر) ══
+    //带来ً من رابط مباشر أو نداء قديم لا يكفي أن يخفيه الزر في الواجهة.
+    try {
+      const { data: hwRows } = await supabaseQuery<any[]>(
+        `assignments?id=eq.${encodeURIComponent(assignmentId)}&select=id,title,due_date&limit=1`,
+      );
+      const { deadlineState } = await import("./curriculum");
+      const dl = deadlineState(hwRows?.[0]?.due_date);
+      if (dl.passed) {
+        res.status(403).json({
+          error: "انتهت مهلة التسليم ⛔ — لم يعد التسليم متاحاً لهذا الواجب. راجع أستاذك إن كان ثم خطأ.",
+          code: "DEADLINE_PASSED",
+          dueDate: hwRows?.[0]?.due_date || "",
+        });
+        return;
+      }
+    } catch { /* جدول بلا عمود due_date أو خطأ شبكة: لا نمنع التسليم */ }
+
     const cleanPhotos = Array.isArray(photos) ? photos.filter((u: unknown) => String(u || "").trim()) : [];
     if (!String(answer || "").trim() && !cleanPhotos.length) {
       res.status(400).json({ error: "اكتب حلّك أو أرفق صورة واحدة على الأقل" });
@@ -772,6 +791,24 @@ router.post("/assessments/:id/attempt", requireAuth, async (req, res) => {
       res.status(404).json({ error: "لم يتم العثور على الطالب النشط" });
       return;
     }
+
+    // ══ المهلة: الاختبار بلا موعد إغلاق افتراضياً (يتحكم به الأستاذ من النافذة)،
+    //    لكن إن وُجد عمود due_date أو closed_at نمنع التسليم بعده. ══
+    try {
+      const { data: exRows } = await supabaseQuery<any[]>(
+        `assessments?id=eq.${encodeURIComponent(assessmentId)}&select=id,title,due_date,closed_at&limit=1`,
+      );
+      const { deadlineState } = await import("./curriculum");
+      const dl = deadlineState(exRows?.[0]?.due_date ?? exRows?.[0]?.closed_at);
+      if (dl.passed) {
+        res.status(403).json({
+          error: "انتهت مهلة الاختبار ⛔ — لم يعد التسليم متاحاً. راجع أستاذك إن كان ثم خطأ.",
+          code: "DEADLINE_PASSED",
+          dueDate: exRows?.[0]?.due_date ?? exRows?.[0]?.closed_at ?? "",
+        });
+        return;
+      }
+    } catch { /* أعمدة غير موجودة: لا نمنع */ }
 
     const questions = await getAssessmentQuestions(assessmentId);
     if (!questions.length) {
