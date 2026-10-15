@@ -324,7 +324,10 @@ function CopyLinkButton({ path, testId, title, className = '' }: {
    يحفظان الرجوع أولاً فيدخل الطالب ويكمل من حيث توقف بسرعة. */
 const teacherImageUrl = '/teacher-ahmed.jpg';
 const APP_VERSION = 'v25.10-SRC';
-const platformLogoUrl = '/ard-al-lughah-logo-transparent.png';
+/* الشعار رمز بلا نص (أسد + مصحف + الأقصى + صورة الأستاذ + زهرة).
+   الاسم يُعرض كنص حقيقي بجواره — فالنص المطبوخ داخل الصورة كان
+   يظهر مصغّراً غير مقروء إلى جانب الاسم فيصير الازدحام والازدواج. */
+const platformLogoUrl = '/ard-al-lughah-emblem.png';
 const platformBannerUrl = '/ard-al-lughah-banner-transparent.png';
 const bookNineUrl = '/arab-9.jpg';
 const bookTenUrl = '/arab-10.jpg';
@@ -1249,13 +1252,19 @@ function QuickTile({ icon: Icon, title, body, href, badge, color = '#17413f' }: 
 }
 
 function Logo({ compact = false, size = 'md' }: { compact?: boolean; size?: 'sm' | 'md' | 'lg' }) {
-  const imgClass = compact ? 'h-12 w-12' : size === 'lg' ? 'h-16 w-16 lg:h-20 lg:w-20' : 'h-14 w-14';
+  // الرمز الجديد يملأ المربّع كله (الشعار القديم كان الرسم 60% والنص تحته،
+  // فكان الرسم مصغّراً وغير مقروء) — لذلك مقاسات أصغر وأوضح الآن.
+  const imgClass = compact ? 'h-11 w-11' : size === 'lg' ? 'h-16 w-16 lg:h-20 lg:w-20' : 'h-12 w-12';
   const textClass = compact ? 'text-lg' : size === 'lg' ? 'text-2xl lg:text-3xl' : 'text-xl';
   const id = usePlatformIdentity();
   return (
-    <Link href="/" className="inline-flex shrink-0 items-center gap-3" data-testid="link-brand">
-      <img src={platformLogoUrl} alt={`شعار ${id.platformName}`} className={`${imgClass} object-contain`} />
-      <span className={`${textClass} font-display font-bold tracking-tight text-primary`}>{id.platformName}</span>
+    <Link href="/" className="inline-flex min-w-0 items-center gap-2.5" data-testid="link-brand">
+      <img
+        src={platformLogoUrl}
+        alt={`شعار ${id.platformName}`}
+        className={`${imgClass} shrink-0 rounded-2xl object-contain ring-1 ring-black/5`}
+      />
+      <span className={`${textClass} truncate font-display font-bold tracking-tight text-primary`}>{id.platformName}</span>
     </Link>
   );
 }
@@ -2554,8 +2563,12 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
       >
         {/* كل ابن هنا shrink-0: بلاه ينتجه المتصفح عند امتلاء الارتفاع
             فتُقصّ بطاقة الرأس والنص الختامي — وهو ما كان يحدث على آيفون. */}
-        <div className="relative flex shrink-0 items-center justify-between gap-2 px-1">
-          <Logo />
+        <div className="relative flex shrink-0 items-center justify-between gap-2">
+          {/* الشعار داخل كبسولة بيضاء ليبدو مقصوداً لا عارضاً */}
+          <span className="flex min-w-0 items-center gap-2 rounded-2xl bg-white px-2 py-1.5 shadow-sm ring-1 ring-black/5">
+            <img src={platformLogoUrl} alt="شعار أرض اللغة" className="h-10 w-10 shrink-0 rounded-xl object-contain" />
+            <span className="truncate font-display text-[17px] font-extrabold tracking-tight text-primary">{identity.platformName}</span>
+          </span>
           <button onClick={closeDrawer} className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white text-primary/70 shadow-sm ring-1 ring-border transition-all hover:bg-secondary hover:text-primary active:scale-90 lg:hidden" data-testid="button-close-menu" aria-label="إغلاق القائمة">
             <X size={19} />
           </button>
