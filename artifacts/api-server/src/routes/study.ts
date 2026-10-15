@@ -551,4 +551,54 @@ router.post("/student/upload", requireAuth, async (req, res) => {
   }
 });
 
+/** تسجيل يدوي لعلامة دفتر لطالب لم يسلّم (أو تحديثها) — ينشئ التسليم إن غاب */
+router.post("/teacher/curriculum/notebooks/:id/record", requireAdmin, async (req, res) => {
+  try {
+    const taskId = String(req.params.id || "");
+    const userId = String(req.body?.userId || "").trim();
+    if (!taskId || !userId) {
+      res.status(400).json({ error: "المهمة والطالب مطلوبان" });
+      return;
+    }
+    const score = req.body?.score === null || req.body?.score === "" || req.body?.score === undefined
+      ? null
+      : Number(req.body.score);
+    const { data: existing } = await supabaseQuery<any[]>(
+      `notebook_submissions?task_id=eq.${enc(taskId)}&user_id=eq.${enc(userId)}&select=id&limit=1`,
+    );
+    if (existing?.[0]?.id) {
+      const { error } = await supabaseQuery(`notebook_submissions?id=eq.${enc(existing[0].id)}`, {
+        method: "PATCH",
+        body: {
+          ...(req.body?.score !== undefined ? { score } : {}),
+          ...(typeof req.body?.feedback === "string" ? { feedback: req.body.feedback } : {}),
+          status: score !== null ? "تم التقييم" : "مسلّم",
+          reviewed_at: new Date().toISOString(),
+        },
+      });
+      if (error) throw new Error(String(error));
+    } else {
+      const { error } = await supabaseQuery("notebook_submissions", {
+        method: "POST",
+        body: [{
+          task_id: taskId,
+          user_id: userId,
+          photos: [],
+          note: "",
+          score,
+          feedback: typeof req.body?.feedback === "string" ? req.body.feedback : "",
+          status: score !== null ? "تم التقييم" : "مسلّم",
+          submitted_at: new Date().toISOString(),
+          reviewed_at: new Date().toISOString(),
+        }],
+      });
+      if (error) throw new Error(String(error));
+    }
+    res.json({ success: true, message: "تم تسجيل العلامة!" });
+  } catch (err: any) {
+    logger.error({ err }, "POST notebook manual record failed");
+    res.status(500).json({ error: "تعذر تسجيل العلامة" });
+  }
+});
+
 export default router;

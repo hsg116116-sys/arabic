@@ -791,6 +791,102 @@ router.get("/curriculum/assessments/:id/questions", async (req, res) => {
   }
 });
 
+/** محاولات الطلاب في اختبار — من تقدّم ومن لم يتقدم (تُحسب القائمة في الواجهة).
+ *  تُرجع كل محاولة مع صاحبها: الاسم والصف والمدرسة وأفضل علامة وآخر تقدم. */
+router.get("/teacher/curriculum/assessments/:id/attempts", requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabaseQuery<any[]>(
+      `assessment_attempts?assessment_id=eq.${enc(req.params.id)}&order=completed_at.desc&limit=2000`,
+    );
+    if (error) throw new Error(String(error));
+    const uids = [...new Set((data || []).map((a) => a.user_id).filter(Boolean))];
+    let profiles: Record<string, any> = {};
+    if (uids.length) {
+      try {
+        const { data: profs } = await supabaseQuery<any[]>(
+          `profiles?id=in.(${uids.map(enc).join(",")})&select=id,full_name,grade,school,section,avatar_url&limit=2000`,
+        );
+        for (const p of profs || []) profiles[p.id] = p;
+      } catch { /* تجاهل */ }
+    }
+    // أفضل محاولة لكل طالب (قد يعيد الطالب الاختبار)
+    const best: Record<string, any> = {};
+    for (const a of data || []) {
+      const prev = best[a.user_id];
+      if (!prev || Number(a.score) > Number(prev.score)) best[a.user_id] = a;
+    }
+    res.json(
+      Object.values(best).map((a: any) => ({
+        userId: a.user_id,
+        score: Number(a.score) || 0,
+        status: a.status || "مكتمل",
+        completedAt: a.completed_at || "",
+        attempts: (data || []).filter((x: any) => x.user_id === a.user_id).length,
+        student: {
+          id: a.user_id,
+          name: profiles[a.user_id]?.full_name || "طالب",
+          grade: profiles[a.user_id]?.grade || "",
+          school: profiles[a.user_id]?.school || "",
+          section: profiles[a.user_id]?.section || "",
+          avatarUrl: profiles[a.user_id]?.avatar_url || "",
+        },
+      })),
+    );
+  } catch (err: any) {
+    logger.error({ err }, "GET assessment attempts failed");
+    res.status(500).json({ error: "تعذر جلب محاولات الطلاب" });
+  }
+});
+
+/** تسجيل يدوي لعلامة واجب لطالب لم يسلّم (أو تحديثها) — ينشئ التسليم إن غاب */
+router.post("/teacher/curriculum/assignments/:id/record", requireAdmin, async (req, res) => {
+  try {
+    const assignmentId = String(req.params.id || "");
+    const userId = String(req.body?.userId || "").trim();
+    if (!assignmentId || !userId) {
+      res.status(400).json({ error: "الواجب والطالب مطلوبان" });
+      return;
+    }
+    const score = req.body?.score === null || req.body?.score === "" || req.body?.score === undefined
+      ? null
+      : Number(req.body.score);
+    const { data: existing } = await supabaseQuery<any[]>(
+      `assignment_submissions?assignment_id=eq.${enc(assignmentId)}&user_id=eq.${enc(userId)}&select=id&limit=1`,
+    );
+    if (existing?.[0]?.id) {
+      const { error } = await supabaseQuery(`assignment_submissions?id=eq.${enc(existing[0].id)}`, {
+        method: "PATCH",
+        body: {
+          ...(req.body?.score !== undefined ? { score } : {}),
+          ...(typeof req.body?.feedback === "string" ? { feedback: req.body.feedback } : {}),
+          status: score !== null ? "تم التقييم" : "مُسلَّم",
+          reviewed_at: new Date().toISOString(),
+        },
+      });
+      if (error) throw new Error(String(error));
+    } else {
+      const { error } = await supabaseQuery("assignment_submissions", {
+        method: "POST",
+        body: [{
+          assignment_id: assignmentId,
+          user_id: userId,
+          answer: "",
+          score,
+          feedback: typeof req.body?.feedback === "string" ? req.body.feedback : "",
+          status: score !== null ? "تم التقييم" : "مُسلَّم",
+          submitted_at: new Date().toISOString(),
+          reviewed_at: new Date().toISOString(),
+        }],
+      });
+      if (error) throw new Error(String(error));
+    }
+    res.json({ success: true, message: "تم تسجيل العلامة!" });
+  } catch (err: any) {
+    logger.error({ err }, "POST hw manual record failed");
+    res.status(500).json({ error: "تعذر تسجيل العلامة" });
+  }
+});
+
 router.post("/teacher/curriculum/assessments/:id/questions", requireAdmin, async (req, res) => {
   try {
     const b = req.body || {};

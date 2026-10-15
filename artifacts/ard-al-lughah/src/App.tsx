@@ -9605,43 +9605,15 @@ function CurriculumManagerPage({ onlyTab, hero }: {
 
       {/* ---------- نافذة مراجعة تسليمات الواجب (حلول الطلاب + العلامات) ---------- */}
       {hwReview && (
-        <Modal title={hwReview.title} eyebrow={`تسليمات الطلاب · ${hwSubs.length} تسليمات · ${hwReview.points} نقاط`} onClose={() => setHwReview(null)} maxWidth="max-w-3xl">
-          {loadingHwSubs ? <StateNotice type="loading" /> : !hwSubs.length ? (
-            <p className="rounded-2xl bg-secondary/50 px-4 py-8 text-center text-sm text-muted-foreground">لم يسلّم أي طالب هذا الواجب بعد — سيظهرون هنا فور التسليم.</p>
-          ) : (
-            <div className="space-y-4">
-              {hwSubs.map((sub) => (
-                <div key={sub.id} className="rounded-2xl border border-border bg-background p-4">
-                  <div className="flex items-center gap-3">
-                    <Avatar name={sub.student?.name} src={sub.student?.avatarUrl} size="sm" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-bold text-primary">{sub.student?.name || 'طالب'}</p>
-                      <p className="text-xs text-muted-foreground">{[sub.student?.grade, sub.student?.school].filter(Boolean).join(' · ')}{sub.submittedAt ? ` · سُلّم ${String(sub.submittedAt).slice(0, 10)}` : ''}</p>
-                    </div>
-                    <span className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-bold ${sub.status === 'تم التقييم' ? 'bg-green-500/15 text-green-800' : 'bg-accent/25 text-accent-foreground'}`}>{sub.status}</span>
-                  </div>
-                  {sub.answer ? (
-                    <p className="mt-3 whitespace-pre-line rounded-xl bg-secondary/40 p-3.5 text-sm leading-7 text-primary">{sub.answer}</p>
-                  ) : null}
-                  {Array.isArray(sub.photos) && sub.photos.length ? (
-                    <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
-                      {sub.photos.map((src: string, i: number) => (
-                        <a key={i} href={src} target="_blank" rel="noreferrer" className="group overflow-hidden rounded-xl border border-border" title="اضغط للعرض بالحجم الكامل">
-                          <img src={src} alt={`حل ${sub.student?.name} — صورة ${i + 1}`} loading="lazy" className="h-28 w-full object-cover transition-transform duration-300 group-hover:scale-105" />
-                        </a>
-                      ))}
-                    </div>
-                  ) : null}
-                  <div className="mt-3 grid gap-2 rounded-2xl bg-secondary/40 p-3 sm:grid-cols-[110px_1fr_auto]">
-                    <input type="number" min={0} max={hwReview.points || 100} value={hwGrading[sub.id]?.score ?? ''} onChange={(e) => setHwGrading((g) => ({ ...g, [sub.id]: { score: e.target.value, feedback: g[sub.id]?.feedback ?? '' } }))} placeholder={`العلامة / ${hwReview.points}`} className={`${inputCls} py-2 text-sm`} />
-                    <input value={hwGrading[sub.id]?.feedback ?? ''} onChange={(e) => setHwGrading((g) => ({ ...g, [sub.id]: { score: g[sub.id]?.score ?? '', feedback: e.target.value } }))} placeholder="ملاحظتك على الحل..." className={`${inputCls} py-2 text-sm`} />
-                    <Button onClick={() => saveHwGrade(sub)} variant="primary" className="px-4 py-2 text-xs"><Save size={14} /> حفظ التقييم</Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Modal>
+        <HwReviewModal
+          hw={hwReview}
+          subs={hwSubs}
+          grading={hwGrading}
+          setGrading={setHwGrading}
+          saveGrade={saveHwGrade}
+          onClose={() => setHwReview(null)}
+          onReload={() => openHwReview(hwReview)}
+        />
       )}
 
       {/* ---------- نافذة نشر إعلان (عريضة + معاينة) ---------- */}
@@ -10493,6 +10465,146 @@ function StudentNotebookPage() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+   نافذة مراجعة الواجب: المسلّمون + من لم يسلّم (الصف والمدرسة نفسها)
+   مع عدّادات وتسجيل سريع لعلامة من لم يسلّم.
+   ═══════════════════════════════════════════════════════════════════════ */
+function HwReviewModal({ hw, subs, grading, setGrading, saveGrade, onClose, onReload }: {
+  hw: any;
+  subs: any[];
+  grading: Record<string, { score: string; feedback: string }>;
+  setGrading: (updater: any) => void;
+  saveGrade: (sub: any) => void;
+  onClose: () => void;
+  onReload?: () => void;
+}) {
+  const [rosterTab, setRosterTab] = useState<'done' | 'missing'>('done');
+  const [recordingId, setRecordingId] = useState('');
+  const [search, setSearch] = useState('');
+
+  const { students: roster, loading: rosterLoading } = useGradeRoster(hw?.grade, hw?.school);
+  const submittedIds = useMemo(() => new Set(subs.map((s) => s.student?.id).filter(Boolean)), [subs]);
+  const missing = useMemo(() => {
+    const needle = String(search || '').trim();
+    return roster.filter((s) => !submittedIds.has(s.id) && (!needle || (s.name || '').includes(needle)));
+  }, [roster, submittedIds, search]);
+
+  const recordManual = async (userId: string, score: string) => {
+    if (!hw?.id || !userId || recordingId) return;
+    setRecordingId(userId);
+    try {
+      await jsonFetch(`/api/teacher/curriculum/assignments/${hw.id}/record`, {
+        method: 'POST',
+        body: { userId, score: score === '' ? null : Number(score) },
+      });
+      onReload?.();
+    } finally {
+      setRecordingId('');
+    }
+  };
+
+  return (
+    <Modal title={hw?.title || 'مراجعة الواجب'} eyebrow={`حل ${subs.length} · لم يحل ${missing.length}`} onClose={onClose} maxWidth="max-w-5xl">
+      {/* العدّادات */}
+      <div className="mb-4 grid grid-cols-2 gap-2.5">
+        <div className="flex items-center gap-3 rounded-2xl bg-green-600/10 px-4 py-3">
+          <span className="font-display text-2xl font-extrabold tabular-nums text-green-800">{subs.length}</span>
+          <span className="text-xs font-extrabold text-green-800">حلّوا<br />الواجب</span>
+        </div>
+        <div className="flex items-center gap-3 rounded-2xl bg-destructive/10 px-4 py-3">
+          <span className="font-display text-2xl font-extrabold tabular-nums text-destructive">{missing.length}</span>
+          <span className="text-xs font-extrabold text-destructive">لم يحلوا<br />بعد</span>
+        </div>
+      </div>
+
+      <div className="mb-4 flex gap-2 rounded-2xl border border-border bg-card p-1.5" data-testid="hw-review-tabs">
+        <button
+          type="button"
+          onClick={() => setRosterTab('done')}
+          data-testid="button-hw-tab-done"
+          className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-extrabold transition-colors ${rosterTab === 'done' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-primary'}`}
+        >
+          المسلّمون ({subs.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setRosterTab('missing')}
+          data-testid="button-hw-tab-missing"
+          className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-extrabold transition-colors ${rosterTab === 'missing' ? 'bg-destructive text-white shadow-sm' : 'text-muted-foreground hover:text-primary'}`}
+        >
+          لم يسلّموا ({missing.length})
+        </button>
+      </div>
+
+      {rosterTab === 'missing' ? (
+        rosterLoading ? <StateNotice type="loading" /> : !missing.length ? (
+          <div className="rounded-3xl border border-green-500/30 bg-green-500/8 px-6 py-12 text-center">
+            <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-green-600/15 text-green-800"><CheckCircle2 size={30} /></span>
+            <p className="font-display text-xl font-bold text-green-800">الكل سلّم — لا متأخرين</p>
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            <div className="relative">
+              <Search size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="ابحث باسم الطالب..."
+                className="w-full rounded-xl border border-input bg-card py-2.5 pl-3 pr-9 text-sm outline-none placeholder:text-muted-foreground/60 focus:border-primary"
+              />
+            </div>
+            <p className="rounded-2xl bg-destructive/8 px-4 py-3 text-sm font-extrabold text-destructive">
+              {missing.length} طالب لم يسلّموا — ضع العلامة لمن يستحق فيُنشأ تسليمه ويُقيَّم فوراً
+            </p>
+            {missing.map((st) => (
+              <MissingStudentRow
+                key={st.id}
+                student={st}
+                points={Number(hw?.points) || 20}
+                onRecord={recordManual}
+                saving={recordingId === st.id}
+              />
+            ))}
+          </div>
+        )
+      ) : !subs.length ? (
+        <p className="rounded-2xl bg-secondary/50 px-4 py-8 text-center text-sm text-muted-foreground">لا تسليمات على هذا الواجب بعد — ستظهر أسماء الطلاب هنا فور تسليمهم.</p>
+      ) : (
+        <div className="space-y-4">
+          {subs.map((sub) => (
+            <div key={sub.id} className="rounded-2xl border border-border bg-background p-4">
+              <div className="flex items-center gap-3">
+                <Avatar name={sub.student?.name} src={sub.student?.avatarUrl} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-primary">{sub.student?.name || 'طالب'}</p>
+                  <p className="text-xs text-muted-foreground">{[sub.student?.grade, sub.student?.school].filter(Boolean).join(' · ')}{sub.submittedAt ? ` · سلّم ${String(sub.submittedAt).slice(0, 10)}` : ''}</p>
+                </div>
+                <span className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-bold ${sub.status === 'تم التقييم' ? 'bg-green-500/15 text-green-800' : 'bg-accent/25 text-accent-foreground'}`}>{sub.status}</span>
+              </div>
+              {sub.answer ? (
+                <p className="mt-3 whitespace-pre-line rounded-xl bg-secondary/40 p-3.5 text-sm leading-7 text-primary">{sub.answer}</p>
+              ) : null}
+              {Array.isArray(sub.photos) && sub.photos.length ? (
+                <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                  {sub.photos.map((src: string, i: number) => (
+                    <a key={i} href={src} target="_blank" rel="noreferrer" className="group overflow-hidden rounded-xl border border-border" title="فتح الصورة بحجم أكبر">
+                      <img src={src} alt={`حل ${sub.student?.name} - صورة ${i + 1}`} loading="lazy" className="h-28 w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                    </a>
+                  ))}
+                </div>
+              ) : null}
+              <div className="mt-3 grid gap-2 rounded-2xl bg-secondary/40 p-3 sm:grid-cols-[110px_1fr_auto]">
+                <input type="number" min={0} max={hw?.points || 100} value={grading[sub.id]?.score ?? ''} onChange={(e) => setGrading((g: any) => ({ ...g, [sub.id]: { score: e.target.value, feedback: g[sub.id]?.feedback ?? '' } }))} placeholder={`العلامة / ${hw?.points}`} className={`${inputCls} py-2 text-sm`} />
+                <input value={grading[sub.id]?.feedback ?? ''} onChange={(e) => setGrading((g: any) => ({ ...g, [sub.id]: { score: g[sub.id]?.score ?? '', feedback: e.target.value } }))} placeholder="ملاحظة للطالب..." className={`${inputCls} py-2 text-sm`} />
+                <Button onClick={() => saveGrade(sub)} variant="primary" className="px-4 py-2 text-xs"><Save size={14} /> حفظ التقييم</Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
+  );
+}
+/* ═══════════════════════════════════════════════════════════════════════
    نافذة مراجعة الدفاتر — مصممة للآيباد أولاً.
    ───────────────────────────────────────────────────────────────────────
    • طالب واحد في كل مرة + قائمة الطلاب للتنقل السريع (تتحمل 50 وأكثر).
@@ -10500,19 +10612,94 @@ function StudentNotebookPage() {
    • الضغط على الصورة يفتحها ملء الشاشة مع تنقل وتكبير.
    • حفظ، وحفظ والتالي (ينتقل لأول غير مُقيَّم تلقائياً).
    ═══════════════════════════════════════════════════════════════════════ */
-function NotebookReviewModal({ task, submissions, grading, setGrading, saveGrade, onClose }: {
+/* ═══════════════════════════════════════════════════════════════════════
+   قائمة الصف والمدرسة لبندٍ ما (واجب/دفتر/اختبار): من حله ومن لم يحله.
+   القاعدة حرفياً كما طلب الأستاذ: نفس الصف ونفس المدرسة فقط.
+   - صف البند فارغ أو "الجميع" = كل الصفوف.
+   - مدرسة البند فارغة = كل المدارس.
+   ═══════════════════════════════════════════════════════════════════════ */
+function useGradeRoster(grade?: string, school?: string) {
+  const [students, setStudents] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    jsonFetch('/api/teacher/students')
+      .then((d) => {
+        if (!live) return;
+        const list = Array.isArray(d) ? d : [];
+        const g = String(grade || '').trim();
+        const sc = String(school || '').trim();
+        setStudents(list.filter((s: any) => {
+          if (g && g !== 'الجميع' && String(s.grade || '') !== g) return false;
+          if (sc && String(s.school || '') !== sc) return false;
+          return true;
+        }));
+      })
+      .catch(() => { if (live) setStudents([]); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [grade, school]);
+  return { students, loading };
+}
+
+/* صف طالب لم يسلّم + تسجيل سريع لعلامته (ينشئ التسليم ويقيّمه دفعة واحدة) */
+function MissingStudentRow({ student, points, onRecord, saving }: {
+  student: any;
+  points: number;
+  onRecord: (userId: string, score: string) => void;
+  saving: boolean;
+}) {
+  const [score, setScore] = useState('');
+  return (
+    <div className="flex flex-wrap items-center gap-2.5 rounded-2xl border border-border bg-card p-3" data-testid={`missing-row-${student.id}`}>
+      <Avatar name={student.name} src={student.avatarUrl} size="sm" />
+      <div className="min-w-[140px] flex-1">
+        <p className="truncate text-sm font-extrabold text-primary">{student.name}</p>
+        <p className="mt-0.5 text-[11px] font-bold text-destructive">لم يسلّم بعد</p>
+      </div>
+      <input
+        type="number" min={0} max={points || undefined}
+        value={score}
+        onChange={(e) => setScore(e.target.value)}
+        placeholder={`العلامة / ${points || '؟'}`}
+        className="h-12 w-28 rounded-xl border border-input bg-background px-3 text-center font-display text-base font-extrabold tabular-nums outline-none focus:border-primary"
+        data-testid={`input-record-${student.id}`}
+      />
+      <button
+        type="button"
+        onClick={() => onRecord(student.id, score)}
+        disabled={saving}
+        className="inline-flex min-h-[48px] items-center gap-1.5 rounded-xl bg-primary px-4 text-xs font-extrabold text-primary-foreground shadow-sm transition-all active:scale-[.97] disabled:opacity-50"
+        data-testid={`button-record-${student.id}`}
+      >
+        {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />} تسجيل
+      </button>
+    </div>
+  );
+}
+
+function NotebookReviewModal({ task, submissions, grading, setGrading, saveGrade, onClose, onReload }: {
   task: any;
   submissions: any[];
   grading: Record<string, { score: string; feedback: string; checks: { label: string; done: boolean }[] }>;
   setGrading: (updater: any) => void;
   saveGrade: (sub: any) => Promise<boolean>;
   onClose: () => void;
+  onReload?: () => void;
 }) {
   const [selectedId, setSelectedId] = useState<string>(submissions[0]?.id || '');
   const [photoIdx, setPhotoIdx] = useState(0);
   const [lightbox, setLightbox] = useState(false);
   const [search, setSearch] = useState('');
   const [savingNext, setSavingNext] = useState(false);
+  const [rosterTab, setRosterTab] = useState<'done' | 'missing'>('done');
+  const [recordingId, setRecordingId] = useState('');
+
+  // قائمة الصف والمدرسة نفسها — من سلّم ومن لم يسلّم
+  const { students: roster, loading: rosterLoading } = useGradeRoster(task?.grade, task?.school);
+  const submittedIds = useMemo(() => new Set(submissions.map((s) => s.student?.id).filter(Boolean)), [submissions]);
+  const missing = useMemo(() => roster.filter((s) => !submittedIds.has(s.id)), [roster, submittedIds]);
 
   // المحدد يبقى صالحاً بعد إعادة التحميل (الحفظ يعيد الجلب)
   useEffect(() => {
@@ -10564,14 +10751,41 @@ function NotebookReviewModal({ task, submissions, grading, setGrading, saveGrade
       setSavingNext(false);
     }
   };
+  /* تسجيل يدوي: ينشئ تسليماً للطالب الذي لم يسلّم ويقيّمه فوراً */
+  const recordManual = async (userId: string, score: string) => {
+    if (!task?.id || !userId || recordingId) return;
+    setRecordingId(userId);
+    try {
+      await jsonFetch(`/api/teacher/curriculum/notebooks/${task.id}/record`, {
+        method: 'POST',
+        body: { userId, score: score === '' ? null : Number(score) },
+      });
+      onReload?.();
+    } catch (e: any) {
+      // الخطأ يظهر من زر الحفظ العام عبر flash الأب — هنا تنبيه محلي بسيط
+    } finally {
+      setRecordingId('');
+    }
+  };
 
   return (
     <Modal
       title={task?.title || 'مراجعة الدفاتر'}
-      eyebrow={`روجعت ${reviewedCount} من ${submissions.length}`}
+      eyebrow={`حل ${submissions.length} · لم يحل ${missing.length} — ${task?.grade || ''}`}
       onClose={onClose}
       maxWidth="max-w-6xl"
     >
+      {/* شريط الحل: كم حل وكم لم يحل من الصف والمدرسة نفسها */}
+      <div className="mb-4 grid grid-cols-2 gap-2.5">
+        <div className="flex items-center gap-3 rounded-2xl bg-green-600/10 px-4 py-3">
+          <span className="font-display text-2xl font-extrabold tabular-nums text-green-800">{submissions.length}</span>
+          <span className="text-xs font-extrabold text-green-800">حلّوا<br />الواجب</span>
+        </div>
+        <div className="flex items-center gap-3 rounded-2xl bg-destructive/10 px-4 py-3">
+          <span className="font-display text-2xl font-extrabold tabular-nums text-destructive">{missing.length}</span>
+          <span className="text-xs font-extrabold text-destructive">لم يحلوا<br />بعد</span>
+        </div>
+      </div>
       {/* شريط التقدم — يرى الأستاذ أين وصل من الـ 50 */}
       <div className="mb-4 flex items-center gap-3 rounded-2xl bg-secondary/60 px-4 py-3">
         <span className="text-sm font-extrabold tabular-nums text-primary">{reviewedCount}/{submissions.length}</span>
@@ -10581,10 +10795,53 @@ function NotebookReviewModal({ task, submissions, grading, setGrading, saveGrade
         <span className="text-xs font-extrabold tabular-nums text-muted-foreground">{reviewPct}%</span>
       </div>
 
-      {!submissions.length ? (
-        <p className="rounded-2xl bg-secondary/50 px-4 py-10 text-center text-sm text-muted-foreground">
-          لا تسليمات على هذه المهمة بعد — ستظهر أسماء الطلاب هنا فور تسليمهم.
-        </p>
+      {/* تبويبا القائمتين */}
+      <div className="mb-4 flex gap-2 rounded-2xl border border-border bg-card p-1.5" data-testid="review-tabs">
+        <button
+          type="button"
+          onClick={() => setRosterTab('done')}
+          data-testid="button-tab-done"
+          className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-extrabold transition-colors ${rosterTab === 'done' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-primary'}`}
+        >
+          المسلّمون ({submissions.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setRosterTab('missing')}
+          data-testid="button-tab-missing"
+          className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-extrabold transition-colors ${rosterTab === 'missing' ? 'bg-destructive text-white shadow-sm' : 'text-muted-foreground hover:text-primary'}`}
+        >
+          لم يسلّموا ({missing.length})
+        </button>
+      </div>
+
+      {rosterTab === 'missing' ? (
+        rosterLoading ? <StateNotice type="loading" /> : !missing.length ? (
+          <div className="rounded-3xl border border-green-500/30 bg-green-500/8 px-6 py-12 text-center">
+            <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-green-600/15 text-green-800"><CheckCircle2 size={30} /></span>
+            <p className="font-display text-xl font-bold text-green-800">الكل سلّم — لا متأخرين</p>
+            <p className="mt-2 text-sm text-muted-foreground">كل طلاب هذا الصف والمدرسة سلّموا المهمة.</p>
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            <p className="rounded-2xl bg-destructive/8 px-4 py-3 text-sm font-extrabold text-destructive">
+              {missing.length} طالب لم يسلّموا — ضع العلامة لمن يستحق فيُنشأ تسليمه ويُقيَّم فوراً
+            </p>
+            {missing.map((st) => (
+              <MissingStudentRow
+                key={st.id}
+                student={st}
+                points={Number(task?.points) || 10}
+                onRecord={recordManual}
+                saving={recordingId === st.id}
+              />
+            ))}
+          </div>
+        )
+      ) : !submissions.length ? (
+          <p className="rounded-3xl border border-border bg-muted/40 px-6 py-12 text-center text-sm font-bold text-muted-foreground">
+            لا تسليمات على هذه المهمة بعد — ستظهر أسماء الطلاب هنا فور تسليمهم.
+          </p>
       ) : (
         <div className="grid items-start gap-4 md:grid-cols-[250px_minmax(0,1fr)]">
           {/* ── قائمة الطلاب ── */}
@@ -11103,6 +11360,7 @@ function TeacherNotebooksPage() {
           setGrading={setGrading}
           saveGrade={saveGrade}
           onClose={() => setReviewTask(null)}
+          onReload={() => { if (reviewTask) openReview(reviewTask); }}
         />
       )}
     </Shell>
