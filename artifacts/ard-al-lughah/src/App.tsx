@@ -328,7 +328,7 @@ const APP_VERSION = 'v25.10-SRC';
    الاسم يُعرض كنص حقيقي بجواره — فالنص المطبوخ داخل الصورة كان
    يظهر مصغّراً غير مقروء إلى جانب الاسم فيصير الازدحام والازدواج. */
 const platformLogoUrl = '/ard-al-lughah-emblem.png';
-const platformBannerUrl = '/ard-al-lughah-banner-transparent.png';
+const platformBannerUrl = '/ard-al-lughah-banner.jpg';
 const bookNineUrl = '/arab-9.jpg';
 const bookTenUrl = '/arab-10.jpg';
 
@@ -357,25 +357,67 @@ function usePlatformIdentity() {
   return { ...DEFAULT_IDENTITY, ...(q.data || {}) };
 }
 
-/** مزامنة عنوان الصفحة ولون المتصفح مع هوية المنصة */
+/* رابط المشاركة الثابت — يُلحق بصفحة الجذر في كل مرة نشر */
+const OG_IMAGE = `${(typeof window !== 'undefined' && window.location.origin) || 'https://arabicc.vercel.app'}/og-image.jpg?v=3`;
+
+/** يضبط وسماً بالخصية والمحتوى (يحدث إن وُجد وإلا ينشئه) */
+function setMeta(attr: 'property' | 'name', key: string, content: string) {
+  let el = document.head.querySelector<HTMLMetaElement>(`meta[${attr}="${key}"]`);
+  if (!el) {
+    el = document.createElement('meta');
+    el.setAttribute(attr, key);
+    document.head.appendChild(el);
+  }
+  el.setAttribute('content', content);
+}
+
+/** مزامنة عنوان الصفحة ولون المتصفح وهوستها مع هوية المنصة */
 function useIdentityHead() {
   const id = usePlatformIdentity();
+  const [location] = useLocation();
   useEffect(() => {
     try {
-      document.title = `${id.platformName} | منصة اللغة العربية والقرآن الكريم في فلسطين`;
-      let meta = document.querySelector('meta[name="theme-color"]');
-      if (!meta) {
-        meta = document.createElement('meta');
-        meta.setAttribute('name', 'theme-color');
-        document.head.appendChild(meta);
-      }
-      meta.setAttribute('content', '#0d2926');
-      const desc = document.querySelector('meta[name="description"]');
-      if (desc && id.teacherName) {
-        desc.setAttribute('content', `${id.platformName} — مدرسة فلسطينية للغة العربية والقرآن الكريم مع ${id.teacherName}.`);
-      }
+      // عنوان ووصف مخصّصان لكل قسم: نسخة الرابط في واتساب/ديسكورد تعرض الاسم الصحيح
+      const isHome = location === '/';
+      const seg = isHome
+        ? ''
+        : (modeOfPath(location) ? ` | ${modeOfPath(location)}` : '');
+      const pageTitle = isHome
+        ? `${id.platformName} | منصة اللغة العربية والقرآن الكريم في فلسطين`
+        : `${id.platformName}${seg}`;
+      document.title = pageTitle;
+
+      const desc = isHome
+        ? `${id.platformName} — مدرسة فلسطينية للغة العربية والقرآن الكريم مع ${id.teacherName}.`
+        : `${seg.replace(/^ \| /, '')} — ${id.platformName} مع ${id.teacherName}.`;
+      setMeta('name', 'description', desc);
+
+      // صورة المشاركة: تُثبَّت على كل المسارات فيبقى البانر ظاهراً مهما كان الرابط
+      const url = `${window.location.origin}${location}`;
+      setMeta('property', 'og:title', pageTitle);
+      setMeta('property', 'og:description', desc);
+      setMeta('property', 'og:url', url);
+      setMeta('property', 'og:image', OG_IMAGE);
+      setMeta('property', 'og:image:secure_url', OG_IMAGE);
+      setMeta('property', 'og:image:width', '1200');
+      setMeta('property', 'og:image:height', '630');
+      setMeta('name', 'twitter:image', OG_IMAGE);
+      setMeta('name', 'twitter:title', pageTitle);
+      setMeta('name', 'twitter:description', desc);
+      setMeta('name', 'twitter:card', 'summary_large_image');
+
+      setMeta('name', 'theme-color', '#0d2926');
     } catch { /* تجاهل */ }
-  }, [id.platformName, id.teacherName]);
+  }, [id.platformName, id.teacherName, location]);
+}
+
+/** اسم القسم من مساره — لمشاركة وصف مفيد لا رابطاً عاماً */
+function modeOfPath(path: string): string {
+  if (path.startsWith('/teacher')) return 'بوابة المعلم';
+  if (path.startsWith('/student')) return 'بوابة الطالب';
+  if (path.startsWith('/login')) return 'تسجيل الدخول';
+  if (path.startsWith('/register')) return 'حساب جديد';
+  return '';
 }
 
 const resourceTabs = [
@@ -1544,10 +1586,19 @@ function Home() {
               </div>
             </div>
             <div className="relative order-1 animate-rise [animation-delay:120ms] lg:order-2">
-              <div className="relative flex aspect-[2/1] items-center justify-center overflow-hidden">
-                <img src={platformBannerUrl} alt="بانر أرض اللغة مع كتاب اللغة العربية والمعلم أحمد يحيى الأسطل" className="absolute -top-[20%] block w-full max-w-none" data-testid="img-platform-banner" />
+              {/* البانر بنسبته الأصلية 1600×684 — بلا قصّ ولا إزاحة.
+                  كان الشعار القديم بخلفية شفافة فيُزاح بـ -top-[20%] ليُبرز. */}
+              <div className="relative overflow-hidden rounded-[2rem] border border-border bg-primary shadow-2xl">
+                <img
+                  src={platformBannerUrl}
+                  width={1600}
+                  height={684}
+                  alt="أرض اللغة — منصة عربية للتعلم من قلب فلسطين مع الأستاذ أحمد يحيى الأسطل"
+                  className="block w-full"
+                  data-testid="img-platform-banner"
+                />
               </div>
-              <div className="absolute bottom-2 right-3 inline-flex items-center gap-1.5 rounded-full bg-primary px-3.5 py-1.5 text-xs font-bold text-primary-foreground shadow-md" data-testid="badge-hero-semester">
+              <div className="absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-full bg-primary/95 px-3.5 py-1.5 text-xs font-bold text-primary-foreground shadow-md backdrop-blur-sm" data-testid="badge-hero-semester">
                 <BookOpen size={13} className="text-accent" /> كتب {semester}
               </div>
             </div>

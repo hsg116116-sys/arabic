@@ -17,26 +17,30 @@
     <link rel="alternate" hreflang="x-default" href="https://arabicc.vercel.app/" />
     <meta name="theme-color" content="#0d2926" />
 
-    <!-- Open Graph — معاينة واتساب وفيسبوك وديسكورد -->
+    <!-- Open Graph — معاينة واتساب وفيسبوك وديسكورد وتوستر -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="أرض اللغة" />
     <meta property="og:locale" content="ar_PS" />
     <meta property="og:title" content="أرض اللغة | منصة اللغة العربية والقرآن الكريم في فلسطين" />
     <meta property="og:description" content="مدرسة فلسطينية: المنهاج الفلسطيني المعتمد، وحدات تفاعلية، واجبات واختبارات، ومتابعة إنسانية مع الأستاذ أحمد يحيى الأسطل." />
     <meta property="og:url" content="https://arabicc.vercel.app/" />
-    <meta property="og:image" content="https://arabicc.vercel.app/og-image.jpg" />
-    <meta property="og:image:secure_url" content="https://arabicc.vercel.app/og-image.jpg" />
+    <!-- ?v=3 يكسر ذاكرة المنصات: لولاها لعرضت الصورة القديمة المخزّنة -->
+    <meta property="og:image" content="https://arabicc.vercel.app/og-image.jpg?v=3" />
+    <meta property="og:image:secure_url" content="https://arabicc.vercel.app/og-image.jpg?v=3" />
     <meta property="og:image:type" content="image/jpeg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="بانر منصة أرض اللغة — اللغة العربية والقرآن الكريم في فلسطين" />
+    <meta property="og:image:alt" content="أرض اللغة — منصة عربية للتعلم من قلب فلسطين مع الأستاذ أحمد يحيى الأسطل" />
 
-    <!-- Twitter -->
+    <!-- Twitter / X -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="أرض اللغة | منصة اللغة العربية والقرآن الكريم في فلسطين" />
     <meta name="twitter:description" content="مدرسة فلسطينية: المنهاج الفلسطيني المعتمد، وحدات تفاعلية، واجبات واختبارات مع الأستاذ أحمد يحيى الأسطل." />
-    <meta name="twitter:image" content="https://arabicc.vercel.app/og-image.jpg" />
-    <meta name="twitter:image:alt" content="بانر منصة أرض اللغة" />
+    <meta name="twitter:image" content="https://arabicc.vercel.app/og-image.jpg?v=3" />
+    <meta name="twitter:image:alt" content="أرض اللغة — منصة عربية للتعلم من قلب فلسطين" />
+
+    <!-- واتساب (يعتمد og) + فيسبوك (يعتمد og) + لينكدإن وتيليغرام (قياسي) -->
+    <link rel="image_src" href="https://arabicc.vercel.app/og-image.jpg?v=3" />
 
     <!-- بيانات منظمة للمدرسة الفلسطينية -->
     <script type="application/ld+json">
@@ -48,7 +52,7 @@
       "description": "مدرسة فلسطينية لتعليم اللغة العربية والقرآن الكريم وفق المنهاج الفلسطيني المعتمد للصفوف الثامن والتاسع والعاشر.",
       "url": "https://arabicc.vercel.app/",
       "logo": "https://arabicc.vercel.app/ard-al-lughah-emblem.png",
-      "image": "https://arabicc.vercel.app/og-image.jpg",
+      "image": ["https://arabicc.vercel.app/og-image.jpg?v=3"],
       "inLanguage": "ar",
       "areaServed": [
         { "@type": "Country", "name": "Palestine" },
@@ -69,7 +73,8 @@
     </script>
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=3" />
+    <meta name="apple-mobile-web-app-title" content="أرض اللغة" />
   </head>
   <body>
     <div id="root"></div>
