@@ -221,21 +221,23 @@
   .fab-active::after {
     animation: fab-ring-burst .6s cubic-bezier(.2, .6, .3, 1) 1;
   }
-  /* توهّج يتنفس على القسم النشط داخل الدرج */
-  .drawer-active-glow {
-    animation: drawer-glow 3.4s ease-in-out infinite;
+  /* وهج يتنفّس على أيقونة القسم النشط داخل الدرج */
+  .drawer-active-icon {
+    animation: drawer-glow 3.6s ease-in-out infinite;
   }
 
   /* ═══════════════════════════════════════════════════════════════════════
-     القائمة — لغة بصرية أغنى: رأس بتدرّج وحلقة، بطاقات أقسام بطبقة زجاجية
-     ولمعة تمسح على التحويم، وحافة ذهبية على النشط.
+     القائمة على الهاتف — سطح فاتح فاخر.
+     السبب: السطح الداكن كان يبتلع بطاقة الرأس فذوبت تماماً في الخلفية.
+     الآن القائمة كريمية مضيئة، وبطاقة الرأس خضراء غنية = تباين واضح.
      ═══════════════════════════════════════════════════════════════════════ */
-  /* شبكة خفيفة على خلفية القائمة تعطي عمقاً بدل السطح المسطح */
+  /* سطح القائمة: كريمي مضيء مع هالة خضراء خفيفة + شبكة ناعمة */
   .drawer-surface {
+    background-color: #fdfaf3;
     background-image:
-      radial-gradient(1000px 420px at 88% -8%, hsl(168 52% 42% / .38), transparent 62%),
-      radial-gradient(760px 400px at 6% 104%, hsl(43 82% 58% / .16), transparent 60%),
-      linear-gradient(178deg, #0f332f 0%, #0c2724 46%, #081c1a 100%);
+      radial-gradient(760px 340px at 88% -6%, hsl(168 42% 62% / .16), transparent 64%),
+      radial-gradient(620px 320px at 2% 102%, hsl(43 88% 62% / .14), transparent 62%),
+      linear-gradient(180deg, #fefdf9 0%, #faf5e9 52%, #f4eddd 100%);
   }
   .drawer-surface::before {
     content: '';
@@ -243,48 +245,58 @@
     inset: 0;
     pointer-events: none;
     background-image:
-      linear-gradient(hsl(0 0% 100% / .035) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(0 0% 100% / .035) 1px, transparent 1px);
-    background-size: 30px 30px;
-    mask-image: radial-gradient(circle at 76% 8%, #000 0%, transparent 72%);
-    -webkit-mask-image: radial-gradient(circle at 76% 8%, #000 0%, transparent 72%);
+      linear-gradient(hsl(174 30% 30% / .05) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(174 30% 30% / .05) 1px, transparent 1px);
+    background-size: 34px 34px;
+    mask-image: radial-gradient(circle at 82% 4%, #000 0%, transparent 70%);
+    -webkit-mask-image: radial-gradient(circle at 82% 4%, #000 0%, transparent 70%);
   }
 
-  /* رأس البطاقة: حلقة ملوّنة + توهّج */
+  /* بطاقة الرأس: أخضر غني — واضح تماماً فوق السطح الفاتح */
   .drawer-hero {
     background:
-      linear-gradient(135deg, hsl(168 48% 30% / .92), hsl(174 42% 20% / .88));
+      linear-gradient(140deg, #1c5c56 0%, #17413f 46%, #123936 100%);
     box-shadow:
-      inset 0 1px 0 hsl(0 0% 100% / .16),
-      0 14px 34px -14px hsl(0 0% 0% / .7);
+      inset 0 1px 0 hsl(0 0% 100% / .22),
+      0 18px 38px -16px hsl(174 45% 18% / .55);
   }
   .drawer-hero::after {
     content: '';
     position: absolute;
-    inset-inline-end: -32px;
-    top: -38px;
-    width: 140px;
-    height: 140px;
+    inset-inline-end: -40px;
+    top: -52px;
+    width: 165px;
+    height: 165px;
     border-radius: 9999px;
-    background: radial-gradient(circle, hsl(43 88% 62% / .34), transparent 68%);
+    background: radial-gradient(circle, hsl(43 92% 62% / .42), transparent 66%);
+    pointer-events: none;
+  }
+  .drawer-hero::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: -30px;
+    bottom: -48px;
+    width: 130px;
+    height: 130px;
+    border-radius: 9999px;
+    background: radial-gradient(circle, hsl(168 60% 55% / .30), transparent 68%);
     pointer-events: none;
   }
 
-  /* بطاقة قسم: طبقة زجاجية + لمعة تمسح عند التحويم */
+  /* بطاقة قسم: ورقية بيضاء بحدّ ناعم + ظل خفيف */
   .drawer-link {
-    background: linear-gradient(150deg, hsl(0 0% 100% / .085), hsl(0 0% 100% / .028));
+    background: hsl(0 0% 100% / .92);
+    border: 1px solid hsl(37 24% 86% / .9);
     box-shadow:
-      inset 0 1px 0 hsl(0 0% 100% / .12),
-      0 8px 22px -12px hsl(0 0% 0% / .55);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+      0 1px 0 hsl(0 0% 100% / .9) inset,
+      0 6px 16px -10px hsl(174 35% 22% / .28);
   }
   .drawer-link::before {
     content: '';
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    background: linear-gradient(115deg, transparent 32%, hsl(0 0% 100% / .22) 50%, transparent 68%);
+    background: linear-gradient(115deg, transparent 34%, hsl(43 92% 62% / .20) 50%, transparent 66%);
     transform: translateX(130%);
     transition: transform .78s cubic-bezier(.22, 1, .36, 1);
     pointer-events: none;
@@ -294,29 +306,30 @@
     transform: translateX(-130%);
   }
   .drawer-link:hover {
-    border-color: hsl(43 82% 62% / .42);
+    border-color: hsl(43 82% 56% / .55);
+    box-shadow:
+      0 12px 26px -12px hsl(174 35% 22% / .34),
+      0 0 0 3px hsl(43 88% 60% / .14);
+  }
+  /* النشط: أخضر غني + حافة ذهبية + ظل */
+  .drawer-link-active {
+    background: linear-gradient(120deg, #1c5c56 0%, #17413f 100%);
+    border-color: hsl(43 88% 60% / .75);
     box-shadow:
       inset 0 1px 0 hsl(0 0% 100% / .2),
-      0 14px 30px -14px hsl(0 0% 0% / .65),
-      0 0 0 1px hsl(43 82% 62% / .18);
-  }
-  /* النقطة النشطة على الحافة اليسرى + توهّج دافئ */
-  .drawer-link-active {
-    background: linear-gradient(115deg, hsl(43 90% 60% / .97), hsl(38 82% 68% / .92));
-    box-shadow:
-      inset 0 1px 0 hsl(0 0% 100% / .5),
-      0 16px 34px -14px hsl(43 82% 52% / .62);
+      0 16px 32px -14px hsl(174 45% 18% / .58);
   }
   .drawer-link-active::after {
     content: '';
     position: absolute;
     inset-inline-start: 0;
     top: 50%;
-    width: 4px;
-    height: 26px;
+    width: 5px;
+    height: 28px;
     border-radius: 9999px;
-    background: hsl(0 0% 100% / .9);
+    background: hsl(43 92% 62%);
     transform: translateY(-50%);
+    box-shadow: 0 0 10px hsl(43 92% 62% / .8);
   }
 
   .scrollbar-thin { scrollbar-width: thin; scrollbar-color: hsl(var(--border)) transparent; }
@@ -377,8 +390,8 @@
   100% { opacity: 0; transform: scale(1.9); }
 }
 @keyframes drawer-glow {
-  0%, 100% { opacity: .55; transform: scale(1); }
-  50% { opacity: .95; transform: scale(1.06); }
+  0%, 100% { box-shadow: 0 0 0 0 hsl(43 92% 62% / 0); background-color: hsl(0 0% 100% / .14); }
+  50% { box-shadow: 0 0 0 5px hsl(43 92% 62% / .16); background-color: hsl(0 0% 100% / .26); }
 }
 @keyframes shake { 10%, 90% { transform: translateX(-2px); } 20%, 80% { transform: translateX(4px); } 30%, 50%, 70% { transform: translateX(-7px); } 40%, 60% { transform: translateX(7px); } }
 @keyframes caret-blink { 0%, 70%, 100% { opacity: 1; } 20%, 50% { opacity: 0; } }
