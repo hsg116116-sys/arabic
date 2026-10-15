@@ -7556,26 +7556,57 @@ function StudentCoursesPage() {
     } catch { setHwList([]); setExamList([]); setNbList([]); }
   };
 
+  /* ────────────────────────────────────────────────────────────────────────
+     المهلة: بند انتهت مهلته لا يظهر هنا أبداً.
+     الطالب يبقى يراه في قسمه المخصّص (واجباتي/دفتري/اختباراتي) بشارة
+     "انتهت المهلة — مغلق"، لكن هنا (الوحدات والتلخيص) يختفي حتى لا يظن
+     أن عليه شيئاً يفعله وهو عاجز عنه.
+     ──────────────────────────────────────────────────────────────────────── */
+  const itemExpiredLocal = itemExpired;
+  // قوائم حيّة: بلا بنود منتهية — مرة واحدة بدل التصفية في كل مكان
+  const hwLive = useMemo(() => hwList.filter((h) => !itemExpiredLocal(h)), [hwList]);
+  const nbLive = useMemo(() => nbList.filter((t) => !itemExpiredLocal(t)), [nbList]);
+  const exLive = useMemo(() => examList.filter((e) => !itemExpiredLocal(e)), [examList]);
+
   // ربط المهمة بالوحدة: عبر courseId المضمون، أو مطابقة اسم الوحدة للواجبات القديمة
   const matchCourse = (x: any, course: any) =>
     (x.courseId && x.courseId === course.id) ||
     ((x.unit || x.unitTitle) && (x.unit || x.unitTitle) === course.title);
-  const hwFor = (course: any) => hwList.filter((h) => matchCourse(h, course));
-  const examsFor = (course: any) => examList.filter((e) => matchCourse(e, course));
-  const nbFor = (course: any) => nbList.filter((t) => matchCourse(t, course));
+  const hwFor = (course: any) => hwLive.filter((h) => matchCourse(h, course));
+  const examsFor = (course: any) => exLive.filter((e) => matchCourse(e, course));
+  const nbFor = (course: any) => nbLive.filter((t) => matchCourse(t, course));
   const hwPending = (h: any) => !h.status || h.status === 'لم يبدأ';
   const nbPending = (t: any) => !t.myStatus;
-  // مهام الدرس المحدد (بسهم جانبي) — عبر lessonId المباشر
-  const hwForLesson = (lesson: any) => hwList.filter((h) => h.lessonId === lesson.id);
-  const examsForLesson = (lesson: any) => examList.filter((e) => e.lessonId === lesson.id);
-  const nbForLesson = (lesson: any) => nbList.filter((t) => t.lessonId === lesson.id);
+
+  /* ────────────────────────────────────────────────────────────────────────
+     ربط المهمة بالدرس الصحيح — الطلب: "لازم تحت الدرس اللي فيه الواجب".
+     الأولوية للمعرّف (lessonId)، وعند غيابه نطابق باسم الدرس المطبّع.
+     المطابقة بالنوع تمنع التصادم: درس ت.called بنفس الاسم لا يلتقط other's.
+     ──────────────────────────────────────────────────────────────────────── */
+  const itemBelongsToLesson = (x: any, lesson: any) => {
+    if (!lesson) return false;
+    const lid = String(x?.lessonId || '').trim();
+    if (lid) return lid === String(lesson.id);
+    // بلا معرّف: نطابق بالاسم فقط، وبنفس نوع المحتوى
+    const xt = foldName(x?.lessonTitle || '');
+    const lt = foldName(lesson?.title || '');
+    if (!xt || !lt || xt !== lt) return false;
+    const xk = x?.kind || (x?.questions !== undefined ? 'exam' : x?.myStatus !== undefined ? 'notebook' : 'hw');
+    const lk = String(lesson?.lessonType || '');
+    if (xk === 'exam' && !lk.includes('اختبار')) return false;
+    if (xk === 'notebook' && !lk.includes('دفتر')) return false;
+    return true;
+  };
+  const hwForLesson = (lesson: any) => hwLive.filter((h) => itemBelongsToLesson(h, lesson));
+  const examsForLesson = (lesson: any) => exLive.filter((e) => itemBelongsToLesson(e, lesson));
+  const nbForLesson = (lesson: any) => nbLive.filter((t) => itemBelongsToLesson(t, lesson));
   const lessonTasksCount = (lesson: any) => hwForLesson(lesson).length + examsForLesson(lesson).length + nbForLesson(lesson).length;
   const lessonHasPending = (lesson: any) => hwForLesson(lesson).some(hwPending) || nbForLesson(lesson).some(nbPending);
   const toggleLessonTasks = (id: string) => setExpandedLessons((m) => ({ ...m, [id]: !m[id] }));
-  // مهام عامة للوحدة (مرتبطة بالوحدة دون درس محدد، أو مطابقة نصية قديمة)
-  const generalHw = (course: any) => hwFor(course).filter((h) => !h.lessonId);
-  const generalExams = (course: any) => examsFor(course).filter((e) => !e.lessonId);
-  const generalNb = (course: any) => nbFor(course).filter((t) => !t.lessonId);
+  // مهام عامة للوحدة: مرتبطة بالوحدة بلا درس محدد — فلا تظهر تحت أي درس
+  const generalHw = (course: any) => hwFor(course).filter((h) => !String(h.lessonId || '').trim());
+  const generalExams = (course: any) => examsFor(course).filter((e) => !String(e.lessonId || '').trim());
+  const generalNb = (course: any) => nbFor(course).filter((t) => !String(t.lessonId || '').trim());
   // فتح تلقائي لأسهم الدروس المعلَّقة حتى ينتبه الطالب (لا تُغلق ما فتحه يدوياً)
   useEffect(() => {
     if (!selectedCourse || loadingLessons || !lessons.length) return;
@@ -7589,7 +7620,7 @@ function StudentCoursesPage() {
     const gPend = generalHw(selectedCourse).some(hwPending) || generalNb(selectedCourse).some(nbPending);
     if (gPend) setExpandedGeneral(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCourse, lessons, loadingLessons, hwList, nbList]);
+  }, [selectedCourse, lessons, loadingLessons, hwLive, nbLive]);
 
   const openCourse = async (course: any) => {
     if (course.locked || course.isEmpty) return;
@@ -7853,53 +7884,51 @@ function StudentCoursesPage() {
                       </span>
                     </button>
                     {expandedGeneral ? (
-                    <div className="space-y-2.5 p-4">
+                    <div className="space-y-2.5 p-3 sm:p-4">
                       {mHw.map((h: any) => {
                         const pend = hwPending(h);
                         return (
-                          <div key={`hw-${h.id}`} className={`flex flex-wrap items-center gap-3 rounded-2xl border bg-card p-3.5 ${pend ? 'border-destructive/30' : 'border-green-500/25'}`}>
-                            <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${pend ? 'bg-destructive/10 text-destructive' : 'bg-green-500/15 text-green-800'}`}><ClipboardCheck size={18} /></span>
-                            <div className="min-w-[160px] flex-1">
-                              <p className="text-sm font-extrabold text-primary">{h.title}</p>
-                              <p className="mt-0.5 text-[11px] font-bold text-muted-foreground">
-                                واجب مطلوب{h.dueDate ? ` · حتى ${h.dueDate}` : ''} · {h.points} نقاط
-                              </p>
-                            </div>
-                            <span className={`rounded-full px-3 py-1.5 text-[11px] font-extrabold ${pend ? 'bg-destructive/10 text-destructive' : 'bg-green-500/15 text-green-800'}`}>{pend ? 'لم يُسلَّم بعد' : h.status}</span>
+                          <TaskCard
+                            key={`hw-${h.id}`} tone="hw" icon={<ClipboardCheck size={17} />}
+                            title={h.title}
+                            meta={`ÙˆØ§Ø¬Ø¨ Ù„Ù„ÙˆØ­Ø¯Ø©${h.dueDate ? ` Â· Ø­ØªÙ‰ ${h.dueDate}` : ''} Â· ${h.points} Ù†Ù‚Ø§Ø·`}
+                            status={pend ? 'Ù„Ù… ÙŠÙØ³Ù„ÙŽÙ‘Ù… Ø¨Ø¹Ø¯' : (h.status || 'ØªÙ…')}
+                            statusTone={pend ? 'bg-destructive/12 text-destructive' : 'bg-green-500/15 text-green-800'}
+                          >
                             {pend ? (
-                              <button type="button" onClick={() => setQuickHw(h)} className="inline-flex shrink-0 items-center gap-1 rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-primary-foreground shadow-sm transition-transform hover:scale-105"><Upload size={13} /> رفع الواجب</button>
+                              <button type="button" onClick={() => setQuickHw(h)} className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-primary-foreground shadow-sm transition-all active:scale-[.97]"><Upload size={14} /> Ø±ÙØ¹ Ø§Ù„ÙˆØ§Ø¬Ø¨</button>
                             ) : null}
-                            <Link href="/student/assignments" className="inline-flex shrink-0 items-center gap-1 rounded-xl bg-secondary px-4 py-2 text-xs font-extrabold text-primary transition-colors hover:bg-accent/40">القسم <ArrowLeft size={13} /></Link>
-                          </div>
+                            <Link href="/student/assignments" className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-xs font-extrabold text-primary transition-colors hover:bg-accent/40">Ø§Ù„Ù‚Ø³Ù… <ArrowLeft size={13} /></Link>
+                          </TaskCard>
                         );
                       })}
                       {mNb.map((t: any) => {
                         const pend = nbPending(t);
                         return (
-                          <div key={`nb-${t.id}`} className={`flex flex-wrap items-center gap-3 rounded-2xl border bg-card p-3.5 ${pend ? 'border-amber-500/30' : 'border-green-500/25'}`}>
-                            <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${pend ? 'bg-amber-500/15 text-amber-800' : 'bg-green-500/15 text-green-800'}`}><NotebookPen size={18} /></span>
-                            <div className="min-w-[160px] flex-1">
-                              <p className="text-sm font-extrabold text-primary">{t.title}</p>
-                              <p className="mt-0.5 text-[11px] font-bold text-muted-foreground">مهمة دفتر مطلوبة{t.points ? ` · ${t.points} نقاط` : ''}</p>
-                            </div>
-                            <span className={`rounded-full px-3 py-1.5 text-[11px] font-extrabold ${pend ? 'bg-amber-500/15 text-amber-800' : 'bg-green-500/15 text-green-800'}`}>{pend ? 'لم تُسلَّم بعد' : t.myStatus}</span>
+                          <TaskCard
+                            key={`nb-${t.id}`} tone="nb" icon={<NotebookPen size={17} />}
+                            title={t.title}
+                            meta={`Ù…Ù‡Ù…Ø© Ø¯ÙØªØ± Ù„Ù„ÙˆØ­Ø¯Ø©${t.dueDate ? ` Â· Ø­ØªÙ‰ ${t.dueDate}` : ''}${t.points ? ` Â· ${t.points} Ù†Ù‚Ø§Ø·` : ''}`}
+                            status={pend ? 'Ù„Ù… ÙŠÙØ³Ù„ÙŽÙ‘Ù… Ø¨Ø¹Ø¯' : (t.myStatus || 'ØªÙ…')}
+                            statusTone={pend ? 'bg-amber-500/15 text-amber-800' : 'bg-green-500/15 text-green-800'}
+                          >
                             {pend ? (
-                              <Link href={`/student/notebook?task=${t.id}`} className="inline-flex shrink-0 items-center gap-1 rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-primary-foreground shadow-sm transition-transform hover:scale-105"><Upload size={13} /> تسليم الدفتر</Link>
+                              <Link href={`/student/notebook?task=${t.id}`} className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-primary-foreground shadow-sm transition-all active:scale-[.97]"><Upload size={14} /> ØªØ³Ù„ÙŠÙ… Ø§Ù„Ø¯ÙØªØ±</Link>
                             ) : null}
-                            <Link href="/student/notebook" className="inline-flex shrink-0 items-center gap-1 rounded-xl bg-secondary px-4 py-2 text-xs font-extrabold text-primary transition-colors hover:bg-accent/40">القسم <ArrowLeft size={13} /></Link>
-                          </div>
+                            <Link href="/student/notebook" className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-xs font-extrabold text-primary transition-colors hover:bg-accent/40">Ø§Ù„Ù‚Ø³Ù… <ArrowLeft size={13} /></Link>
+                          </TaskCard>
                         );
                       })}
                       {mEx.map((e: any) => (
-                        <div key={`ex-${e.id}`} className="flex flex-wrap items-center gap-3 rounded-2xl border border-[#0d47a1]/25 bg-card p-3.5">
-                          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#0d47a1]/10 text-[#0d47a1]"><Target size={18} /></span>
-                          <div className="min-w-[160px] flex-1">
-                            <p className="text-sm font-extrabold text-primary">{e.title}</p>
-                            <p className="mt-0.5 text-[11px] font-bold text-muted-foreground">اختبار الوحدة · {e.questions} أسئلة · {e.duration}</p>
-                          </div>
-                          <Link href="/student/assessments" className="inline-flex shrink-0 items-center gap-1 rounded-xl bg-[#0d47a1] px-4 py-2 text-xs font-extrabold text-white shadow-sm transition-transform hover:scale-105">ابدأ الاختبار <ArrowLeft size={13} /></Link>
-                          <Link href="/student/assessments" className="inline-flex shrink-0 items-center gap-1 rounded-xl bg-secondary px-4 py-2 text-xs font-extrabold text-primary transition-colors hover:bg-accent/40">القسم <ArrowLeft size={13} /></Link>
-                        </div>
+                        <TaskCard
+                          key={`ex-${e.id}`} tone="ex" icon={<Target size={17} />}
+                          title={e.title}
+                          meta={`Ø§Ø®ØªØ¨Ø§Ø± Ø§Ù„ÙˆØ­Ø¯Ø© Â· ${e.questions} Ø£Ø³Ø¦Ù„Ø© Â· ${e.duration}`}
+                          status="Ù…ØªØ§Ø­ Ø§Ù„Ø¢Ù†" statusTone="bg-[#0d47a1]/10 text-[#0d47a1]"
+                        >
+                          <Link href="/student/assessments" className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-[#0d47a1] px-4 py-2 text-xs font-extrabold text-white shadow-sm transition-all active:scale-[.97]">Ø§Ø¨Ø¯Ø£ Ø§Ù„Ø§Ø®ØªØ¨Ø§Ø± <ArrowLeft size={13} /></Link>
+                          <Link href="/student/assessments" className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-xs font-extrabold text-primary transition-colors hover:bg-accent/40">Ø§Ù„Ù‚Ø³Ù… <ArrowLeft size={13} /></Link>
+                        </TaskCard>
                       ))}
                     </div>
                     ) : null}
@@ -7961,49 +7990,70 @@ function StudentCoursesPage() {
                       </span>
                     </div>
                     {tOpen && tCount > 0 ? (
-                      <div className="space-y-2 border-t border-dashed border-border bg-secondary/30 p-3">
+                      <div className="space-y-2.5 border-t border-dashed border-border bg-gradient-to-b from-secondary/40 to-secondary/20 p-3">
                         {tHw.map((h: any) => {
                           const pend = hwPending(h);
                           return (
-                            <div key={`lh-${h.id}`} className={`flex flex-wrap items-center gap-2.5 rounded-xl border bg-card p-3 ${pend ? 'border-destructive/30' : 'border-green-500/25'}`}>
-                              <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${pend ? 'bg-destructive/10 text-destructive' : 'bg-green-500/15 text-green-800'}`}><ClipboardCheck size={16} /></span>
-                              <div className="min-w-[140px] flex-1">
-                                <p className="truncate text-[13px] font-extrabold text-primary">{h.title}</p>
-                                <p className="mt-0.5 text-[11px] font-bold text-muted-foreground">واجب مطلوب{h.dueDate ? ` · حتى ${h.dueDate}` : ''} · {pend ? 'لم يُسلَّم بعد' : h.status}</p>
-                              </div>
+                            <TaskCard
+                              key={`lh-${h.id}`}
+                              tone="hw"
+                              icon={<ClipboardCheck size={17} />}
+                              title={h.title}
+                              meta={`واجب مطلوب${h.dueDate ? ` · حتى ${h.dueDate}` : ''} · ${h.points} نقاط`}
+                              status={pend ? 'لم يُسلَّم بعد' : (h.status || 'تم')}
+                              statusTone={pend ? 'bg-destructive/12 text-destructive' : 'bg-green-500/15 text-green-800'}
+                            >
                               {pend ? (
-                                <button type="button" onClick={() => setQuickHw(h)} className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-primary px-3.5 py-2 text-[11px] font-extrabold text-primary-foreground shadow-sm transition-transform hover:scale-105"><Upload size={13} /> رفع الواجب</button>
+                                <button type="button" onClick={() => setQuickHw(h)} className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-primary-foreground shadow-sm transition-all active:scale-[.97]">
+                                  <Upload size={14} /> رفع الواجب
+                                </button>
                               ) : null}
-                              <Link href="/student/assignments" className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-secondary px-3.5 py-2 text-[11px] font-extrabold text-primary transition-colors hover:bg-accent/40">القسم <ArrowLeft size={12} /></Link>
-                            </div>
+                              <Link href="/student/assignments" className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-xs font-extrabold text-primary transition-colors hover:bg-accent/40">
+                                القسم <ArrowLeft size={13} />
+                              </Link>
+                            </TaskCard>
                           );
                         })}
                         {tNb.map((t: any) => {
                           const pend = nbPending(t);
                           return (
-                            <div key={`ln-${t.id}`} className={`flex flex-wrap items-center gap-2.5 rounded-xl border bg-card p-3 ${pend ? 'border-amber-500/30' : 'border-green-500/25'}`}>
-                              <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${pend ? 'bg-amber-500/15 text-amber-800' : 'bg-green-500/15 text-green-800'}`}><NotebookPen size={16} /></span>
-                              <div className="min-w-[140px] flex-1">
-                                <p className="truncate text-[13px] font-extrabold text-primary">{t.title}</p>
-                                <p className="mt-0.5 text-[11px] font-bold text-muted-foreground">دفتر مطلوب · {pend ? 'لم تُسلَّم بعد' : t.myStatus}</p>
-                              </div>
+                            <TaskCard
+                              key={`ln-${t.id}`}
+                              tone="nb"
+                              icon={<NotebookPen size={17} />}
+                              title={t.title}
+                              meta={`دفتر مطلوب${t.dueDate ? ` · حتى ${t.dueDate}` : ''}${t.points ? ` · ${t.points} نقاط` : ''}`}
+                              status={pend ? 'لم يُسلَّم بعد' : (t.myStatus || 'تم')}
+                              statusTone={pend ? 'bg-amber-500/15 text-amber-800' : 'bg-green-500/15 text-green-800'}
+                            >
                               {pend ? (
-                                <Link href={`/student/notebook?task=${t.id}`} className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-primary px-3.5 py-2 text-[11px] font-extrabold text-primary-foreground shadow-sm transition-transform hover:scale-105"><Upload size={13} /> تسليم الدفتر</Link>
+                                <Link href={`/student/notebook?task=${t.id}`} className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-primary-foreground shadow-sm transition-all active:scale-[.97]">
+                                  <Upload size={14} /> تسليم الدفتر
+                                </Link>
                               ) : null}
-                              <Link href="/student/notebook" className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-secondary px-3.5 py-2 text-[11px] font-extrabold text-primary transition-colors hover:bg-accent/40">القسم <ArrowLeft size={12} /></Link>
-                            </div>
+                              <Link href="/student/notebook" className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-xs font-extrabold text-primary transition-colors hover:bg-accent/40">
+                                القسم <ArrowLeft size={13} />
+                              </Link>
+                            </TaskCard>
                           );
                         })}
                         {tEx.map((e: any) => (
-                          <div key={`le-${e.id}`} className="flex flex-wrap items-center gap-2.5 rounded-xl border border-[#0d47a1]/25 bg-card p-3">
-                            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#0d47a1]/10 text-[#0d47a1]"><Target size={16} /></span>
-                            <div className="min-w-[140px] flex-1">
-                              <p className="truncate text-[13px] font-extrabold text-primary">{e.title}</p>
-                              <p className="mt-0.5 text-[11px] font-bold text-muted-foreground">اختبار · {e.questions} أسئلة · {e.duration}</p>
-                            </div>
-                            <Link href="/student/assessments" className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#0d47a1] px-3.5 py-2 text-[11px] font-extrabold text-white shadow-sm transition-transform hover:scale-105"><PlayCircle size={13} /> ابدأ الاختبار</Link>
-                            <Link href="/student/assessments" className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-secondary px-3.5 py-2 text-[11px] font-extrabold text-primary transition-colors hover:bg-accent/40">القسم <ArrowLeft size={12} /></Link>
-                          </div>
+                          <TaskCard
+                            key={`le-${e.id}`}
+                            tone="ex"
+                            icon={<Target size={17} />}
+                            title={e.title}
+                            meta={`اختبار · ${e.questions} أسئلة · ${e.duration}`}
+                            status="متاح الآن"
+                            statusTone="bg-[#0d47a1]/10 text-[#0d47a1]"
+                          >
+                            <Link href="/student/assessments" className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-[#0d47a1] px-4 py-2 text-xs font-extrabold text-white shadow-sm transition-all active:scale-[.97]">
+                              <PlayCircle size={14} /> ابدأ الاختبار
+                            </Link>
+                            <Link href="/student/assessments" className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-xs font-extrabold text-primary transition-colors hover:bg-accent/40">
+                              القسم <ArrowLeft size={13} />
+                            </Link>
+                          </TaskCard>
                         ))}
                       </div>
                     ) : null}
@@ -9818,7 +9868,8 @@ function StudentDashboardNew() {
       .catch(() => undefined);
     if (dashId) {
       jsonFetch(`/api/curriculum/notebooks?grade=${encodeURIComponent(dashGrade)}&student_id=${dashId}`)
-        .then((d) => { if (Array.isArray(d)) setNbPending(d.filter((t: any) => !t.myStatus).length); })
+        // العدّاد للمعلّق فقط: بند انتهت مهلته لا يُحسب على الطالب
+        .then((d) => { if (Array.isArray(d)) setNbPending(d.filter((t: any) => !t.myStatus && !itemExpired(t)).length); })
         .catch(() => undefined);
     }
   }, [dashGrade, dashId]);
@@ -9854,7 +9905,7 @@ function StudentDashboardNew() {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <QuickTile icon={BookOpen} title="وحداتي التعليمية" body="الدروس التي وصلتم إليها مع الأستاذ" href="/student/courses" badge={`${data.nextUp?.length ?? 0} وحدات`} color="#17413f" />
             <QuickTile icon={NotebookPen} title="دفتري" body="صوّر دفترك وسلّمه للأستاذ" href="/student/notebook" badge={nbPending ? `${nbPending} بانتظارك` : 'محدّث'} color="#b7791f" />
-            <QuickTile icon={Target} title="اختباراتي" body="قياس فهمك أولاً بأول" href="/student/assessments" badge={`${assessmentsQuery.data?.length ?? 0} اختبارات`} color="#0d47a1" />
+            <QuickTile icon={Target} title="اختباراتي" body="قياس فهمك أولاً بأول" href="/student/assessments" badge={`${(assessmentsQuery.data ?? []).filter((e: any) => !itemExpired(e)).length} اختبارات`} color="#0d47a1" />
             <QuickTile icon={ClipboardCheck} title="واجباتي" body="تكليفات الأستاذ المطلوبة منك" href="/student/assignments" badge="مطلوبة" color="#2f7772" />
           </div>
 
@@ -10684,6 +10735,62 @@ function BulkDeductBar({ kind, itemId, gradedCount, onDone }: {
           {msg && <p className="mt-2 rounded-lg bg-accent/15 px-3 py-2 text-xs font-extrabold text-accent-foreground">{msg}</p>}
         </div>
       )}
+    </div>
+  );
+}
+
+/** تطبيع للمقارنة العربية — الهمزات والتاء المربوطة والمسافات */
+function foldName(v: unknown): string {
+  return String(v ?? '')
+    .replace(/[\u0622\u0623\u0625\u0671]/g, '\u0627')
+    .replace(/\u0649/g, '\u064A')
+    .replace(/\u0629/g, '\u0647')
+    .replace(/[\u064B-\u0652]/g, '')
+    .replace(/[\s_\-]+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/** بند انتهت مهلته — لا يُعرض في الوحدات ولا يُحسب على الطالب.
+ *  يبقى مرئياً في قسمه المخصّص بشارة "انتهت المهلة — مغلق". */
+function itemExpired(x: any): boolean {
+  return !!deadlineInfo(x?.dueDate ?? x?.date)?.passed;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   بطاقة مهمة واحدة — مصمّمة للهاتف أولاً.
+   السبب: التخطيط القديم كان صفاً أفقياً بـ flex-wrap وأزرار كثيرة،
+   فيتنفضّ على الشاشة الضيقة ويتكدّس بشكل عشوائي.
+   الآن: صف علوي (أيقونة + عنوان + حالة) ثم صف أزرار كامل العرض.
+   ═══════════════════════════════════════════════════════════════════════ */
+function TaskCard({ tone, icon, title, meta, status, statusTone, children }: {
+  tone: 'hw' | 'nb' | 'ex';
+  icon: ReactNode;
+  title: string;
+  meta: string;
+  status: string;
+  statusTone: string;
+  children?: ReactNode;
+}) {
+  const tones = {
+    hw: { chip: 'bg-primary/10 text-primary', bar: 'bg-primary' },
+    nb: { chip: 'bg-amber-500/15 text-amber-800', bar: 'bg-amber-500' },
+    ex: { chip: 'bg-[#0d47a1]/10 text-[#0d47a1]', bar: 'bg-[#0d47a1]' },
+  }[tone];
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-3.5 shadow-sm" style={{ ['--tw' as any]: 1 }}>
+      <span className={`absolute inset-y-0 right-0 w-1 ${tones.bar}`} />
+      <div className="flex items-start gap-3 pr-1.5">
+        <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${tones.chip}`}>{icon}</span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] font-extrabold leading-snug text-primary">{title}</p>
+          <p className="mt-1 text-[11px] font-bold leading-relaxed text-muted-foreground">{meta}</p>
+        </div>
+        <span className={`hidden shrink-0 rounded-full px-2.5 py-1 text-[10px] font-extrabold sm:inline-block ${statusTone}`}>{status}</span>
+      </div>
+      {/* الحالة على الهاتف سطر مستقل حتى لا تنضغط مع العنوان */}
+      <span className={`mt-2.5 inline-block rounded-full px-2.5 py-1 text-[10px] font-extrabold sm:hidden ${statusTone}`}>{status}</span>
+      {children ? <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">{children}</div> : null}
     </div>
   );
 }
