@@ -14187,6 +14187,7 @@ function Router() {
         <Route path="/student/foundation/section/:sectionId" component={FoundationSectionPage} />
         <Route path="/student/foundation/lesson/:lessonId" component={FoundationLessonPage} />
         <Route path="/student/notebook" component={StudentNotebookPage} />
+        <Route path="/student/profile" component={ProfilePage} />
         <Route path="/student/assignments" component={AssignmentsPage} />
         <Route path="/student/assignments/:assignmentId" component={AssignmentsPage} />
         <Route path="/student/announcements" component={StudentAnnouncementsPage} />
