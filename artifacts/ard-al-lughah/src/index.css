@@ -252,7 +252,9 @@
     -webkit-mask-image: radial-gradient(circle at 82% 4%, #000 0%, transparent 70%);
   }
 
-  /* بطاقة الرأس: أخضر غني — واضح تماماً فوق السطح الفاتح */
+  /* بطاقة الرأس: أخضر غني — واضح تماماً فوق السطح الفاتح.
+     التوهّجات داخل حدود البطاقة (inset موجب) فلا تُقصّ بحافّة حادّة
+     لأن overflow-hidden يقصّ ما يخرج. */
   .drawer-hero {
     background:
       linear-gradient(140deg, #1c5c56 0%, #17413f 46%, #123936 100%);
@@ -263,23 +265,21 @@
   .drawer-hero::after {
     content: '';
     position: absolute;
-    inset-inline-end: -40px;
-    top: -52px;
-    width: 165px;
-    height: 165px;
-    border-radius: 9999px;
-    background: radial-gradient(circle, hsl(43 92% 62% / .42), transparent 66%);
+    top: 0;
+    inset-inline-end: 0;
+    width: 62%;
+    height: 100%;
+    background: radial-gradient(ellipse at top left, hsl(43 92% 62% / .38), transparent 68%);
     pointer-events: none;
   }
   .drawer-hero::before {
     content: '';
     position: absolute;
-    inset-inline-start: -30px;
-    bottom: -48px;
-    width: 130px;
-    height: 130px;
-    border-radius: 9999px;
-    background: radial-gradient(circle, hsl(168 60% 55% / .30), transparent 68%);
+    bottom: 0;
+    inset-inline-start: 0;
+    width: 55%;
+    height: 78%;
+    background: radial-gradient(ellipse at bottom right, hsl(168 62% 56% / .28), transparent 70%);
     pointer-events: none;
   }
 

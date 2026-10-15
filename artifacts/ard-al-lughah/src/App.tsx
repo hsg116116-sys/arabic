@@ -2545,23 +2545,23 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
   return (
     <div className="min-h-[100dvh] bg-background">
       <aside
-        className={`drawer-surface fixed inset-y-0 right-0 z-50 flex w-[19.5rem] max-w-[89vw] flex-col overflow-hidden overflow-y-auto px-4 py-5 text-primary shadow-[0_0_60px_-10px_rgba(23,65,63,.35)] no-scrollbar lg:w-72 lg:translate-x-0 ${
+        className={`drawer-surface fixed inset-y-0 right-0 z-50 flex w-[min(18.5rem,86vw)] flex-col overflow-hidden overflow-y-auto px-3.5 py-4 text-primary shadow-[0_0_60px_-10px_rgba(23,65,63,.35)] no-scrollbar lg:w-72 lg:px-4 lg:py-6 lg:translate-x-0 ${
           mobileMenu
             ? drawerClosing ? 'drawer-panel is-closing' : 'drawer-panel'
             : 'translate-x-full lg:translate-x-0'
         }`}
         data-testid="sidebar-drawer"
       >
-        <div className="pointer-events-none absolute -left-20 top-24 h-56 w-56 rounded-full bg-accent/20 blur-3xl" />
-        <div className="pointer-events-none absolute -right-16 bottom-16 h-48 w-48 rounded-full bg-primary/10 blur-3xl" />
-        <div className="relative flex items-center justify-between px-1">
+        {/* كل ابن هنا shrink-0: بلاه ينتجه المتصفح عند امتلاء الارتفاع
+            فتُقصّ بطاقة الرأس والنص الختامي — وهو ما كان يحدث على آيفون. */}
+        <div className="relative flex shrink-0 items-center justify-between gap-2 px-1">
           <Logo />
-          <button onClick={closeDrawer} className="grid h-10 w-10 place-items-center rounded-2xl bg-white text-primary/70 shadow-sm ring-1 ring-border transition-all hover:bg-secondary hover:text-primary active:scale-90 lg:hidden" data-testid="button-close-menu" aria-label="إغلاق القائمة">
+          <button onClick={closeDrawer} className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white text-primary/70 shadow-sm ring-1 ring-border transition-all hover:bg-secondary hover:text-primary active:scale-90 lg:hidden" data-testid="button-close-menu" aria-label="إغلاق القائمة">
             <X size={19} />
           </button>
         </div>
 {/* ── بطاقة الرأس: أخضر غني على سطح فاتح = تباين واضح ── */}
-        <div className="drawer-hero relative overflow-hidden rounded-[26px] p-4">
+        <div className="drawer-hero relative mt-4 shrink-0 overflow-hidden rounded-[24px] p-3.5">
           <div className="relative flex items-center gap-3">
             <span className="relative shrink-0">
               <span className="absolute -inset-1 rounded-2xl bg-gradient-to-br from-accent to-[#f3d68a] opacity-85 blur-[7px]" />
@@ -2597,13 +2597,13 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
         </div>
 
         {/* ── عنوان الأقسام + عدّاد ── */}
-        <div className="relative mb-2.5 mt-7 flex items-center gap-2.5 px-1.5">
-          <span className="h-5 w-1.5 rounded-full bg-gradient-to-b from-accent to-[#e8c876]" />
+        <div className="relative mb-2.5 mt-6 flex shrink-0 items-center gap-2.5 px-1.5">
+          <span className="h-5 w-1.5 shrink-0 rounded-full bg-gradient-to-b from-accent to-[#e8c876]" />
           <h2 className="text-[12px] font-extrabold tracking-wide text-primary/70">أقسام المنصة</h2>
-          <span className="mr-auto grid h-6 min-w-6 place-items-center rounded-full bg-primary px-2 text-[11px] font-extrabold tabular-nums text-white shadow-sm">{links.length}</span>
+          <span className="mr-auto grid h-6 min-w-6 shrink-0 place-items-center rounded-full bg-primary px-2 text-[11px] font-extrabold tabular-nums text-white shadow-sm">{links.length}</span>
         </div>
 
-        <nav className="relative space-y-2">
+        <nav className="relative shrink-0 space-y-2">
           {links.map((item, i) => {
             const Icon = item.icon;
             const isActive = location === item.href;
@@ -2613,7 +2613,7 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
                 href={item.href}
                 onClick={() => setMobileMenu(false)}
                 style={{ ['--i' as any]: i }}
-                className={`drawer-item group relative block overflow-hidden rounded-[20px] border transition-all duration-300 ${
+                className={`drawer-item group relative block shrink-0 overflow-hidden rounded-[20px] border transition-all duration-300 ${
                   isActive
                     ? 'drawer-link-active px-4 py-3.5'
                     : 'drawer-link px-3.5 py-3 hover:-translate-y-0.5'
@@ -2642,7 +2642,7 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
         </nav>
 
         {/* ── بطاقة ختامية ── */}
-        <div className="relative mt-6 overflow-hidden rounded-[22px] border border-accent/35 bg-gradient-to-bl from-accent/22 via-accent/12 to-transparent p-4">
+        <div className="relative mt-6 shrink-0 overflow-hidden rounded-[22px] border border-accent/35 bg-gradient-to-bl from-accent/22 via-accent/12 to-transparent p-4">
           <div className="pointer-events-none absolute -left-8 -top-10 h-24 w-24 rounded-full bg-accent/35 blur-2xl" />
           <p className="relative flex items-start gap-2 text-[12px] leading-6 text-primary/75">
             <Quote className="mt-0.5 shrink-0 text-accent" size={15} />
