@@ -54,6 +54,7 @@ import {
   Landmark,
   Layers,
   LayoutDashboard,
+  LayoutGrid,
   Leaf,
   Link2,
   Library,
@@ -8745,20 +8746,38 @@ function CurriculumManagerPage({ onlyTab, hero }: {
       const noteGrade = noteForm.targetGrade || 'الجميع';
       const noteSplit = noteGrade !== 'الجميع' && splitMap[noteGrade] === true;
       const noteSchool = String(noteForm.targetSchool || noteForm.school || '').trim();
-      const r: any = await jsonFetch('/api/teacher/curriculum/announcements', {
-        method: 'POST',
-        body: {
-          ...noteForm,
-          grade: noteGrade,
-          section: noteSplit ? (noteForm.section || 'الجميع') : 'الجميع',
-          school: noteSchool,
-        },
-      });
+      const body = {
+        ...noteForm,
+        grade: noteGrade,
+        section: noteSplit ? (noteForm.section || 'الجميع') : 'الجميع',
+        school: noteSchool,
+      };
+      // تعديل إعلان قائم أو نشر جديد
+      const r: any = noteForm.id
+        ? await jsonFetch(`/api/teacher/curriculum/announcements/${noteForm.id}`, { method: 'PATCH', body })
+        : await jsonFetch('/api/teacher/curriculum/announcements', { method: 'POST', body });
       setNoteModal(false);
       loadNotes();
-      // إن سقط عمود الاستهداف يُبلغ الخادم بدل النجاح الصامت
-      flash(r?.partial ? (r?.message || 'نُشر للجميع — حقلا الصف والمدرسة غير مفعّلين في القاعدة') : (r?.message || 'تم نشر الإعلان بنجاح!'));
-    } catch (e: any) { flash(e?.message || 'تعذر نشر الإعلان'); } finally { setSavingNote(false); }
+      flash(r?.partial
+        ? (r?.message || 'حُفظ — لكن حقلا الصف والمدرسة غير مفعّلين، فعّل sql_announcements_scope.sql')
+        : (r?.message || (noteForm.id ? 'تم حفظ التعديل!' : 'تم نشر الإعلان بنجاح!')));
+    } catch (e: any) { flash(e?.message || 'تعذر الحفظ'); } finally { setSavingNote(false); }
+  };
+  /* فتح نافذة التعديل معبّأة بالإعلان الحالي */
+  const editNote = (note: any) => {
+    setNoteForm({
+      id: note.id,
+      title: note.title || '',
+      body: note.body || '',
+      type: note.type || 'إرشاد',
+      audience: note.audience || 'الجميع',
+      targetGrade: note.grade || 'الجميع',
+      targetSchool: note.school || '',
+      school: note.school || '',
+      section: note.section || 'الجميع',
+      published: note.published !== false,
+    });
+    setNoteModal(true);
   };
   const deleteNote = async (note: any) => {
     if (!window.confirm(`حذف إعلان "${note.title}"؟`)) return;
@@ -8787,7 +8806,16 @@ function CurriculumManagerPage({ onlyTab, hero }: {
     return (e.title + ' ' + (e.unitTitle || '') + ' ' + (e.lessonTitle || '')).includes(q);
   });
   const shownHw = hwItems.filter((h) => matchSection(h.section));
-  const shownNotes = notes.filter((n) => matchSection(n.section));
+  // الإعلانات: فلترة بالصف والمدرسة معاً — بدونها يرى الأستاذ إعلانات
+  // صفٍّ آخر ويظنّها موجّهة لصفّه. "الجميع" يعني الكل صراحةً.
+  const [noteScope, setNoteScope] = useState<'grade' | 'all'>('grade');
+  const shownNotes = notes.filter((n) => {
+    if (!matchSection(n.section)) return false;
+    if (noteScope === 'all') return true;
+    const ng = foldName(n.grade || 'الجميع');
+    const g = foldName(grade);
+    return !ng || ng === 'الجميع' || ng === g;
+  });
 
   return (
     <Shell mode="teacher">
@@ -9076,34 +9104,103 @@ function CurriculumManagerPage({ onlyTab, hero }: {
 
       {tab === 'notes' && (
         <>
+          {/* مفتاح النطاق: هل أرى إعلانات هذا الصف أم كل الإعلانات؟
+              بدونه كانت إعلانات الصف التاسع تظهر فوق تبويب الصف الثامن. */}
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card p-3 shadow-sm">
+            <div className="flex gap-1.5 rounded-xl bg-muted/50 p-1">
+              <button
+                type="button"
+                onClick={() => setNoteScope('grade')}
+                className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-extrabold transition-all ${noteScope === 'grade' ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground hover:text-primary'}`}
+                data-testid="button-note-scope-grade"
+              >
+                <GraduationCap size={14} /> {grade} فقط
+              </button>
+              <button
+                type="button"
+                onClick={() => setNoteScope('all')}
+                className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-extrabold transition-all ${noteScope === 'all' ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground hover:text-primary'}`}
+                data-testid="button-note-scope-all"
+              >
+                <LayoutGrid size={14} /> كل الإعلانات
+              </button>
+            </div>
+            <p className="min-w-0 flex-1 text-xs font-semibold leading-relaxed text-muted-foreground">
+              {noteScope === 'grade'
+                ? `تعرض إعلانات ${grade} والإعلانات العامة فقط.`
+                : `تعرض كل الإعلانات بلا استثناء — بما فيها إعلانات صفوف ومدارس أخرى.`}
+            </p>
+            <span className="shrink-0 rounded-full bg-primary/10 px-3 py-1.5 text-xs font-extrabold tabular-nums text-primary">
+              {shownNotes.length} / {notes.length}
+            </span>
+          </div>
+
           {loadingNotes ? <StateNotice type="loading" /> : !shownNotes.length ? (
             <div className="rounded-2xl border border-dashed border-border bg-card px-6 py-12 text-center">
-              <p className="font-semibold">لا توجد إعلانات منشورة بعد</p>
-              <p className="mt-1 text-sm text-muted-foreground">انشر أول إعلان لطلابك — يمكن توجيهه لصف معين أو للجميع.</p>
-              <Button onClick={openNoteCreate} variant="soft" className="mt-4"><Plus size={16} /> نشر أول إعلان</Button>
+              <p className="font-semibold">
+                {noteScope === 'grade' && notes.length ? `لا توجد إعلانات لـ ${grade}` : 'لا توجد إعلانات منشورة بعد'}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {noteScope === 'grade' && notes.length
+                  ? `يوجد ${notes.length} إعلاناً لكنّه لصفوف أو مدارس أخرى — بدّل إلى «كل الإعلانات» لتظهر.`
+                  : 'انشر أول إعلان لطلابك — يمكن توجيهه لصف معين أو للجميع.'}
+              </p>
+              {noteScope === 'grade' && notes.length ? (
+                <Button onClick={() => setNoteScope('all')} variant="soft" className="mt-4"><LayoutGrid size={16} /> عرض كل الإعلانات ({notes.length})</Button>
+              ) : (
+                <Button onClick={openNoteCreate} variant="soft" className="mt-4"><Plus size={16} /> نشر أول إعلان</Button>
+              )}
             </div>
           ) : (
             <div className="grid gap-3 md:grid-cols-2">
-              {shownNotes.map((note) => (
-                <div key={note.id} className={`flex items-start gap-4 rounded-2xl border bg-card p-4 shadow-sm ${note.published ? 'border-border' : 'border-dashed opacity-70'}`} data-testid={`row-note-${note.id}`}>
-                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-secondary text-primary"><Bell size={19} /></span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-bold text-primary">{note.title}</p>
-                      <span className="rounded-full bg-secondary px-2.5 py-0.5 text-[11px] font-bold text-primary">{note.type}</span>
-                      <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-semibold text-muted-foreground">{note.grade || 'الجميع'}</span>
-                      {note.section && note.section !== 'الجميع' ? <span className="rounded-full bg-[#6a1b9a]/15 px-2.5 py-0.5 text-[11px] font-bold text-[#6a1b9a]">{note.section === 'طالب' ? 'الطلاب فقط' : 'الطالبات فقط'}</span> : null}
-                      {!note.published ? <span className="rounded-full bg-destructive/10 px-2.5 py-0.5 text-[11px] font-bold text-destructive">مسودة</span> : null}
+              {shownNotes.map((note) => {
+                const ng = foldName(note.grade || 'الجميع');
+                const g = foldName(grade);
+                const isOtherGrade = ng && ng !== 'الجميع' && ng !== g;
+                return (
+                <div
+                  key={note.id}
+                  className={`group relative overflow-hidden rounded-[1.35rem] border bg-card p-4 shadow-sm transition-all duration-300 hover:shadow-md ${note.published ? 'border-border' : 'border-dashed border-muted-foreground/30 opacity-80'} ${isOtherGrade ? 'border-r-4 border-r-[#6a1b9a]/50' : ''}`}
+                  data-testid={`row-note-${note.id}`}
+                >
+                  {/* شريط جانبي ملوّن حسب نوع الإعلان */}
+                  <span className={`absolute inset-y-0 right-0 w-1 ${note.type === 'اختبار تقييمي' ? 'bg-[#0d47a1]' : note.type === 'تهنئة' ? 'bg-pink-500' : 'bg-accent'}`} />
+                  <div className="flex items-start gap-3.5 pr-1.5">
+                    <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${note.type === 'اختبار تقييمي' ? 'bg-[#0d47a1]/10 text-[#0d47a1]' : 'bg-accent/20 text-accent-foreground'}`}>
+                      <Bell size={19} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <p className="font-bold text-primary">{note.title}</p>
+                        <span className="rounded-full bg-secondary px-2.5 py-0.5 text-[11px] font-bold text-primary">{note.type}</span>
+                        {/* الصف والمدرسة: قلب الفهم — هنا يُرى لمن went الإعلان فعلاً */}
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-extrabold ${note.grade && note.grade !== 'الجميع' ? 'bg-primary/12 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                          <GraduationCap size={11} /> {note.grade || 'الجميع'}
+                        </span>
+                        {note.school ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-[#6a1b9a]/12 px-2.5 py-0.5 text-[11px] font-extrabold text-[#6a1b9a]">
+                            <Landmark size={11} /> {note.school}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-muted/70 px-2.5 py-0.5 text-[11px] font-bold text-muted-foreground">كل المدارس</span>
+                        )}
+                        {note.section && note.section !== 'الجميع' ? <span className="rounded-full bg-[#6a1b9a]/15 px-2.5 py-0.5 text-[11px] font-bold text-[#6a1b9a]">{note.section === 'طالب' ? 'الطلاب فقط' : 'الطالبات فقط'}</span> : null}
+                        {!note.published ? <span className="rounded-full bg-destructive/10 px-2.5 py-0.5 text-[11px] font-bold text-destructive">مسودة</span> : null}
+                      </div>
+                      <p className="mt-1.5 line-clamp-2 text-sm leading-6 text-muted-foreground">{note.body}</p>
+                      <p className="mt-1.5 text-[11px] font-semibold text-muted-foreground">{note.date} · {note.audience}</p>
                     </div>
-                    <p className="mt-1.5 line-clamp-2 text-sm leading-6 text-muted-foreground">{note.body}</p>
-                    <p className="mt-1 text-[11px] font-semibold text-muted-foreground">{note.date} · {note.audience}</p>
+                    <span className="flex shrink-0 items-center gap-1">
+                      <button type="button" onClick={() => editNote(note)} title="تعديل الإعلان" className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary" data-testid={`button-edit-note-${note.id}`}>
+                        <Pencil size={15} />
+                      </button>
+                      <button type="button" onClick={() => toggleNotePublish(note)} title={note.published ? 'سحب النشر' : 'نشر'} className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-primary">{note.published ? <Eye size={15} /> : <EyeOff size={15} />}</button>
+                      <button type="button" onClick={() => deleteNote(note)} title="حذف الإعلان" className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"><Trash2 size={15} /></button>
+                    </span>
                   </div>
-                  <span className="flex shrink-0 items-center gap-1">
-                    <button type="button" onClick={() => toggleNotePublish(note)} title={note.published ? 'سحب النشر' : 'نشر'} className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-primary">{note.published ? <Eye size={15} /> : <EyeOff size={15} />}</button>
-                    <button type="button" onClick={() => deleteNote(note)} title="حذف الإعلان" className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"><Trash2 size={15} /></button>
-                  </span>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </>
@@ -9878,7 +9975,12 @@ function CurriculumManagerPage({ onlyTab, hero }: {
 
       {/* ---------- نافذة نشر إعلان (عريضة + معاينة) ---------- */}
       {noteModal && (
-        <Modal title="نشر إعلان جديد" eyebrow="رسائل المعلم للطلاب" onClose={() => setNoteModal(false)} maxWidth="max-w-4xl">
+        <Modal
+          title={noteForm.id ? 'تعديل الإعلان' : 'نشر إعلان جديد'}
+          eyebrow={noteForm.id ? 'تعديل الاستهداف والنص' : 'رسائل المعلم للطلاب'}
+          onClose={() => setNoteModal(false)}
+          maxWidth="max-w-4xl"
+        >
           <form onSubmit={saveNote} className="space-y-5">
             <div className="grid gap-5 lg:grid-cols-[1fr_300px]">
               <div className="space-y-4 rounded-3xl border border-border bg-background/50 p-5">
@@ -9937,8 +10039,10 @@ function CurriculumManagerPage({ onlyTab, hero }: {
               </div>
             </div>
             <div className="flex items-center justify-end gap-3 border-t border-border pt-4">
-              <Button onClick={() => setNoteModal(null)} variant="ghost">إلغاء</Button>
-              <Button type="submit" disabled={savingNote} variant="primary" className="px-8 py-3 shadow-md" data-testid="button-save-note">{savingNote ? 'جارٍ النشر...' : 'نشر الإعلان ✓'}</Button>
+              <Button onClick={() => setNoteModal(false)} variant="ghost">إلغاء</Button>
+              <Button type="submit" disabled={savingNote} variant="primary" className="px-8 py-3 shadow-md" data-testid="button-save-note">
+                {savingNote ? 'جارٍ الحفظ...' : noteForm.id ? 'حفظ التعديل ✓' : 'نشر الإعلان ✓'}
+              </Button>
             </div>
           </form>
         </Modal>
