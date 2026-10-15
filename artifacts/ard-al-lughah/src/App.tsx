@@ -63,6 +63,7 @@ import {
   LogOut,
   Mail,
   Maximize2,
+LayoutDashboard,
   Medal,
   Menu,
   MessagesSquare,
@@ -2391,6 +2392,7 @@ let notifCache: { at: number; items: any[] } | null = null;
 function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: ReactNode }) {
   const [location, setLocation] = useLocation();
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [drawerClosing, setDrawerClosing] = useState(false);
   const [profileMenu, setProfileMenu] = useState(false);
   // الإشعارات: إعلانات الأستاذ — تُجلب مرة واحدة وتُحدَّث عند الفتح
   const [notifOpen, setNotifOpen] = useState(false);
@@ -2400,7 +2402,28 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
     try { return JSON.parse(localStorage.getItem('ard-ann-seen') || '[]'); } catch { return []; }
   });
   // إغلاق القوائم تلقائياً عند التنقل — حتى لا تغطي المحتوى والنوافذ
-  useEffect(() => { setMobileMenu(false); setProfileMenu(false); setNotifOpen(false); }, [location]);
+  useEffect(() => { setMobileMenu(false); setDrawerClosing(false); setProfileMenu(false); setNotifOpen(false); }, [location]);
+
+  // درج الأقسام على الهاتف: إغلاق متحرك + منع تمرير الخلفية خلفه.
+  // نبقي العنصر مركّباً أثناء خروج الأنيميشن ثم نزيله تماماً.
+  const closeDrawer = useCallback(() => {
+    setDrawerClosing(true);
+    document.body.style.overflow = '';
+    window.setTimeout(() => { setMobileMenu(false); setDrawerClosing(false); }, 300);
+  }, []);
+  const openDrawer = useCallback(() => { setDrawerClosing(false); setMobileMenu(true); }, []);
+  useEffect(() => {
+    if (!mobileMenu) return;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, [mobileMenu]);
+  // زر الهروب يغلق الدرج — سلوك متوقّع على الحاسوب واللوحي.
+  useEffect(() => {
+    if (!mobileMenu) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeDrawer(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mobileMenu, closeDrawer]);
   const logout = useLogoutAccount();
   const studentDash = useGetStudentDashboard();
   // صورة الحساب (صورة Google إن سجل بها) — للطالب والمعلم
@@ -2521,9 +2544,12 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
   return (
     <div className="min-h-[100dvh] bg-background">
       <aside
-        className={`fixed inset-y-0 right-0 z-50 flex w-72 max-w-[86vw] flex-col overflow-hidden overflow-y-auto bg-gradient-to-b from-[#0d2926] via-[#123936] to-[#0a201e] px-5 py-6 text-white shadow-2xl transition-transform duration-300 ${
-          mobileMenu ? 'translate-x-0' : 'translate-x-full'
-        } lg:translate-x-0`}
+        className={`fixed inset-y-0 right-0 z-50 flex w-[19rem] max-w-[88vw] flex-col overflow-hidden overflow-y-auto bg-gradient-to-b from-[#0d2926] via-[#123936] to-[#0a201e] px-5 py-6 text-white shadow-2xl lg:w-72 lg:translate-x-0 lg:shadow-none ${
+          mobileMenu
+            ? drawerClosing ? 'drawer-panel is-closing' : 'drawer-panel'
+            : 'translate-x-full lg:translate-x-0'
+        }`}
+        data-testid="sidebar-drawer"
       >
         <div className="pointer-events-none absolute -left-20 top-24 h-56 w-56 rounded-full bg-accent/15 blur-3xl" />
         <div className="pointer-events-none absolute -right-16 bottom-16 h-48 w-48 rounded-full bg-accent/10 blur-3xl" />
@@ -2531,9 +2557,12 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
           <span className="[&_span]:!text-white">
             <Logo />
           </span>
-          <button onClick={() => setMobileMenu(false)} className="rounded-lg p-2 text-white/60 hover:bg-white/10 lg:hidden" data-testid="button-close-menu">
-            <X size={19} />
-          </button>
+          <div className="flex items-center gap-2">
+            <span className="hidden rounded-full bg-white/10 px-3 py-1 text-[11px] font-extrabold text-white/70 ring-1 ring-white/15 lg:block">{links.length} أقسام</span>
+            <button onClick={closeDrawer} className="rounded-lg p-2 text-white/60 hover:bg-white/10 lg:hidden" data-testid="button-close-menu" aria-label="إغلاق القائمة">
+              <X size={19} />
+            </button>
+          </div>
         </div>
         <div className="relative mt-8 rounded-2xl bg-white/10 p-4 ring-1 ring-white/15 backdrop-blur-md">
           <div className="flex items-center gap-3">
@@ -2547,7 +2576,7 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
           </div>
         </div>
         <nav className="relative mt-8 space-y-1.5">
-          {links.map((item) => {
+          {links.map((item, i) => {
             const Icon = item.icon;
             const isActive = location === item.href;
             return (
@@ -2555,16 +2584,20 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
                 key={item.href}
                 href={item.href}
                 onClick={() => setMobileMenu(false)}
-                className={`group relative flex items-center gap-3 overflow-hidden rounded-2xl px-3.5 py-3 text-sm font-bold transition-all duration-200 ${
-                  isActive ? 'bg-gradient-to-l from-accent to-[#e8c876] text-[#3a2c07] shadow-lg shadow-accent/25' : 'text-white/65 hover:bg-white/10 hover:text-white'
+                style={{ ['--i' as any]: i }}
+                className={`drawer-item group relative flex items-center gap-3 overflow-hidden rounded-2xl px-3.5 py-3.5 text-sm font-bold transition-all duration-200 ${
+                  isActive ? 'bg-gradient-to-l from-accent to-[#e8c876] text-[#3a2c07] shadow-lg shadow-accent/25' : 'text-white/70 hover:translate-x-[-3px] hover:bg-white/10 hover:text-white'
                 }`}
                 data-testid={`link-nav-${item.href.replaceAll('/', '-').replace(/^-/, '')}`}
               >
-                <span className={`grid h-9 w-9 place-items-center rounded-xl transition-colors ${isActive ? 'bg-black/15' : 'bg-white/10 group-hover:bg-white/15'}`}>
+                {isActive && (
+                  <span className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-white/35 blur-2xl drawer-active-glow" />
+                )}
+                <span className={`relative grid h-10 w-10 place-items-center rounded-xl transition-all duration-200 ${isActive ? 'bg-black/15' : 'bg-white/10 group-hover:scale-105 group-hover:bg-white/15'}`}>
                   <Icon size={18} />
                 </span>
-                <span>{item.label}</span>
-                {isActive && <ChevronLeft size={16} className="mr-auto" />}
+                <span className="relative">{item.label}</span>
+                {isActive && <ChevronLeft size={16} className="relative mr-auto" />}
               </Link>
             );
           })}
@@ -2583,17 +2616,36 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
         </div>
       </aside>
 
-      {mobileMenu && <button aria-label="إغلاق القائمة الجانبية" onClick={() => setMobileMenu(false)} className="fixed inset-0 z-40 bg-primary/45 backdrop-blur-[2px] lg:hidden" data-testid="button-close-menu-backdrop" />}
+      {mobileMenu && (
+        <button
+          aria-label="إغلاق القائمة الجانبية"
+          onClick={closeDrawer}
+          className={`fixed inset-0 z-40 cursor-default bg-primary/55 lg:hidden ${drawerClosing ? 'drawer-backdrop is-closing' : 'drawer-backdrop'}`}
+          data-testid="button-close-menu-backdrop"
+        />
+      )}
 
       <div className="lg:mr-72">
-        <header className="sticky top-0 z-30 flex h-[76px] items-center justify-between border-b border-border bg-background px-5 shadow-[0_2px_16px_-6px_rgba(0,0,0,0.15)] sm:px-8">
-          <div className="flex items-center gap-3">
+        <header className="sticky top-0 z-30 flex h-[72px] items-center justify-between gap-3 border-b border-border bg-background/95 px-4 shadow-[0_2px_16px_-6px_rgba(0,0,0,0.15)] backdrop-blur-md sm:px-8">
+          {/* زر الأقسام: يظهر أعلى اليمين على الهاتف فقط بدل شريط سفلي مزدحم */}
+          <button
+            onClick={openDrawer}
+            aria-label="عرض أقسام المنصة"
+            aria-expanded={mobileMenu}
+            className={`group relative grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-white shadow-lg transition-all duration-200 active:scale-90 lg:hidden ${
+              mobileMenu ? 'fab-active' : 'fab-pulse'
+            } bg-gradient-to-br from-[#17413f] via-[#1d5a56] to-[#2a7a72] ring-1 ring-accent/40`}
+            data-testid="button-open-menu"
+          >
+            <Menu size={21} className="transition-transform duration-300 group-active:rotate-90" />
+          </button>
+          <div className="min-w-0 flex-1">
             <div>
               <p className="hidden items-center gap-1.5 text-xs font-semibold text-muted-foreground sm:flex"><span className="h-1.5 w-1.5 rounded-full bg-accent" /> أرض اللغة / {mode === 'student' ? 'بوابة الطالب' : 'بوابة المعلم'}</p>
-              <h1 className="bg-gradient-to-l from-primary to-[#3f7d78] bg-clip-text text-lg font-extrabold text-transparent">{active}</h1>
+              <h1 className="truncate bg-gradient-to-l from-primary to-[#3f7d78] bg-clip-text text-base font-extrabold text-transparent sm:text-lg">{active}</h1>
             </div>
           </div>
-          <div className="relative flex items-center gap-2">
+          <div className="relative flex shrink-0 items-center gap-1.5 sm:gap-2">
             <button onClick={toggleNotifs} title="الإشعارات — إعلانات الأستاذ" className={`relative rounded-xl p-2.5 transition-colors hover:bg-muted hover:text-primary ${notifOpen ? 'bg-muted text-primary' : 'text-muted-foreground'}`} data-testid="button-notifications" aria-label="الإشعارات">
               <Bell size={19} />
               {unreadCount > 0 ? (
@@ -2657,7 +2709,7 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
             )}
           </div>
         </header>
-        <main className="animate-fade px-5 py-7 pb-24 sm:px-8 lg:px-10">
+        <main className="animate-fade px-4 py-6 sm:px-8 lg:px-10 lg:py-7">
           {authReady ? children : (
             <div className="grid min-h-[55dvh] place-items-center" data-testid="auth-gate-loading">
               <div className="flex flex-col items-center gap-4 text-center">
@@ -2672,18 +2724,8 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
         </main>
       </div>
 
-      <nav className="fixed inset-x-3 bottom-3 z-40 flex items-center gap-1.5 overflow-x-auto rounded-3xl border border-white/10 bg-[#0d2926] p-2 shadow-2xl no-scrollbar lg:hidden">
-        {links.map((item) => {
-          const Icon = item.icon;
-          const isActive = location === item.href;
-          return (
-            <Link key={item.href} href={item.href} className={`grid min-w-[62px] shrink-0 place-items-center gap-1 rounded-2xl px-2 py-2 text-[10px] font-bold transition-all ${isActive ? 'bg-gradient-to-b from-accent to-[#ddbd6d] text-[#3a2c07] shadow-md' : 'text-white/55'}`} data-testid={`link-mobile-${item.href.replaceAll('/', '-').replace(/^-/, '')}`}>
-              <Icon size={18} />
-              <span className="whitespace-nowrap">{item.label.split(' ')[0]}</span>
-            </Link>
-          );
-        })}
-      </nav>
+      {/* الشريط السفلي أُزيل: أقسام المنصة صارت في الدرج العلوي.
+          المساحة أسفل المحتوى معروضة الآن كاملةً — لا شريط يقطعها. */}
     </div>
   );
 }

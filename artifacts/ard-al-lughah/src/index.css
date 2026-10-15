@@ -185,6 +185,47 @@
   }
   .animate-rise { animation: rise .6s cubic-bezier(.2,.8,.2,1) both; }
   .animate-fade { animation: fade .45s ease both; }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     درج الأقسام على الهاتف — زر عائم أعلى اليمين بدل شريط سفلي مزدحم
+     الأنيميشن: صفيحة تنزلق من اليمين + ضباب يتلاشى + كل بند يتتابع
+     ═══════════════════════════════════════════════════════════════════════ */
+  .drawer-backdrop {
+    animation: drawer-backdrop .34s cubic-bezier(.4, 0, .2, 1) both;
+  }
+  .drawer-panel {
+    animation: drawer-in .46s cubic-bezier(.16, 1, .3, 1) both;
+    will-change: transform, opacity;
+  }
+  .drawer-panel.is-closing {
+    animation: drawer-out .3s cubic-bezier(.4, 0, 1, 1) both;
+  }
+  .drawer-backdrop.is-closing {
+    animation: drawer-backdrop-out .3s ease both;
+  }
+  /* دخول متتابع للقائمة: تأخير متدرّج لكل عنصر */
+  .drawer-item {
+    animation: drawer-item-in .52s cubic-bezier(.16, 1, .3, 1) both;
+    animation-delay: calc(var(--i, 0) * 42ms + 110ms);
+  }
+  /* نبض هادئ للزر العائم — يلفت النظر دون إزعاج */
+  .fab-pulse::after {
+    content: '';
+    position: absolute;
+    inset: -6px;
+    border-radius: inherit;
+    border: 2px solid hsl(var(--accent) / .55);
+    animation: fab-ring 2.9s cubic-bezier(.2, .6, .3, 1) infinite;
+    pointer-events: none;
+  }
+  .fab-active::after {
+    animation: fab-ring-burst .6s cubic-bezier(.2, .6, .3, 1) 1;
+  }
+  /* توهّج يتنفس على القسم النشط داخل الدرج */
+  .drawer-active-glow {
+    animation: drawer-glow 3.4s ease-in-out infinite;
+  }
+
   .scrollbar-thin { scrollbar-width: thin; scrollbar-color: hsl(var(--border)) transparent; }
   .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
   .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -211,6 +252,41 @@
 @keyframes modal-pop { from { opacity: 0; transform: translateY(18px) scale(.985); } to { opacity: 1; transform: none; } }
 @keyframes bar-fill { from { width: 0; } }
 @keyframes glow-pulse { 0%, 100% { box-shadow: 0 0 0 0 hsl(var(--accent) / .45); } 50% { box-shadow: 0 0 0 9px hsl(var(--accent) / 0); } }
+
+/* ── أنيميشن درج الأقسام (الهاتف) ── */
+@keyframes drawer-backdrop {
+  from { opacity: 0; backdrop-filter: blur(0px); }
+  to { opacity: 1; backdrop-filter: blur(6px); }
+}
+@keyframes drawer-backdrop-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes drawer-in {
+  from { opacity: .4; transform: translateX(100%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes drawer-out {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: .5; transform: translateX(100%); }
+}
+@keyframes drawer-item-in {
+  from { opacity: 0; transform: translateX(34px) scale(.94); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes fab-ring {
+  0% { opacity: .85; transform: scale(.9); }
+  70% { opacity: 0; transform: scale(1.5); }
+  100% { opacity: 0; transform: scale(1.5); }
+}
+@keyframes fab-ring-burst {
+  0% { opacity: .9; transform: scale(.85); }
+  100% { opacity: 0; transform: scale(1.9); }
+}
+@keyframes drawer-glow {
+  0%, 100% { opacity: .55; transform: scale(1); }
+  50% { opacity: .95; transform: scale(1.06); }
+}
 @keyframes shake { 10%, 90% { transform: translateX(-2px); } 20%, 80% { transform: translateX(4px); } 30%, 50%, 70% { transform: translateX(-7px); } 40%, 60% { transform: translateX(7px); } }
 @keyframes caret-blink { 0%, 70%, 100% { opacity: 1; } 20%, 50% { opacity: 0; } }
 
