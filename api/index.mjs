@@ -35593,14 +35593,23 @@ async function getWeeklyActivity() {
     days.push(d);
     keys.push(toLocalDateKey(d));
   }
-  const { data } = await supabaseQuery(
-    `learning_activity?select=activity_date&activity_date=gte.${keys[0]}&limit=1000`
-  );
+  const from = keys[0];
+  const [lessons, hw, notebooks, attempts] = await Promise.all([
+    supabaseQuery(`lesson_progress?select=completed_at&completed_at=gte.${from}&limit=5000`),
+    supabaseQuery(`assignment_submissions?select=submitted_at&submitted_at=gte.${from}&limit=5000`),
+    supabaseQuery(`notebook_submissions?select=submitted_at&submitted_at=gte.${from}&limit=5000`),
+    supabaseQuery(`assessment_attempts?select=completed_at&completed_at=gte.${from}&limit=5000`)
+  ]);
   const counts = {};
-  for (const row of data || []) {
-    const key = toLocalDateKey(new Date(row.activity_date));
-    if (keys.includes(key)) counts[key] = (counts[key] || 0) + 1;
-  }
+  const bump = (raw) => {
+    if (!raw) return;
+    const key = toLocalDateKey(new Date(String(raw)));
+    if (key && keys.includes(key)) counts[key] = (counts[key] || 0) + 1;
+  };
+  for (const r of lessons.data || []) bump(r.completed_at);
+  for (const r of hw.data || []) bump(r.submitted_at);
+  for (const r of notebooks.data || []) bump(r.submitted_at);
+  for (const r of attempts.data || []) bump(r.completed_at);
   return days.map((d, i) => ({ label: ARABIC_DAY_LABELS[d.getDay()], value: counts[keys[i]] || 0 }));
 }
 async function getCompletedLessons(userId, grade) {

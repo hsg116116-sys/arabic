@@ -1771,17 +1771,17 @@ function Home() {
 
         {/* Teacher */}
         <section id="teacher" className="mx-auto grid max-w-7xl gap-10 px-5 py-16 lg:grid-cols-[.8fr_1.2fr] lg:items-center lg:px-8 lg:py-24">
-          <div className="relative mx-auto w-full max-w-sm">
-            <div className="absolute -inset-4 rotate-3 rounded-[2rem] bg-accent/25" />
-            <div className="relative aspect-[4/5] overflow-hidden rounded-[2rem] bg-primary text-primary-foreground shadow-lg">
-              <img src={tImg} alt={tName} className="h-full w-full object-cover object-[center_18%]" data-testid="img-teacher-public" />
-              <div className="absolute inset-0 bg-gradient-to-t from-primary via-primary/25 to-transparent" />
-              <div className="absolute bottom-7 right-7 left-7">
-                <p className="text-sm text-primary-foreground/70">المعلم الذي يمشي معك</p>
-                <h2 className="mt-1 font-display text-3xl font-bold">{tName}</h2>
-              </div>
-              <div className="absolute left-7 top-7 h-3 w-3 rounded-full bg-accent shadow-[0_0_0_6px_hsl(var(--accent)/.18)]" />
-            </div>
+<div className="relative mx-auto w-full max-w-lg">
+            {/* الصورة شفافة (PNG) فلا إطار ولا تدرّج: تظهر كما هي.
+                الإطار السابق كان ضرورياً لصورة JPEG بخلفية، ويرتجف الآن. */}
+            <img
+              src="/teacher-ahmed.png"
+              alt={tName}
+              width={1452}
+              height={1083}
+              className="relative mx-auto block w-full select-none object-contain drop-shadow-[0_18px_38px_rgba(23,65,63,.18)]"
+data-testid="img-teacher-public"
+            />
           </div>
           <div>
             <p className="text-sm font-bold text-accent-foreground">تعلم إنساني</p>
@@ -2852,6 +2852,46 @@ function PageHeading({ eyebrow, title, body, action }: { eyebrow?: string; title
         {body && <p className="mt-2 max-w-2xl text-sm leading-7 text-muted-foreground">{body}</p>}
       </div>
       {action}
+    </div>
+  );
+}
+
+/** مخطط النشاط الأسبوعي — أعمدة بمقياس نسبي حقيقي.
+ *  كان height = value% فالأعمدة بلا بيانات كلها 10% متساوية. */
+function ActivityChart({ points }: { points: { label: string; value: number }[] }) {
+  const max = Math.max(1, ...points.map((p) => Number(p.value) || 0));
+  const total = points.reduce((s, p) => s + (Number(p.value) || 0), 0);
+  if (!points.length || total === 0) {
+    return (
+      <div className="mt-8 flex h-52 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-background/50 text-center">
+        <span className="grid h-12 w-12 place-items-center rounded-2xl bg-secondary text-primary/60"><TrendingUp size={22} /></span>
+        <p className="text-sm font-bold text-primary">لا نشاط في آخر ٧ أيام</p>
+        <p className="max-w-xs text-xs leading-6 text-muted-foreground">
+          يُحتسب هنا: إكمال الدروس، تسليم الواجبات والدفاتر، والاختبارات.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-8 flex h-52 items-end gap-2 sm:gap-6">
+      {points.map((point) => {
+        const v = Number(point.value) || 0;
+        const pct = Math.round((v / max) * 100);
+        return (
+          <div key={point.label} className="group flex h-full flex-1 flex-col items-center justify-end gap-2">
+            <span className="text-[11px] font-extrabold tabular-nums text-primary/70">{v}</span>
+            <div
+              className="relative w-full max-w-10 rounded-t-xl bg-gradient-to-t from-primary/70 to-accent transition-all duration-500 group-hover:from-primary group-hover:to-accent"
+              style={{ height: v === 0 ? 3 : Math.max(8, pct) + '%' }}
+            >
+              <span className="absolute -top-7 left-1/2 hidden -translate-x-1/2 rounded-md bg-primary px-2 py-1 text-[10px] font-bold text-primary-foreground group-hover:block">
+                {v}
+              </span>
+            </div>
+            <span className="text-xs font-semibold text-muted-foreground">{point.label}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -4212,18 +4252,7 @@ function TeacherDashboard() {
                 </div>
                 <span className="rounded-full bg-secondary px-3 py-1 text-xs font-bold text-primary">الأسبوع الحالي</span>
               </div>
-              <div className="mt-8 flex h-52 items-end gap-2 sm:gap-6">
-                {(d.weeklyActivity ?? []).map((point) => (
-                  <div key={point.label} className="group flex flex-1 flex-col items-center gap-2">
-                    <div className="relative w-full max-w-10 rounded-t-xl bg-secondary transition-all group-hover:bg-accent" style={{ height: `${Math.max(point.value, 10)}%` }}>
-                      <span className="absolute -top-7 left-1/2 hidden -translate-x-1/2 rounded-md bg-primary px-2 py-1 text-[10px] text-primary-foreground group-hover:block font-bold">
-                        {point.value}
-                      </span>
-                    </div>
-                    <span className="text-xs font-semibold text-muted-foreground">{point.label}</span>
-                  </div>
-                ))}
-              </div>
+              <ActivityChart points={d.weeklyActivity ?? []} />
             </div>
 
             <div className="rounded-3xl border border-border bg-card p-6 shadow-sm">
@@ -10253,16 +10282,7 @@ function TeacherDashboardNew() {
                 </div>
                 <span className="rounded-full bg-accent/25 px-3 py-1 text-xs font-bold text-accent-foreground">الأسبوع الحالي</span>
               </div>
-              <div className="mt-8 flex h-52 items-end gap-2 sm:gap-6">
-                {(d.weeklyActivity ?? []).map((point) => (
-                  <div key={point.label} className="group flex flex-1 flex-col items-center gap-2">
-                    <div className="relative w-full max-w-10 rounded-t-xl bg-gradient-to-t from-primary/70 to-accent transition-all group-hover:from-accent group-hover:to-accent" style={{ height: `${Math.max(point.value, 10)}%` }}>
-                      <span className="absolute -top-7 left-1/2 hidden -translate-x-1/2 rounded-md bg-primary px-2 py-1 text-[10px] font-bold text-primary-foreground group-hover:block">{point.value}</span>
-                    </div>
-                    <span className="text-xs font-semibold text-muted-foreground">{point.label}</span>
-                  </div>
-                ))}
-              </div>
+              <ActivityChart points={d.weeklyActivity ?? []} />
             </div>
 
             <div className="rounded-[2rem] border border-border bg-card p-6 shadow-sm">

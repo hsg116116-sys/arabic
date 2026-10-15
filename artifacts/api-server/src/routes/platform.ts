@@ -117,6 +117,11 @@ function toLocalDateKey(d: Date): string {
 }
 
 /** النشاط الأسبوعي آخر 7 أيام من جدول learning_activity الحقيقي */
+/** النشاط الأسبوعي لطلاب المنصة (آخر 7 أيام).
+ *  المشكلة التي كانت: كانت تقرأ جدول learning_activity فقط — وهو فارغ
+ *  لأن لا شيء يكتب فيه إطلاقاً — فكان المخطط أصفاراً دائماً.
+ *  الحل: ندمج المصادر الثلاثة التي تُسجَّل فعلاً عند الطالب:
+ *  إكمال الدرس + تسليم الواجب + تسليم الدفتر (+ محاولة الاختبار). */
 async function getWeeklyActivity(): Promise<{ label: string; value: number }[]> {
   const days: Date[] = [];
   const keys: string[] = [];
@@ -127,16 +132,26 @@ async function getWeeklyActivity(): Promise<{ label: string; value: number }[]> 
     days.push(d);
     keys.push(toLocalDateKey(d));
   }
+  const from = keys[0];
 
-  const { data } = await supabaseQuery<any[]>(
-    `learning_activity?select=activity_date&activity_date=gte.${keys[0]}&limit=1000`
-  );
+  // كل المصادر بالتوازي حتى لو فشل واحد تبقى البقية تُحتسب
+  const [lessons, hw, notebooks, attempts] = await Promise.all([
+    supabaseQuery<any[]>(`lesson_progress?select=completed_at&completed_at=gte.${from}&limit=5000`),
+    supabaseQuery<any[]>(`assignment_submissions?select=submitted_at&submitted_at=gte.${from}&limit=5000`),
+    supabaseQuery<any[]>(`notebook_submissions?select=submitted_at&submitted_at=gte.${from}&limit=5000`),
+    supabaseQuery<any[]>(`assessment_attempts?select=completed_at&completed_at=gte.${from}&limit=5000`),
+  ]);
 
   const counts: Record<string, number> = {};
-  for (const row of data || []) {
-    const key = toLocalDateKey(new Date(row.activity_date));
-    if (keys.includes(key)) counts[key] = (counts[key] || 0) + 1;
-  }
+  const bump = (raw: unknown) => {
+    if (!raw) return;
+    const key = toLocalDateKey(new Date(String(raw)));
+    if (key && keys.includes(key)) counts[key] = (counts[key] || 0) + 1;
+  };
+  for (const r of lessons.data || []) bump(r.completed_at);
+  for (const r of hw.data || []) bump(r.submitted_at);
+  for (const r of notebooks.data || []) bump(r.submitted_at);
+  for (const r of attempts.data || []) bump(r.completed_at);
 
   return days.map((d, i) => ({ label: ARABIC_DAY_LABELS[d.getDay()], value: counts[keys[i]] || 0 }));
 }
