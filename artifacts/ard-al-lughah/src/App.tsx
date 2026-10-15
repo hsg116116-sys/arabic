@@ -2544,38 +2544,70 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
   return (
     <div className="min-h-[100dvh] bg-background">
       <aside
-        className={`fixed inset-y-0 right-0 z-50 flex w-[19rem] max-w-[88vw] flex-col overflow-hidden overflow-y-auto bg-gradient-to-b from-[#0d2926] via-[#123936] to-[#0a201e] px-5 py-6 text-white shadow-2xl lg:w-72 lg:translate-x-0 lg:shadow-none ${
+        className={`drawer-surface fixed inset-y-0 right-0 z-50 flex w-[19.5rem] max-w-[89vw] flex-col overflow-hidden overflow-y-auto px-4 py-5 text-white shadow-2xl no-scrollbar lg:w-72 lg:translate-x-0 lg:shadow-none ${
           mobileMenu
             ? drawerClosing ? 'drawer-panel is-closing' : 'drawer-panel'
             : 'translate-x-full lg:translate-x-0'
         }`}
         data-testid="sidebar-drawer"
       >
-        <div className="pointer-events-none absolute -left-20 top-24 h-56 w-56 rounded-full bg-accent/15 blur-3xl" />
+        <div className="pointer-events-none absolute -left-20 top-24 h-56 w-56 rounded-full bg-accent/12 blur-3xl" />
         <div className="pointer-events-none absolute -right-16 bottom-16 h-48 w-48 rounded-full bg-accent/10 blur-3xl" />
-        <div className="relative flex items-center justify-between">
+        <div className="relative flex items-center justify-between px-1">
           <span className="[&_span]:!text-white">
             <Logo />
           </span>
           <div className="flex items-center gap-2">
-            <span className="hidden rounded-full bg-white/10 px-3 py-1 text-[11px] font-extrabold text-white/70 ring-1 ring-white/15 lg:block">{links.length} أقسام</span>
-            <button onClick={closeDrawer} className="rounded-lg p-2 text-white/60 hover:bg-white/10 lg:hidden" data-testid="button-close-menu" aria-label="إغلاق القائمة">
-              <X size={19} />
+            <button onClick={closeDrawer} className="grid h-9 w-9 place-items-center rounded-xl bg-white/10 text-white/70 ring-1 ring-white/12 transition-all hover:bg-white/20 hover:text-white active:scale-90 lg:hidden" data-testid="button-close-menu" aria-label="إغلاق القائمة">
+              <X size={18} />
             </button>
           </div>
         </div>
-        <div className="relative mt-8 rounded-2xl bg-white/10 p-4 ring-1 ring-white/15 backdrop-blur-md">
-          <div className="flex items-center gap-3">
-            <span className="ring-2 ring-accent/70 rounded-2xl">
-              <Avatar name={mode === 'student' ? studentName : 'أ'} src={avatarSrc} />
+{/* ── رأس البطاقة الشخصية: تدرّج أخضر عميق + حلقة ذهبية + توهّج ── */}
+        <div className="drawer-hero relative overflow-hidden rounded-[26px] p-4 ring-1 ring-white/12">
+          <div className="relative flex items-center gap-3">
+            <span className="relative shrink-0">
+              <span className="absolute -inset-1 rounded-2xl bg-gradient-to-br from-accent to-[#e8c876] opacity-70 blur-[6px]" />
+              <span className="relative block rounded-2xl ring-2 ring-accent/70">
+                <Avatar name={mode === 'student' ? studentName : 'أ'} src={avatarSrc} />
+              </span>
+              <span className="absolute -bottom-0.5 -left-0.5 grid h-5 w-5 place-items-center rounded-full border-2 border-[#123936] bg-green-500 text-white">
+                <Check size={11} />
+              </span>
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-bold text-white">{mode === 'student' ? studentName : 'المعلم أحمد يحيى الأسطل'}</p>
-              <p className="mt-0.5 truncate text-xs text-accent/90">{mode === 'student' ? studentSubtitle : 'إدارة ومتابعة المنصة'}</p>
+              <p className="truncate text-[15px] font-extrabold text-white">{mode === 'student' ? studentName : 'المعلم أحمد يحيى الأسطل'}</p>
+              <p className="mt-0.5 flex items-center gap-1 truncate text-[11px] font-bold text-accent/95">
+                <GraduationCap size={12} />
+                {mode === 'student' ? (studentSubtitle || 'بوابة الطالب') : 'إدارة ومتابعة المنصة'}
+              </p>
             </div>
           </div>
+          {/* شريط تقدم صغير داخل الرأس — يملأ الفراغ ويعطي إحساس الإنجاز */}
+          {mode === 'student' && (
+            <div className="relative mt-3.5">
+              <div className="mb-1.5 flex items-center justify-between text-[10px] font-extrabold text-white/70">
+                <span>تقدمك في المنصة</span>
+                <span className="tabular-nums text-accent">{Math.round(Number(studentDash.data?.progress ?? 0))}%</span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-black/25">
+                <div
+                  className="h-full rounded-full bg-gradient-to-l from-accent via-[#f3d68a] to-accent transition-[width] duration-700"
+                  style={{ width: `${Math.max(6, Math.min(100, Number(studentDash.data?.progress ?? 0)))}%` }}
+                />
+              </div>
+            </div>
+          )}
         </div>
-        <nav className="relative mt-8 space-y-1.5">
+
+        {/* ── عنوان الأقسام + عدّاد ── */}
+        <div className="relative mb-2 mt-7 flex items-center gap-2.5 px-1">
+          <span className="h-4 w-1 rounded-full bg-gradient-to-b from-accent to-transparent" />
+          <h2 className="text-[11px] font-extrabold uppercase tracking-[.16em] text-white/45">أقسام المنصة</h2>
+          <span className="mr-auto rounded-full bg-white/[0.08] px-2.5 py-0.5 text-[10px] font-extrabold tabular-nums text-accent ring-1 ring-accent/25">{links.length}</span>
+        </div>
+
+        <nav className="relative space-y-2">
           {links.map((item, i) => {
             const Icon = item.icon;
             const isActive = location === item.href;
@@ -2585,34 +2617,48 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
                 href={item.href}
                 onClick={() => setMobileMenu(false)}
                 style={{ ['--i' as any]: i }}
-                className={`drawer-item group relative flex items-center gap-3 overflow-hidden rounded-2xl px-3.5 py-3.5 text-sm font-bold transition-all duration-200 ${
-                  isActive ? 'bg-gradient-to-l from-accent to-[#e8c876] text-[#3a2c07] shadow-lg shadow-accent/25' : 'text-white/70 hover:translate-x-[-3px] hover:bg-white/10 hover:text-white'
+                className={`drawer-item group relative block overflow-hidden rounded-[22px] border transition-all duration-300 ${
+                  isActive
+                    ? 'drawer-link-active border-accent/60 px-4 py-3.5'
+                    : 'drawer-link border-white/10 px-3.5 py-3 hover:-translate-y-0.5'
                 }`}
                 data-testid={`link-nav-${item.href.replaceAll('/', '-').replace(/^-/, '')}`}
               >
-                {isActive && (
-                  <span className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-white/35 blur-2xl drawer-active-glow" />
-                )}
-                <span className={`relative grid h-10 w-10 place-items-center rounded-xl transition-all duration-200 ${isActive ? 'bg-black/15' : 'bg-white/10 group-hover:scale-105 group-hover:bg-white/15'}`}>
-                  <Icon size={18} />
+                <span className="relative flex items-center gap-3">
+                  <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl transition-all duration-300 ${
+                    isActive
+                      ? 'bg-black/20 text-white'
+                      : 'bg-gradient-to-br from-white/[0.16] to-white/[0.05] text-accent group-hover:scale-110 group-hover:from-white/25'
+                  }`}>
+                    <Icon size={19} strokeWidth={isActive ? 2.4 : 2} />
+                  </span>
+                  <span className={`min-w-0 flex-1 truncate text-[15px] font-extrabold transition-colors ${isActive ? 'text-[#2b2005]' : 'text-white/85 group-hover:text-white'}`}>
+                    {item.label}
+                  </span>
+                  <ChevronLeft
+                    size={17}
+                    className={`shrink-0 transition-all duration-300 ${isActive ? 'text-[#2b2005]/70' : '-translate-x-1 text-white/25 opacity-0 group-hover:translate-x-0 group-hover:opacity-100'}`}
+                  />
                 </span>
-                <span className="relative">{item.label}</span>
-                {isActive && <ChevronLeft size={16} className="relative mr-auto" />}
               </Link>
             );
           })}
         </nav>
-        <div className="relative mt-auto overflow-hidden rounded-2xl bg-white/[0.07] p-4 ring-1 ring-accent/25 backdrop-blur-md">
-          <div className="pointer-events-none absolute -left-6 -top-6 h-20 w-20 rounded-full bg-accent/25 blur-2xl" />
-          <p className="relative text-xs leading-6 text-white/70">
-            تقدمك اليوم يصنع
-            <br />
-            <strong className="font-bold text-accent">فصاحتك وعلو شأنك في لغة القرآن.</strong>
+        {/* ── بطاقة ختامية: اقتباس + إصدار ── */}
+        <div className="drawer-link relative mt-6 overflow-hidden rounded-[22px] border border-accent/22 p-4">
+          <div className="pointer-events-none absolute -left-8 -top-10 h-24 w-24 rounded-full bg-accent/25 blur-2xl" />
+          <p className="relative flex items-start gap-2 text-[12px] leading-6 text-white/75">
+            <Quote className="mt-0.5 shrink-0 text-accent/70" size={14} />
+            <span>
+              تقدمك اليوم يصنع
+              <strong className="font-extrabold text-accent"> فصاحتك وعلو شأنك </strong>
+              في لغة القرآن.
+            </span>
           </p>
-          <div className="relative mt-4 h-1.5 overflow-hidden rounded-full bg-white/15">
+          <div className="relative mt-3.5 h-1 overflow-hidden rounded-full bg-black/25">
             <div className="h-full w-[70%] rounded-full bg-gradient-to-l from-accent to-[#f3d68a]" />
           </div>
-          <p className="relative mt-2 text-center text-[10px] font-mono text-white/30" dir="ltr">{APP_VERSION}</p>
+          <p className="relative mt-2.5 text-center font-mono text-[10px] font-bold tracking-wider text-white/30" dir="ltr">{APP_VERSION}</p>
         </div>
       </aside>
 
