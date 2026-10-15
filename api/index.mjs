@@ -30444,11 +30444,13 @@ var init_curriculum = __esm({
         const { grade } = req.query;
         const auth = req.auth || null;
         const { data } = await supabaseQuery("announcements?order=published_at.desc&limit=100");
-        const all = (data || []).filter((a) => a.published !== false).map(announcementToJson);
+        const rows = (data || []).map(announcementToJson);
         if (!auth || auth.role === "admin") {
-          res.json(grade ? all.filter((a) => a.grade === "\u0627\u0644\u062C\u0645\u064A\u0639" || a.grade === grade) : all);
+          const list2 = rows;
+          res.json(grade ? list2.filter((a) => a.grade === "\u0627\u0644\u062C\u0645\u064A\u0639" || a.grade === grade) : list2);
           return;
         }
+        const all = rows.filter((a) => a.published !== false);
         const profile = await getStudentProfile(auth.userId);
         if (!profile) {
           res.json([]);

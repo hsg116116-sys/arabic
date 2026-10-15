@@ -1027,13 +1027,19 @@ router.get("/curriculum/announcements", requireAuth, async (req, res) => {
     const { grade } = req.query as { grade?: string };
     const auth = (req as any).auth || null;
     const { data } = await supabaseQuery<any[]>("announcements?order=published_at.desc&limit=100");
-    const all = (data || []).filter((a) => a.published !== false).map(announcementToJson);
+    // published=null تُعامل كمنشور (سلوك قديم) — أما false فمسودة صريحة
+    const rows = (data || []).map(announcementToJson);
 
-    // المعلم/الإدارة: قائمة كاملة لأغراض الإدارة
+    // المعلم/الإدارة: يرى المنشور **والمسودة** — بلا ذلك لا يرى إعلانه
+    // المسودة إطلاقاً فيظنّ أنه ضاع، ولا يستطيع إعادة نشره.
     if (!auth || auth.role === "admin") {
-      res.json(grade ? all.filter((a) => a.grade === "الجميع" || a.grade === grade) : all);
+      const list = rows;
+      res.json(grade ? list.filter((a) => a.grade === "الجميع" || a.grade === grade) : list);
       return;
     }
+
+    // الطالب: المنشور فقط، ومفلتراً بصفّه ومدرسته
+    const all = rows.filter((a) => a.published !== false);
 
     // الطالب: نحدّد هويته من الجلسة لا من معطيات الطلب
     const profile = await getStudentProfile(auth.userId);

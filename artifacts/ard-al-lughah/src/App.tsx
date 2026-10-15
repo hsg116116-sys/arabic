@@ -9130,8 +9130,19 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                 ? `تعرض إعلانات ${grade} والإعلانات العامة فقط.`
                 : `تعرض كل الإعلانات بلا استثناء — بما فيها إعلانات صفوف ومدارس أخرى.`}
             </p>
-            <span className="shrink-0 rounded-full bg-primary/10 px-3 py-1.5 text-xs font-extrabold tabular-nums text-primary">
-              {shownNotes.length} / {notes.length}
+            {/* عدّاد مفصّل: منشور / مسودة / معروض — يمنع ظنّ الإعلان المختفي */}
+            <span className="flex shrink-0 items-center gap-1.5">
+              <span className="rounded-full bg-green-600/12 px-2.5 py-1.5 text-[11px] font-extrabold tabular-nums text-green-800">
+                {notes.filter((n: any) => n.published).length} منشور
+              </span>
+              {notes.some((n: any) => !n.published) ? (
+                <span className="rounded-full bg-amber-500/18 px-2.5 py-1.5 text-[11px] font-extrabold tabular-nums text-amber-800">
+                  {notes.filter((n: any) => !n.published).length} مسودة
+                </span>
+              ) : null}
+              <span className="rounded-full bg-primary/10 px-2.5 py-1.5 text-[11px] font-extrabold tabular-nums text-primary">
+                معروض {shownNotes.length}
+              </span>
             </span>
           </div>
 
@@ -9185,7 +9196,11 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                           <span className="inline-flex items-center gap-1 rounded-full bg-muted/70 px-2.5 py-0.5 text-[11px] font-bold text-muted-foreground">كل المدارس</span>
                         )}
                         {note.section && note.section !== 'الجميع' ? <span className="rounded-full bg-[#6a1b9a]/15 px-2.5 py-0.5 text-[11px] font-bold text-[#6a1b9a]">{note.section === 'طالب' ? 'الطلاب فقط' : 'الطالبات فقط'}</span> : null}
-                        {!note.published ? <span className="rounded-full bg-destructive/10 px-2.5 py-0.5 text-[11px] font-bold text-destructive">مسودة</span> : null}
+                        {!note.published ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/20 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-800 ring-1 ring-amber-500/40">
+                            <EyeOff size={11} /> مسودة — لا يراها الطالب
+                          </span>
+                        ) : null}
                       </div>
                       <p className="mt-1.5 line-clamp-2 text-sm leading-6 text-muted-foreground">{note.body}</p>
                       <p className="mt-1.5 text-[11px] font-semibold text-muted-foreground">{note.date} · {note.audience}</p>
