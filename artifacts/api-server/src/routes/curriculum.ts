@@ -277,10 +277,12 @@ async function tolerantWrite(
   const base: Record<string, any> = {};
   for (const k of baseKeys) if (full[k] !== undefined) base[k] = full[k];
   logger.warn({ table, msg }, "tolerantWrite fallback to base columns");
-  return supabaseQuery(query || table, {
+  const retry = await supabaseQuery(query || table, {
     method,
     body: method === "POST" ? [base] : base,
   });
+  // نُعلم المستدعي أن حقولاً سقطت — بدل نجاح صامت يُفقد الاستهداف
+  return { ...retry, warned: true } as any;
 }
 
 const COURSE_BASE = ["title", "description", "lessons_count", "duration", "color", "icon", "sort_order", "published"];
@@ -1014,25 +1016,37 @@ router.get("/curriculum/settings", async (_req, res) => {
   }
 });
 
-router.get("/curriculum/announcements", async (req, res) => {
+/* ═══════════════════════════════════════════════════════════════════════
+   إعلانات المنصة — قراءة الطالب والمعلم.
+   القاعدة: الطالب يرى ما يخص صفّه ومدرسته فقط، والمعلم/الإدارة يرى الكل.
+   يُحلّ الطالب من الجلسة تلقائياً فلا يعتمد على الواجهة تمرير student_id
+   (كان هذا سبب ظهور قائمة فارغة: استدعاء بلا معرّف ⇒ صفر إعلانات).
+   ═══════════════════════════════════════════════════════════════════════ */
+router.get("/curriculum/announcements", requireAuth, async (req, res) => {
   try {
-    const { grade, student_id } = req.query as { grade?: string; student_id?: string };
+    const { grade } = req.query as { grade?: string };
+    const auth = (req as any).auth || null;
     const { data } = await supabaseQuery<any[]>("announcements?order=published_at.desc&limit=100");
-    let list = (data || []).filter((a) => a.published !== false).map(announcementToJson);
-    if (grade) list = list.filter((a) => a.grade === "الجميع" || a.grade === grade);
-    // بلا ملف طالب لا تُكشف إعلانات صف/مدرسة أخرى.
-    if (!student_id) {
+    const all = (data || []).filter((a) => a.published !== false).map(announcementToJson);
+
+    // المعلم/الإدارة: قائمة كاملة لأغراض الإدارة
+    if (!auth || auth.role === "admin") {
+      res.json(grade ? all.filter((a) => a.grade === "الجميع" || a.grade === grade) : all);
+      return;
+    }
+
+    // الطالب: نحدّد هويته من الجلسة لا من معطيات الطلب
+    const profile = await getStudentProfile(auth.userId);
+    if (!profile) {
       res.json([]);
       return;
     }
-    {
-      const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
-      if (!profile) {
-        res.json([]);
-        return;
-      }
-      list = list.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school));
-    }
+    const splitMap = await getSplitMap();
+    let list = all.filter((a) =>
+      itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school),
+    );
+    // grade من الطلب لا يُستخدم كمرشّح إضافي — itemVisible هو المرجع،
+    // لأن تمرير صف من الواجهة قد يخالف صف الطالب الحقيقي.
     res.json(list);
   } catch (err: any) {
     logger.error({ err }, "GET /curriculum/announcements failed");
@@ -1060,6 +1074,16 @@ router.post("/teacher/curriculum/announcements", requireAdmin, async (req, res) 
     };
     const r = await tolerantWrite("announcements", "POST", "announcements", full, ["title", "body", "announcement_type", "audience", "published", "published_at"]);
     if (r.error) throw new Error(String(r.error));
+    // إن سقط عمود school/grade في الترحيلFallbackPublication فصار الإعلان للجميع
+    // بصمت — نقيس الفرق ونُبلغ الأستاذ بدل أن نُسقط الاستهداف دون خبر.
+    if (r.warned) {
+      res.json({
+        success: true,
+        partial: true,
+        message: "نُشر الإعلان، لكن حقلا الصف والمدرسة غير موجودين في قاعدة البيانات — ظهر للجميع بدل الصف والمدرسة المحددين. نفّذ sql_announcements_scope.sql في Supabase.",
+      });
+      return;
+    }
     res.json({ success: true, message: "تم نشر الإعلان بنجاح!" });
   } catch (err: any) {
     logger.error({ err }, "POST curriculum announcement failed");
@@ -1081,6 +1105,10 @@ router.patch("/teacher/curriculum/announcements/:id", requireAdmin, async (req, 
     if (b.published !== undefined) full.published = !!b.published;
     const r = await tolerantWrite("announcements", "PATCH", `announcements?id=eq.${enc(req.params.id)}`, full, ["title", "body", "announcement_type", "audience", "published"]);
     if (r.error) throw new Error(String(r.error));
+    if (r.warned) {
+      res.json({ success: true, partial: true, message: "حُفظ التعديل، لكن حقلا الصف والمدرسة غير موجودين — نفّذ sql_announcements_scope.sql في Supabase." });
+      return;
+    }
     res.json({ success: true, message: "تم حفظ الإعلان!" });
   } catch (err: any) {
     logger.error({ err }, "PATCH curriculum announcement failed");

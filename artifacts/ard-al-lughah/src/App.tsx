@@ -592,7 +592,12 @@ function useCatalog(enabled = true) {
     reload,
     /** مدارس صف معيّن — إن كانت أكثر من واحدة نعرض منتقي المدرسة */
     schoolsOfGrade: useCallback((gradeName?: string): string[] => {
-      if (!gradeName || gradeName === 'الجميع') return [];
+      // "الجميع" = كل المدارس: نحتاجها حتى يمكن إعلان لمدرسة واحدة بكل الصفوف.
+      if (!gradeName || gradeName === 'الجميع') {
+        const all = new Set<string>();
+        for (const g of data.grades) for (const s of (g.schools || [])) if (s) all.add(s);
+        return [...all];
+      }
       const g = data.grades.find((x) => x.name === gradeName);
       return g?.schools?.length ? g.schools : [];
     }, [data]),
@@ -725,7 +730,7 @@ function GradeSchoolPicker({ grade, school, onGrade, onSchool, allowAllGrades, s
 function SchoolTargetField({ grade, value, onChange }: { grade: string; value: string; onChange: (v: string) => void }) {
   const cat = useCatalog();
   const options = cat.schoolsOfGrade(grade);
-  if (!options.length || !grade || grade === 'الجميع') return null;
+  if (!options.length || !grade) return null;
   return (
     <div className="mt-4 animate-fade-up">
       <p className="mb-2 flex items-center gap-2 text-sm font-semibold">
@@ -2552,11 +2557,9 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
   const fetchNotifs = async (markRead: boolean) => {
     setNotifLoading(true);
     try {
+      // الخادم يحلّ هوية الطالب من الجلسة ويفلتر بالصف والمدرسة — فلا نمرّر معرّفاً.
+      // تمريره كان يجعل الاستدعاء قبل جاهزية اللوحة يَرِد فارغاً.
       const p = new URLSearchParams();
-      if (mode === 'student') {
-        if (studentGrade) p.set('grade', studentGrade);
-        if (studentId) p.set('student_id', studentId);
-      }
       const d = await jsonFetch(`/api/curriculum/announcements?${p.toString()}`);
       const list = Array.isArray(d) ? d : [];
       notifCache = { at: Date.now(), items: list };
@@ -2571,9 +2574,11 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
     } catch { /* تجاهل — يبقى الجرس صامتاً بدل كسر الصفحة */ } finally { setNotifLoading(false); }
   };
   useEffect(() => {
+    // نعيد الجلب عند جهوزية هوية الطالب: الجلب الأول قد سبق التحميل فيرد فارغاً
+    if (!authReady) return;
     if (!notifCache || Date.now() - notifCache.at > 2 * 60 * 1000) fetchNotifs(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authReady, studentId, studentGrade]);
   const unreadCount = notifs.filter((n) => !seenIds.includes(n.id)).length;
   const toggleNotifs = () => {
     const next = !notifOpen;
@@ -2875,8 +2880,9 @@ function StudentDashboard() {
   const [gradeNotes, setGradeNotes] = useState<any[] | null>(null);
   const dashGrade = query.data?.student?.grade;
   useEffect(() => {
-    if (!dashGrade) return;
-    jsonFetch(`/api/curriculum/announcements?grade=${encodeURIComponent(dashGrade)}`)
+    // بلا grade من الواجهة: الخادم يفلتر بالصف والمدرسة الحقيقيين من الجلسة،
+    // والانتظار على dashGrade كان يمنع الجلب إن تأخر تحميل اللوحة.
+    jsonFetch('/api/curriculum/announcements')
       .then((d) => { if (Array.isArray(d) && d.length) setGradeNotes(d); })
       .catch(() => undefined);
   }, [dashGrade]);
@@ -8402,7 +8408,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
   const [notes, setNotes] = useState<any[]>([]);
   const [loadingNotes, setLoadingNotes] = useState(false);
   const [noteModal, setNoteModal] = useState(false);
-  const [noteForm, setNoteForm] = useState<any>({ title: '', body: '', type: 'إرشاد', audience: 'الجميع', targetGrade: 'الجميع', published: true });
+  const [noteForm, setNoteForm] = useState<any>({ title: '', body: '', type: 'إرشاد', audience: 'الجميع', targetGrade: 'الجميع', targetSchool: '', section: 'الجميع', published: true });
   const [savingNote, setSavingNote] = useState(false);
 
   const [msg, setMsg] = useState('');
@@ -8728,7 +8734,7 @@ function CurriculumManagerPage({ onlyTab, hero }: {
 
   /* ---------- الإعلانات ---------- */
   const openNoteCreate = () => {
-    setNoteForm({ title: '', body: '', type: 'إرشاد', audience: 'الجميع', targetGrade: grade, section: 'الجميع', published: true, school: '' });
+    setNoteForm({ title: '', body: '', type: 'إرشاد', audience: 'الجميع', targetGrade: grade, section: 'الجميع', published: true, targetSchool: '', school: '' });
     setNoteModal(true);
   };
   const saveNote = async (e: FormEvent) => {
@@ -8738,10 +8744,20 @@ function CurriculumManagerPage({ onlyTab, hero }: {
     try {
       const noteGrade = noteForm.targetGrade || 'الجميع';
       const noteSplit = noteGrade !== 'الجميع' && splitMap[noteGrade] === true;
-      await jsonFetch('/api/teacher/curriculum/announcements', { method: 'POST', body: { ...noteForm, grade: noteGrade, section: noteSplit ? (noteForm.section || 'الجميع') : 'الجميع', school: noteForm.school || '' } });
+      const noteSchool = String(noteForm.targetSchool || noteForm.school || '').trim();
+      const r: any = await jsonFetch('/api/teacher/curriculum/announcements', {
+        method: 'POST',
+        body: {
+          ...noteForm,
+          grade: noteGrade,
+          section: noteSplit ? (noteForm.section || 'الجميع') : 'الجميع',
+          school: noteSchool,
+        },
+      });
       setNoteModal(false);
       loadNotes();
-      flash('تم نشر الإعلان بنجاح!');
+      // إن سقط عمود الاستهداف يُبلغ الخادم بدل النجاح الصامت
+      flash(r?.partial ? (r?.message || 'نُشر للجميع — حقلا الصف والمدرسة غير مفعّلين في القاعدة') : (r?.message || 'تم نشر الإعلان بنجاح!'));
     } catch (e: any) { flash(e?.message || 'تعذر نشر الإعلان'); } finally { setSavingNote(false); }
   };
   const deleteNote = async (note: any) => {
@@ -9887,7 +9903,19 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                 ) : (
                   <p className="rounded-xl bg-secondary/50 px-4 py-2.5 text-xs text-muted-foreground">{!noteForm.targetGrade || noteForm.targetGrade === 'الجميع' ? 'الإعلان عام لكل الصفوف — يظهر للجميع.' : 'هذا الصف غير مقسّم — الإعلان سيظهر للجميع.'}</p>
                 )}
-                <SchoolTargetField grade={noteForm.targetGrade || 'الجميع'} value={noteForm.school || ''} onChange={(v) => setNoteForm({ ...noteForm, school: v })} />
+                <SchoolTargetField grade={noteForm.targetGrade || 'الجميع'} value={noteForm.targetSchool || noteForm.school || ''} onChange={(v) => setNoteForm({ ...noteForm, targetSchool: v, school: v })} />
+                {/* خلاصة الاستهداف: الصف والمدرسة معاً — يمنع الالتباس */}
+                <div className="mt-3 flex items-start gap-2 rounded-2xl border border-primary/20 bg-primary/6 px-4 py-3 text-xs leading-6 text-primary">
+                  <HelpCircle size={15} className="mt-0.5 shrink-0 text-primary/70" />
+                  <span>
+                    <strong className="font-extrabold">سيصل الإعلان إلى:</strong>{' '}
+                    {noteForm.targetGrade && noteForm.targetGrade !== 'الجميع' ? noteForm.targetGrade : 'كل الصفوف'}
+                    {' · '}
+                    {(noteForm.targetSchool || noteForm.school) ? noteForm.targetSchool || noteForm.school : 'كل المدارس'}
+                    {noteForm.section && noteForm.section !== 'الجميع' && splitMap[noteForm.targetGrade] ? ` · ${noteForm.section === 'طالب' ? 'الطلاب فقط' : 'الطالبات فقط'}` : ''}
+                    {' — لا يظهر لغير ذلك إطلاقاً.'}
+                  </span>
+                </div>
                 <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-secondary/60 px-3 py-3 text-sm font-semibold"><input type="checkbox" checked={noteForm.published !== false} onChange={(e) => setNoteForm({ ...noteForm, published: e.target.checked })} className="accent-primary" /> نشر فوراً (إلغاؤها تحفظه كمسودة)</label>
               </div>
               <div className="space-y-4">
@@ -10388,14 +10416,12 @@ function StudentAnnouncementsPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (effectiveGrade) params.set('grade', effectiveGrade);
-      if (student?.id) params.set('student_id', student.id);
-      const data = await jsonFetch(`/api/curriculum/announcements?${params.toString()}`);
+      // بلا معطيات: الخادم يحلّ الطالب من الجلسة ويفلتر بالصف والمدرسة
+      const data = await jsonFetch('/api/curriculum/announcements');
       setItems(Array.isArray(data) ? data : []);
     } catch { setItems([]); } finally { setLoading(false); }
   };
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [effectiveGrade, student?.id]);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   const types = ['الكل', ...([...new Set(items.map((a: any) => a.type).filter(Boolean))] as string[])];
   const shown = typeFilter === 'الكل' ? items : items.filter((a) => a.type === typeFilter);
