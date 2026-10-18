@@ -177,6 +177,22 @@ async function fetchAuthMe(): Promise<any> {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+   حساب الرقابة — «الإدارة للرقابة فقط»
+   دور profiles.role = observer: يدخل بوابة الإدارة كاملةً، يرى كل الأقسام
+   عدا «إدارة المنصة» و«إعداد التأسيس»، ولا يجد زر إضافة أو تعديل أو حذف.
+   الحماية الحقيقية على الخادم (blockObserverWrites) — هنا نحمي الواجهة.
+   ═══════════════════════════════════════════════════════════════════════ */
+const OBSERVER_ROLE = 'observer';
+
+/** من يقف في بوابة الإدارة: المعلم الكامل أو حساب الرقابة */
+const isStaffRole = (role: unknown) => role === 'admin' || role === OBSERVER_ROLE;
+
+/** الأقسام التي لا تظهر لحساب الرقابة: إدارة المنصة + إعداد التأسيس */
+const OBSERVER_BLOCKED_PATHS = ['/teacher/foundation', '/teacher/settings'];
+const isObserverBlockedPath = (path: string) =>
+  OBSERVER_BLOCKED_PATHS.some((p) => path === p || path.startsWith(p + '/'));
+
+/* ═══════════════════════════════════════════════════════════════════════
    روابط العودة (return-URL): طالب يفتح رابط واجب/اختبار وهو خارج الدخول
    يُحفظ مساره، وبعد تسجيل الدخول أو إنشاء الحساب (بريد أو Google) يرجع
    لنفس الصفحة مباشرة بدل الصفحة الرئيسية. تُحفظ في sessionStorage فتبقى
@@ -227,7 +243,7 @@ function redirectAfterAuth(setLocation: (to: string) => void, fallback = '/stude
     .then((me) => {
       if (!me.authenticated) { setLocation(fallback); return; }
       if (me.needsSetup) { setLocation('/auth/complete'); return; }
-      if (me.role === 'admin') { setLocation('/teacher'); return; }
+      if (isStaffRole(me.role)) { setLocation('/teacher'); return; }
       setLocation(next && next.startsWith('/student') ? next : fallback);
     })
     .catch(() => setLocation(fallback));
@@ -1488,7 +1504,7 @@ function useRedirectIfAuthenticated() {
         if (cancelled || !me?.authenticated) return;
         if (me.needsSetup) { setLocation('/auth/complete'); return; }
         if (me.needsSetup) { setLocation('/auth/complete'); return; }
-        if (me.role === 'admin') { setLocation('/teacher'); return; }
+        if (isStaffRole(me.role)) { setLocation('/teacher'); return; }
         const back = takeReturnUrl();
         setLocation(back && back.startsWith('/student') ? back : '/student');
       })
@@ -2452,6 +2468,86 @@ function ensureRefreshLoop() {
   }, 45 * 60 * 1000);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   وضع الرقابة — إبطال أدوات الكتابة في الواجهة كلها
+   القاعدة التي طلبها الأستاذ: «يشوف فقط». فكل ما يضيف أو يعدّل أو يحذف
+   يُزال من الصفحة، وكل حقل يصير للقراءة فقط، وكل نموذج لا يُرسَل.
+   التنقل والتبويبات والخروج تبقى: لذلك يُستثنى ما يحمل data-ro="keep".
+   ─────────────────────────────────────────────────────────────────────────
+   تنبيه مهم: هذا تجديد للواجهة فقط. الضمان الحقيقي على الخادم
+   (blockObserverWrites) — فحتى لو تسلّل زر واحد فالخادم يرفضه.
+   ═══════════════════════════════════════════════════════════════════════ */
+const RO_WRITE_ICONS = [
+  'lucide-pencil', 'lucide-trash-2', 'lucide-plus', 'lucide-save', 'lucide-upload',
+  'lucide-image-plus', 'lucide-minus-circle', 'lucide-camera', 'lucide-pen',
+  'lucide-eraser', 'lucide-list-plus', 'lucide-folder-plus', 'lucide-file-plus',
+];
+
+const RO_WRITE_WORDS = [
+  'إضافة', 'اضافة', 'اضافه', 'أضف', 'اضف',
+  'تعديل', 'حذف', 'احذف',
+  'حفظ', 'احفظ', 'رفع', 'ارفع',
+  'نشر', 'انشر', 'إرسال', 'ارسل',
+  'ترقية', 'دمج', 'تعطيل', 'تغيير', 'إعادة تعيين',
+  'غياب', 'حضور', 'خصم', 'ترحيل',
+  'إضافة طالب', 'سجل طالب', 'تسجيل طالب', 'مفتاح', 'كلمة المرور', 'نسخ إلى',
+  'add ', 'edit', 'delete', 'save', 'upload', 'remove', 'create', 'publish', 'submit', 'confirm',
+];
+
+function roIsWriteControl(el: Element): boolean {
+  if (el.closest('[data-ro="keep"]')) return false;
+  for (const cls of RO_WRITE_ICONS) {
+    if (el.querySelector(`svg.${cls}`)) return true;
+  }
+  const text = (el.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  if (!text || text.length > 60) return false;
+  return RO_WRITE_WORDS.some((w) => text.includes(w));
+}
+
+function useReadOnlyDom(active: boolean) {
+  useEffect(() => {
+    if (!active) return;
+    let queued = false;
+    const hide = (el: Element | null) => {
+      if (!el || el.getAttribute('data-ro-hidden')) return;
+      (el as HTMLElement).style.setProperty('display', 'none', 'important');
+      el.setAttribute('data-ro-hidden', '1');
+    };
+    const scan = () => {
+      queued = false;
+      const root = document.querySelector('[data-ro-root]');
+      if (!root) return;
+      root.querySelectorAll('button, [role="button"]').forEach((el) => {
+        if (roIsWriteControl(el)) hide(el);
+      });
+      root.querySelectorAll('input[type="file"]').forEach((el) => {
+        hide(el.closest('label') || el.parentElement);
+      });
+      root.querySelectorAll('input, textarea, select').forEach((raw) => {
+        const node = raw as HTMLInputElement;
+        if (node.type === 'file') return;
+        if (node.tagName === 'SELECT' || node.type === 'checkbox' || node.type === 'radio') node.disabled = true;
+        else node.readOnly = true;
+      });
+    };
+    const schedule = () => {
+      if (queued) return;
+      queued = true;
+      window.setTimeout(scan, 60);
+    };
+    scan();
+    const mo = new MutationObserver(schedule);
+    mo.observe(document.body, { childList: true, subtree: true });
+    // لا نموذج يُرسَل في وضع الرقابة — حتى لو ظهر زر بلا اسم معروف
+    const onSubmit = (e: Event) => { e.preventDefault(); e.stopPropagation(); };
+    document.addEventListener('submit', onSubmit, true);
+    return () => {
+      mo.disconnect();
+      document.removeEventListener('submit', onSubmit, true);
+    };
+  }, [active]);
+}
+
 // ذاكرة الإشعارات لجلسة التصفح — جلب واحد بدل جلب مع كل صفحة
 let notifCache: { at: number; items: any[] } | null = null;
 
@@ -2507,17 +2603,20 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
 
   // بوابة الدخول: تحقق واحد يُحفظ 5 دقائق — لا شاشة تحقق مع كل تنقل
   const [authReady, setAuthReady] = useState(false);
+  // حساب الرقابة: يمرّ من نفس البوابة بلا صلاحية كتابة واحدة
+  const [roMode, setRoMode] = useState(false);
   useEffect(() => {
     ensureRefreshLoop();
     let cancelled = false;
     const decide = (me: any): boolean => {
       if (!me?.authenticated) return false;
+      setRoMode(me.role === OBSERVER_ROLE);
       if (mode === 'student') {
         if (me.needsSetup) { setLocation('/auth/complete'); return false; }
-        if (me.role === 'admin') { setLocation('/teacher'); return false; }
+        if (isStaffRole(me.role)) { setLocation('/teacher'); return false; }
         return true;
       }
-      if (me.role !== 'admin') { setLocation('/student'); return false; }
+      if (!isStaffRole(me.role)) { setLocation('/student'); return false; }
       return true;
     };
     const fresh = authGateCache && authGateCache.mode === mode && Date.now() - authGateCache.at < AUTH_GATE_TTL;
@@ -2591,9 +2690,23 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
   // قسم "التأسيس" لا يظهر إلا لمن يملك قسماً فعلاً (يفحصه الخادم بعد الدخول)
   const foundationCount = useFoundationNavCount(mode === 'student' && authReady, studentId);
   const links = useMemo(() => {
-    if (mode === 'teacher') return navTeacher;
-    return foundationCount > 0 ? navStudentBase : navStudentBase.filter((l: any) => !l.gated);
-  }, [mode, foundationCount]);
+    const base = mode === 'teacher'
+      ? navTeacher
+      : (foundationCount > 0 ? navStudentBase : navStudentBase.filter((l: any) => !l.gated));
+    // حساب الرقابة: بلا «إدارة المنصة» وبلا «إعداد التأسيس» — قسمان لا يظهران له
+    if (!roMode) return base;
+    return (base as any[]).filter((l: any) => !isObserverBlockedPath(l.href));
+  }, [mode, foundationCount, roMode]);
+
+  // حتى لو دخل برابط مباشر: القسمان المحجوبان يردّانه للوحة المتابعة بلا نقاش
+  useEffect(() => {
+    if (!authReady || !roMode) return;
+    if (isObserverBlockedPath(location)) setLocation('/teacher');
+  }, [authReady, roMode, location, setLocation]);
+
+  // إبطال أدوات الكتابة في الواجهة كلها (تفصيلها أسفل الملف)
+  useReadOnlyDom(roMode && authReady);
+
   const active = links.find((link) => location === link.href)?.label ?? links[0].label;
 
   const signOut = () => {
@@ -2608,7 +2721,13 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
   };
 
   return (
-    <div className="min-h-[100dvh] bg-background">
+    <div className={`min-h-[100dvh] bg-background ${roMode ? 'ro-mode' : ''}`} data-ro-root={roMode ? '1' : undefined}>
+      {roMode && (
+        <div className="relative z-[60] flex flex-wrap items-center justify-center gap-2 bg-[#0d2926] px-4 py-2 text-center text-[12px] font-extrabold text-white" data-testid="readonly-banner">
+          <ShieldCheck size={15} className="text-accent" />
+          وضع الرقابة — اطّلاع فقط: كل الأقسام ظاهرة بلا زر إضافة أو تعديل أو حذف
+        </div>
+      )}
       <aside
         className={`drawer-surface fixed inset-y-0 right-0 z-50 flex w-[min(18.5rem,86vw)] flex-col overflow-hidden overflow-y-auto px-3.5 py-4 text-primary shadow-[0_0_60px_-10px_rgba(23,65,63,.35)] no-scrollbar lg:w-72 lg:px-4 lg:py-6 lg:translate-x-0 ${
           mobileMenu
@@ -2625,7 +2744,7 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
             <img src={platformLogoUrl} alt="شعار أرض اللغة" className="h-10 w-10 shrink-0 rounded-xl object-contain" />
             <span className="truncate font-display text-[17px] font-extrabold tracking-tight text-primary">{identity.platformName}</span>
           </span>
-          <button onClick={closeDrawer} className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white text-primary/70 shadow-sm ring-1 ring-border transition-all hover:bg-secondary hover:text-primary active:scale-90 lg:hidden" data-testid="button-close-menu" aria-label="إغلاق القائمة">
+          <button onClick={closeDrawer} data-ro="keep" className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white text-primary/70 shadow-sm ring-1 ring-border transition-all hover:bg-secondary hover:text-primary active:scale-90 lg:hidden" data-testid="button-close-menu" aria-label="إغلاق القائمة">
             <X size={19} />
           </button>
         </div>
@@ -2642,10 +2761,10 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
               </span>
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[16px] font-extrabold text-white drop-shadow-sm">{mode === 'student' ? studentName : 'المعلم أحمد يحيى الأسطل'}</p>
+              <p className="truncate text-[16px] font-extrabold text-white drop-shadow-sm">{mode === 'student' ? studentName : (roMode ? 'مشرف الرقابة' : 'المعلم أحمد يحيى الأسطل')}</p>
               <p className="mt-1 flex items-center gap-1 truncate text-[11px] font-bold text-accent">
                 <GraduationCap size={12} />
-                {mode === 'student' ? (studentSubtitle || 'بوابة الطالب') : 'إدارة ومتابعة المنصة'}
+                {mode === 'student' ? (studentSubtitle || 'بوابة الطالب') : (roMode ? 'رقابة واطّلاع فقط' : 'إدارة ومتابعة المنصة')}
               </p>
             </div>
           </div>
@@ -2744,6 +2863,7 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
             onClick={openDrawer}
             aria-label="عرض أقسام المنصة"
             aria-expanded={mobileMenu}
+            data-ro="keep"
             className={`group relative grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-white shadow-lg transition-all duration-200 active:scale-90 lg:hidden ${
               mobileMenu ? 'fab-active' : 'fab-pulse'
             } bg-gradient-to-br from-[#17413f] via-[#1d5a56] to-[#2a7a72] ring-1 ring-accent/40`}
@@ -2758,7 +2878,7 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
             </div>
           </div>
           <div className="relative flex shrink-0 items-center gap-1.5 sm:gap-2">
-            <button onClick={toggleNotifs} title="الإشعارات — إعلانات الأستاذ" className={`relative rounded-xl p-2.5 transition-colors hover:bg-muted hover:text-primary ${notifOpen ? 'bg-muted text-primary' : 'text-muted-foreground'}`} data-testid="button-notifications" aria-label="الإشعارات">
+            <button onClick={toggleNotifs} title="الإشعارات — إعلانات الأستاذ" data-ro="keep" className={`relative rounded-xl p-2.5 transition-colors hover:bg-muted hover:text-primary ${notifOpen ? 'bg-muted text-primary' : 'text-muted-foreground'}`} data-testid="button-notifications" aria-label="الإشعارات">
               <Bell size={19} />
               {unreadCount > 0 ? (
                 <span className="absolute right-1.5 top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-destructive px-1 text-[9px] font-extrabold text-white">{unreadCount > 9 ? '9+' : unreadCount}</span>
@@ -2804,17 +2924,20 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
                 </div>
               </>
             )}
-            <button onClick={() => setProfileMenu((open) => !open)} className="flex items-center gap-2 rounded-xl p-1.5 pl-2.5 ring-2 ring-accent/50 transition-all hover:bg-muted hover:ring-accent sm:pl-3" data-testid="button-profile-menu" aria-label="القائمة الشخصية">
+            <button onClick={() => setProfileMenu((open) => !open)} data-ro="keep" className="flex items-center gap-2 rounded-xl p-1.5 pl-2.5 ring-2 ring-accent/50 transition-all hover:bg-muted hover:ring-accent sm:pl-3" data-testid="button-profile-menu" aria-label="القائمة الشخصية">
               <Avatar name={mode === 'student' ? studentName : 'أ'} src={avatarSrc} size="sm" />
-              <span className="hidden text-sm font-semibold sm:block">{mode === 'student' ? studentName.split(' ')[0] : 'الأستاذ أحمد'}</span>
+              <span className="hidden text-sm font-semibold sm:block">{mode === 'student' ? studentName.split(' ')[0] : (roMode ? 'مشرف الرقابة' : 'الأستاذ أحمد')}</span>
               <ChevronLeft size={15} className={`hidden transition-transform sm:block ${profileMenu ? 'rotate-90' : '-rotate-90'}`} />
             </button>
             {profileMenu && (
               <div className="absolute left-0 top-14 z-50 w-56 rounded-2xl border border-border bg-card p-2 shadow-xl animate-rise">
-                <Link href={mode === 'student' ? '/student/profile' : '/teacher/settings'} onClick={() => setProfileMenu(false)} className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold text-primary hover:bg-secondary" data-testid="link-profile-dropdown">
-                  <UserRound size={16} /> {mode === 'student' ? 'ملفي الشخصي' : 'إعدادات المنصة'}
-                </Link>
-                <button onClick={signOut} disabled={logout.isPending} className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold text-destructive hover:bg-destructive/10" data-testid="button-logout">
+                {/* «إدارة المنصة» لا تظهر لحساب الرقابة — قسمها محجوب عنه */}
+                {!roMode && (
+                  <Link href={mode === 'student' ? '/student/profile' : '/teacher/settings'} onClick={() => setProfileMenu(false)} className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold text-primary hover:bg-secondary" data-testid="link-profile-dropdown">
+                    <UserRound size={16} /> {mode === 'student' ? 'ملفي الشخصي' : 'إعدادات المنصة'}
+                  </Link>
+                )}
+                <button onClick={signOut} disabled={logout.isPending} data-ro="keep" className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold text-destructive hover:bg-destructive/10" data-testid="button-logout">
                   <LogOut size={16} /> {logout.isPending ? 'جارٍ الخروج...' : 'تسجيل الخروج'}
                 </button>
               </div>

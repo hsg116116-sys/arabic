@@ -28918,6 +28918,12 @@ var init_supabase = __esm({
 });
 
 // src/middlewares/auth.ts
+function isStaffRole(role) {
+  return role === "admin" || role === OBSERVER_ROLE;
+}
+function isObserverRole(role) {
+  return role === OBSERVER_ROLE;
+}
 async function trySilentRefresh(req, res) {
   try {
     const refreshToken = req?.cookies?.supabase_refresh_token;
@@ -28961,6 +28967,8 @@ async function trySilentRefresh(req, res) {
   }
 }
 async function resolveAuth(req, res) {
+  const cached = req.auth;
+  if (cached) return cached;
   try {
     let token = req?.cookies?.supabase_access_token;
     if (!token && res) {
@@ -29000,12 +29008,13 @@ async function resolveAuth(req, res) {
     return null;
   }
 }
-var requireAuth, requireAdmin;
+var OBSERVER_ROLE, requireAuth, requireAdmin, OBSERVER_HIDDEN_PREFIXES, blockObserverWrites, blockObserverHiddenSections;
 var init_auth = __esm({
   "src/middlewares/auth.ts"() {
     "use strict";
     init_supabase();
     init_logger();
+    OBSERVER_ROLE = "observer";
     requireAuth = async (req, res, next) => {
       const auth = await resolveAuth(req, res);
       if (!auth) {
@@ -29021,11 +29030,51 @@ var init_auth = __esm({
         res.status(401).json({ error: "\u0633\u062C\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0623\u0648\u0644\u0627\u064B \u0644\u0644\u0645\u062A\u0627\u0628\u0639\u0629." });
         return;
       }
-      if (auth.role !== "admin") {
+      if (!isStaffRole(auth.role)) {
         res.status(403).json({ error: "\u0647\u0630\u0647 \u0627\u0644\u0635\u0644\u0627\u062D\u064A\u0629 \u0644\u0644\u0625\u062F\u0627\u0631\u0629 \u0641\u0642\u0637." });
         return;
       }
       req.auth = auth;
+      next();
+    };
+    OBSERVER_HIDDEN_PREFIXES = ["/teacher/foundation", "/teacher/settings"];
+    blockObserverWrites = async (req, res, next) => {
+      if (req.path.startsWith("/auth/")) {
+        next();
+        return;
+      }
+      const isWrite = req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS";
+      if (!isWrite) {
+        next();
+        return;
+      }
+      const auth = await resolveAuth(req, res);
+      if (!auth) {
+        next();
+        return;
+      }
+      if (isObserverRole(auth.role)) {
+        res.status(403).json({
+          error: "\u062D\u0633\u0627\u0628 \u0627\u0644\u0631\u0642\u0627\u0628\u0629 \u0644\u0644\u0627\u0637\u0644\u0627\u0639 \u0641\u0642\u0637 \u2014 \u0644\u0627 \u0635\u0644\u0627\u062D\u064A\u0629 \u0644\u0647 \u0628\u0627\u0644\u062A\u0639\u062F\u064A\u0644 \u0623\u0648 \u0627\u0644\u0625\u0636\u0627\u0641\u0629 \u0623\u0648 \u0627\u0644\u062D\u0630\u0641."
+        });
+        return;
+      }
+      next();
+    };
+    blockObserverHiddenSections = async (req, res, next) => {
+      if (!OBSERVER_HIDDEN_PREFIXES.some((p) => req.path === p || req.path.startsWith(p + "/"))) {
+        next();
+        return;
+      }
+      const auth = await resolveAuth(req, res);
+      if (!auth) {
+        next();
+        return;
+      }
+      if (isObserverRole(auth.role)) {
+        res.status(403).json({ error: "\u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u063A\u064A\u0631 \u0645\u062A\u0627\u062D \u0644\u062D\u0633\u0627\u0628 \u0627\u0644\u0631\u0642\u0627\u0628\u0629." });
+        return;
+      }
       next();
     };
   }
@@ -31361,6 +31410,7 @@ var import_pino_http = __toESM(require_logger(), 1);
 
 // src/routes/index.ts
 var import_express11 = __toESM(require_express2(), 1);
+init_auth();
 
 // src/routes/health.ts
 var import_express = __toESM(require_express2(), 1);
@@ -39761,6 +39811,8 @@ var cloudinary_default = router10;
 
 // src/routes/index.ts
 var router11 = (0, import_express11.Router)();
+router11.use(blockObserverWrites);
+router11.use(blockObserverHiddenSections);
 router11.use(health_default);
 router11.use(platform_default);
 router11.use(curriculum_default);

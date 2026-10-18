@@ -417,3 +417,25 @@
     margin-inline: .25rem;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   وضع الرقابة — حساب «الإدارة للرقابة فقط»
+   الحقول تبقى ظاهرة القراءة (محتوى الصفحة متاح كاملاً) لكن بلا مؤشّر
+   كتابة: لا تحديد، لا فتح قائمة منسدلة، لا رفع ملف.
+   ═══════════════════════════════════════════════════════════════════════ */
+.ro-mode input[readonly],
+.ro-mode textarea[readonly] {
+  cursor: default;
+}
+
+.ro-mode input:disabled,
+.ro-mode select:disabled,
+.ro-mode textarea:disabled,
+.ro-mode button:disabled {
+  opacity: .72;
+  cursor: not-allowed;
+}
+
+.ro-mode input[type='file'] {
+  display: none !important;
+}

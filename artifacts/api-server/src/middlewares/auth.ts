@@ -16,6 +16,22 @@ export type AuthInfo = {
 
 export type AuthedRequest = Request & { auth?: AuthInfo };
 
+/* ============================================================================
+   حساب «الرقابة» — يدخل بوابة الإدارة ويرى كل شيء ولا يلمس شيئاً.
+   دور profiles.role = "observer": يمرّ على requireAdmin (قراءة) ويرفض كل كتابة.
+   ============================================================================ */
+export const OBSERVER_ROLE = "observer";
+
+/** دور من يقف في بوابة الإدارة: المعلم الكامل أو حساب الرقابة */
+export function isStaffRole(role: unknown): boolean {
+  return role === "admin" || role === OBSERVER_ROLE;
+}
+
+/** حساب الرقابة: اطّلاع فقط بلا أي صلاحية كتابة */
+export function isObserverRole(role: unknown): boolean {
+  return role === OBSERVER_ROLE;
+}
+
 async function trySilentRefresh(
   req: Request,
   res: Parameters<RequestHandler>[1],
@@ -69,6 +85,9 @@ async function trySilentRefresh(
 }
 
 async function resolveAuth(req: Request, res?: Parameters<RequestHandler>[1]): Promise<AuthInfo | null> {
+  // نتيججة واحدة للطلب: حين يسبقنا حارس الرقابة لا نكرّر جلب البروفايل
+  const cached = (req as AuthedRequest).auth;
+  if (cached) return cached;
   try {
     let token = (req as any)?.cookies?.supabase_access_token;
     if (!token && res) {
@@ -128,10 +147,63 @@ export const requireAdmin: RequestHandler = async (req, res, next) => {
     res.status(401).json({ error: "سجل الدخول أولاً للمتابعة." });
     return;
   }
-  if (auth.role !== "admin") {
+  if (!isStaffRole(auth.role)) {
     res.status(403).json({ error: "هذه الصلاحية للإدارة فقط." });
     return;
   }
   (req as AuthedRequest).auth = auth;
+  next();
+};
+
+/* ============================================================================
+   حارس الرقابة — يُركَّب على كل /api قبل المسارات.
+   ١) أي طلب كتابة (POST/PUT/PATCH/DELETE) من حساب الرقابة يُرفض هنا،
+      فتبقى الواجهة وحدها تجمّل «إخفاء الأزرار» والخادم هو الضمان الحقيقي:
+      لا إضافة ولا تعديل ولا حذف ولا ترقية بيانات من هذا الحساب إطلاقاً.
+   ٢) قسمان لا يفتحان له أصلاً — لا قراءة ولا كتابة:
+      «إعداد التأسيس» (/teacher/foundation) و«إدارة المنصة» (/teacher/settings).
+   استثناء: مسارات /auth — الدخول والخروج وتحديث الجلسة يجب أن تمر.
+   ============================================================================ */
+const OBSERVER_HIDDEN_PREFIXES = ["/teacher/foundation", "/teacher/settings"];
+
+export const blockObserverWrites: RequestHandler = async (req, res, next) => {
+  if (req.path.startsWith("/auth/")) {
+    next();
+    return;
+  }
+  const isWrite = req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS";
+  if (!isWrite) {
+    next();
+    return;
+  }
+  const auth = await resolveAuth(req, res);
+  if (!auth) {
+    next();
+    return;
+  }
+  if (isObserverRole(auth.role)) {
+    res.status(403).json({
+      error: "حساب الرقابة للاطلاع فقط — لا صلاحية له بالتعديل أو الإضافة أو الحذف.",
+    });
+    return;
+  }
+  next();
+};
+
+/** القسمان المحجوبان عن حساب الرقابة — يُرفضان قراءتهما أيضاً */
+export const blockObserverHiddenSections: RequestHandler = async (req, res, next) => {
+  if (!OBSERVER_HIDDEN_PREFIXES.some((p) => req.path === p || req.path.startsWith(p + "/"))) {
+    next();
+    return;
+  }
+  const auth = await resolveAuth(req, res);
+  if (!auth) {
+    next();
+    return;
+  }
+  if (isObserverRole(auth.role)) {
+    res.status(403).json({ error: "هذا القسم غير متاح لحساب الرقابة." });
+    return;
+  }
   next();
 };

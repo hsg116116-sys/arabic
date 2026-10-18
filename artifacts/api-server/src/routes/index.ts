@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { blockObserverWrites, blockObserverHiddenSections } from "../middlewares/auth";
 import healthRouter from "./health";
 import platformRouter from "./platform";
 import curriculumRouter from "./curriculum";
@@ -11,6 +12,11 @@ import reportRouter from "./report";
 import cloudinaryRouter from "./cloudinary";
 
 const router: IRouter = Router();
+
+// أول سطر في كل /api: حساب الرقابة يقرأ ولا يكتب أبداً، وقسماه المحجوبان
+// («إعداد التأسيس» و«إدارة المنصة») لا يفتحان له لا قراءة ولا كتابة
+router.use(blockObserverWrites);
+router.use(blockObserverHiddenSections);
 
 router.use(healthRouter);
 router.use(platformRouter);
