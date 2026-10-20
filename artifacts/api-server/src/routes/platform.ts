@@ -34,16 +34,33 @@ function serviceKey(): string {
 async function getAdminEmails(): Promise<string[]> {
   const list: string[] = [];
   const push = (v: unknown) => {
-    const s = String(v || "").trim().toLowerCase();
-    if (s && s.includes("@") && !list.includes(s)) list.push(s);
+    // يُقبل فرد واحد أو قائمة مفصولة بفواصل — فأكثر من إدارة في المنصة
+    for (const part of String(v || "").split(",")) {
+      const s = part.trim().toLowerCase();
+      if (s && s.includes("@") && !list.includes(s)) list.push(s);
+    }
   };
   const env = process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || "";
-  for (const e of env.split(",")) push(e);
+  push(env);
   try {
     const { data } = await supabaseQuery<any[]>("platform_settings?select=admin_email&limit=1");
     push(data?.[0]?.admin_email);
   } catch { /* العمود قد لا يكون موجوداً بعد — نفّذ sql_admin_account.sql */ }
   return list;
+}
+
+/** بريد صاحب المنصة — هو الذي تُرث منه هوية المنصة العامة (الاسم والصورة).
+ *  يُقرأ من قاعدة البيانات أولاً (لأن صفحة الإعدادات هي التي تديره)،
+ *  ثم من البيئة كاحتياط. */
+async function getOwnerEmail(): Promise<string> {
+  try {
+    const { data } = await supabaseQuery<any[]>("platform_settings?select=admin_email&limit=1");
+    const db = String(data?.[0]?.admin_email || "").trim().toLowerCase();
+    if (db && db.includes("@")) return db.split(",")[0].trim();
+  } catch { /* العمود قد لا يكون موجوداً */ }
+  const env = process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || "";
+  const first = env.split(",")[0]?.trim().toLowerCase() || "";
+  return first.includes("@") ? first : "";
 }
 
 // ============================================================================
@@ -1454,6 +1471,50 @@ router.patch("/teacher/account/password", requireAdmin, async (req, res) => {
   }
 });
 
+// هوية الإدارة لنفسها: الاسم والصورة في بوابة الإدارة فقط
+// (هوية المنصة العامة — اسم الأستاذ وصورته في الصفحة الرئيسية — تبقى كما هي)
+router.patch("/teacher/account/profile", requireAdmin, async (req, res) => {
+  try {
+    const auth = (req as AuthedRequest).auth!;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    const fullName = String(body.fullName ?? "").trim();
+    const avatarUrl = String(body.avatarUrl ?? "").trim();
+    if (fullName) payload.full_name = fullName;
+    if (avatarUrl) payload.avatar_url = avatarUrl;
+    if (!fullName && !avatarUrl) {
+      res.status(400).json({ error: "لا يوجد ما يُحفظ." });
+      return;
+    }
+    const { error } = await supabaseQuery(`profiles?id=eq.${encodeURIComponent(auth.userId)}`, {
+      method: "PATCH",
+      body: payload,
+    });
+    if (error) {
+      logger.error({ error }, "Failed to update admin profile identity");
+      res.status(500).json({ error: "تعذر حفظ الهوية" });
+      return;
+    }
+    // الاسم أيضاً في بيانات المصادقة — حتى يظهر فوراً في كل مكان
+    if (fullName) {
+      try {
+        const key = serviceKey();
+        if (key) {
+          await fetch(`${SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/admin/users/${encodeURIComponent(auth.userId)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", apikey: key, Authorization: `Bearer ${key}` },
+            body: JSON.stringify({ user_metadata: { full_name: fullName } }),
+          });
+        }
+      } catch { /* تجاهل — البروفايل محفوظ أصلاً */ }
+    }
+    res.json({ success: true, message: "تم حفظ هويتك ✓" });
+  } catch (err: any) {
+    logger.error({ err }, "Error in PATCH /teacher/account/profile");
+    res.status(500).json({ error: "تعذر حفظ الهوية" });
+  }
+});
+
 // حفظ بريد الإدارة + حذف أي حساب طالب سابق بنفس البريد (Google للمعلم فقط)
 router.patch("/teacher/account/email", requireAdmin, async (req, res) => {
   try {
@@ -1643,7 +1704,7 @@ router.patch("/student/profile", requireAuth, async (req, res) => {
   }
 });
 
-export { getAdminEmails };
+export { getAdminEmails, getOwnerEmail };
 // 9.07 صفحة صف واحد — بطاقة مفصّلة لكل مدرسة داخل الصف (طلاب/طالبات)
 router.get("/teacher/students/grade-page", requireAdmin, async (req, res) => {
   try {

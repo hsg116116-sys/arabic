@@ -35566,17 +35566,30 @@ function serviceKey() {
 async function getAdminEmails() {
   const list = [];
   const push = (v) => {
-    const s = String(v || "").trim().toLowerCase();
-    if (s && s.includes("@") && !list.includes(s)) list.push(s);
+    for (const part of String(v || "").split(",")) {
+      const s = part.trim().toLowerCase();
+      if (s && s.includes("@") && !list.includes(s)) list.push(s);
+    }
   };
   const env = process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || "";
-  for (const e of env.split(",")) push(e);
+  push(env);
   try {
     const { data } = await supabaseQuery("platform_settings?select=admin_email&limit=1");
     push(data?.[0]?.admin_email);
   } catch {
   }
   return list;
+}
+async function getOwnerEmail() {
+  try {
+    const { data } = await supabaseQuery("platform_settings?select=admin_email&limit=1");
+    const db = String(data?.[0]?.admin_email || "").trim().toLowerCase();
+    if (db && db.includes("@")) return db.split(",")[0].trim();
+  } catch {
+  }
+  const env = process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || "";
+  const first = env.split(",")[0]?.trim().toLowerCase() || "";
+  return first.includes("@") ? first : "";
 }
 async function resolveProfileFromSession(accessToken) {
   if (!accessToken) return null;
@@ -36788,6 +36801,47 @@ router4.patch("/teacher/account/password", requireAdmin, async (req, res) => {
     res.status(500).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u062A\u063A\u064A\u064A\u0631 \u0643\u0644\u0645\u0629 \u0627\u0644\u0633\u0631" });
   }
 });
+router4.patch("/teacher/account/profile", requireAdmin, async (req, res) => {
+  try {
+    const auth = req.auth;
+    const body = req.body ?? {};
+    const payload = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+    const fullName = String(body.fullName ?? "").trim();
+    const avatarUrl = String(body.avatarUrl ?? "").trim();
+    if (fullName) payload.full_name = fullName;
+    if (avatarUrl) payload.avatar_url = avatarUrl;
+    if (!fullName && !avatarUrl) {
+      res.status(400).json({ error: "\u0644\u0627 \u064A\u0648\u062C\u062F \u0645\u0627 \u064A\u064F\u062D\u0641\u0638." });
+      return;
+    }
+    const { error } = await supabaseQuery(`profiles?id=eq.${encodeURIComponent(auth.userId)}`, {
+      method: "PATCH",
+      body: payload
+    });
+    if (error) {
+      logger.error({ error }, "Failed to update admin profile identity");
+      res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0647\u0648\u064A\u0629" });
+      return;
+    }
+    if (fullName) {
+      try {
+        const key = serviceKey();
+        if (key) {
+          await fetch(`${SUPABASE_URL2.replace(/\/+$/, "")}/auth/v1/admin/users/${encodeURIComponent(auth.userId)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", apikey: key, Authorization: `Bearer ${key}` },
+            body: JSON.stringify({ user_metadata: { full_name: fullName } })
+          });
+        }
+      } catch {
+      }
+    }
+    res.json({ success: true, message: "\u062A\u0645 \u062D\u0641\u0638 \u0647\u0648\u064A\u062A\u0643 \u2713" });
+  } catch (err) {
+    logger.error({ err }, "Error in PATCH /teacher/account/profile");
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0647\u0648\u064A\u0629" });
+  }
+});
 router4.patch("/teacher/account/email", requireAdmin, async (req, res) => {
   try {
     const adminEmail = String(req.body?.adminEmail || "").trim().toLowerCase();
@@ -37585,10 +37639,17 @@ router6.get("/auth/me", async (req, res) => {
   const metadata = user.user_metadata ?? {};
   const profile = userId ? await fetchProfileById(userId) : null;
   const syncedPic = await syncGoogleAvatar(userId, metadata);
+  let isOwner = false;
+  try {
+    const owner = await getOwnerEmail();
+    isOwner = !!owner && owner === String(user.email ?? "").trim().toLowerCase();
+  } catch {
+  }
   res.json({
     authenticated: true,
     needsSetup: profileNeedsSetup(profile),
     role: String(profile?.role || metadata.role || "student"),
+    isOwner,
     user: {
       id: userId,
       email: String(user.email ?? ""),

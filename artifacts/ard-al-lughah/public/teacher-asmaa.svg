@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="الدكتورة أسماء أبو موسى">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eaf7f4"/>
+      <stop offset="0.55" stop-color="#cfe9e3"/>
+      <stop offset="1" stop-color="#a9d4cb"/>
+    </linearGradient>
+    <linearGradient id="hijab" x1="0.2" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#2a7a72"/>
+      <stop offset="1" stop-color="#144b47"/>
+    </linearGradient>
+    <linearGradient id="coat" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e7efee"/>
+    </linearGradient>
+    <linearGradient id="skin" x1="0.3" y1="0" x2="0.7" y2="1">
+      <stop offset="0" stop-color="#f7d7bb"/>
+      <stop offset="1" stop-color="#eab999"/>
+    </linearGradient>
+    <clipPath id="frame">
+      <rect x="0" y="0" width="512" height="512" rx="96"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#frame)">
+    <rect width="512" height="512" fill="url(#bg)"/>
+
+    <!-- هالات زخرفية خفيفة -->
+    <circle cx="86" cy="92" r="118" fill="#ffffff" opacity="0.28"/>
+    <circle cx="452" cy="196" r="86" fill="#ffffff" opacity="0.2"/>
+    <circle cx="60" cy="430" r="150" fill="#1d5a56" opacity="0.08"/>
+
+    <!-- الجسد بالاتّباع الأبيض -->
+    <path d="M92 512 C 96 424 156 356 256 356 C 356 356 416 424 420 512 Z" fill="url(#coat)"/>
+
+    <!-- الحجاب: غطاء الرأس والكتفين -->
+    <path d="M256 74
+             C 158 74 120 140 124 214
+             C 127 268 108 306 84 344
+             C 120 372 186 388 256 388
+             C 326 388 392 372 428 344
+             C 404 306 385 268 388 214
+             C 392 140 354 74 256 74 Z" fill="url(#hijab)"/>
+    <!-- لمعة خفيفة على الحجاب -->
+    <path d="M256 74 C 196 74 152 108 134 166 C 160 128 200 106 256 106 C 312 106 352 128 378 166 C 360 108 316 74 256 74 Z" fill="#ffffff" opacity="0.12"/>
+
+    <!-- الوجه -->
+    <ellipse cx="256" cy="212" rx="71" ry="82" fill="url(#skin)"/>
+    <!-- الحجاب يحيط بالوجه -->
+    <path d="M256 74 C 186 74 146 112 132 172 C 150 138 196 118 256 118 C 316 118 362 138 380 172 C 366 112 326 74 256 74 Z" fill="#144b47" opacity="0.55"/>
+
+    <!-- الحاجبان -->
+    <path d="M214 196 q 16 -12 33 -2" stroke="#6b4a3a" stroke-width="7" stroke-linecap="round" fill="none"/>
+    <path d="M298 196 q -16 -12 -33 -2" stroke="#6b4a3a" stroke-width="7" stroke-linecap="round" fill="none"/>
+    <!-- العينان -->
+    <ellipse cx="230" cy="216" rx="8.5" ry="10" fill="#2f241f"/>
+    <ellipse cx="282" cy="216" rx="8.5" ry="10" fill="#2f241f"/>
+    <circle cx="233" cy="212" r="3" fill="#ffffff"/>
+    <circle cx="285" cy="212" r="3" fill="#ffffff"/>
+    <!-- الأنف -->
+    <path d="M256 226 q 5 12 -6 15" stroke="#c99470" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <!-- الابتسامة -->
+    <path d="M232 252 q 24 22 48 0" stroke="#a8564a" stroke-width="7" stroke-linecap="round" fill="none"/>
+
+    <!-- ياقة المعطف -->
+    <path d="M256 366 C 224 372 200 384 182 400 L 232 470 L 256 388 Z" fill="#f2f6f5"/>
+    <path d="M256 366 C 288 372 312 384 330 400 L 280 470 L 256 388 Z" fill="#f2f6f5"/>
+    <path d="M256 366 C 240 372 230 380 226 392 L 256 430 L 286 392 C 282 380 272 372 256 366 Z" fill="#cfe3e0"/>
+
+    <!-- سماعة طبية -->
+    <path d="M186 372 C 172 424 202 466 256 468 C 310 466 340 424 326 372"
+          stroke="#17413f" stroke-width="13" stroke-linecap="round" fill="none"/>
+    <path d="M186 372 C 176 410 190 440 214 456" stroke="#2a7a72" stroke-width="13" stroke-linecap="round" fill="none"/>
+    <circle cx="256" cy="474" r="22" fill="#2a7a72"/>
+    <circle cx="256" cy="474" r="11" fill="#d8f0ec"/>
+
+    <!-- شارة المنصة -->
+    <circle cx="404" cy="404" r="40" fill="#f3d68a"/>
+    <circle cx="404" cy="404" r="31" fill="#17413f"/>
+    <path d="M404 384 v40 M384 404 h40" stroke="#f3d68a" stroke-width="9" stroke-linecap="round"/>
+  </g>
+</svg>

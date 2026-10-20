@@ -12,7 +12,7 @@ import {
 import { logger } from "../lib/logger";
 import { getSupabaseUser, supabaseQuery } from "../lib/supabase";
 import { checkEmailAllowed } from "../lib/email-policy";
-import { getAdminEmails } from "./platform";
+import { getAdminEmails, getOwnerEmail } from "./platform";
 
 const router: IRouter = Router();
 const authUnavailableMessage = "خدمة المصادقة غير متاحة مؤقتًا. حاول مرة أخرى بعد قليل.";
@@ -601,10 +601,19 @@ router.get("/auth/me", async (req, res) => {
   const profile = userId ? await fetchProfileById(userId) : null;
   const syncedPic = await syncGoogleAvatar(userId, metadata);
 
+  // صاحب المنصة (بريد الإدارة المعتمد) يرث هوية المنصة العامة —
+  // أما أي إدارة أخرى فهويتها من ملفها هي: اسمها وصورتها لنفسها.
+  let isOwner = false;
+  try {
+    const owner = await getOwnerEmail();
+    isOwner = !!owner && owner === String(user.email ?? "").trim().toLowerCase();
+  } catch { /* تجاهل */ }
+
   res.json({
     authenticated: true,
     needsSetup: profileNeedsSetup(profile),
     role: String(profile?.role || (metadata.role as string) || "student"),
+    isOwner,
     user: {
       id: userId,
       email: String(user.email ?? ""),

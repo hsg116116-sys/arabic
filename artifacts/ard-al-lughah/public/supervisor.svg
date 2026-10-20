@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="مشرف الرقابة">
+  <defs>
+    <linearGradient id="sbg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eef4f7"/>
+      <stop offset="0.55" stop-color="#d3e3ec"/>
+      <stop offset="1" stop-color="#aec8d8"/>
+    </linearGradient>
+    <linearGradient id="ssuit" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#33566b"/>
+      <stop offset="1" stop-color="#1e3a4a"/>
+    </linearGradient>
+    <linearGradient id="sskin" x1="0.3" y1="0" x2="0.7" y2="1">
+      <stop offset="0" stop-color="#f7d7bb"/>
+      <stop offset="1" stop-color="#e9b795"/>
+    </linearGradient>
+    <clipPath id="sframe">
+      <rect x="0" y="0" width="512" height="512" rx="96"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#sframe)">
+    <rect width="512" height="512" fill="url(#sbg)"/>
+    <circle cx="88" cy="96" r="120" fill="#ffffff" opacity="0.3"/>
+    <circle cx="456" cy="206" r="88" fill="#ffffff" opacity="0.2"/>
+    <circle cx="58" cy="438" r="150" fill="#1e3a4a" opacity="0.07"/>
+
+    <!-- الجسد بالبدلة -->
+    <path d="M88 512 C 92 420 154 350 256 350 C 358 350 420 420 424 512 Z" fill="url(#ssuit)"/>
+    <!-- قميص وبنطال وربطة -->
+    <path d="M256 352 C 234 360 222 372 218 388 L 256 430 L 294 388 C 290 372 278 360 256 352 Z" fill="#f4f8fa"/>
+    <path d="M256 386 L 268 430 L 256 452 L 244 430 Z" fill="#2a7a72"/>
+    <path d="M212 378 L 236 366 L 256 430 L 232 452 Z" fill="#26455a"/>
+    <path d="M300 378 L 276 366 L 256 430 L 280 452 Z" fill="#26455a"/>
+
+    <!-- الرأس -->
+    <ellipse cx="256" cy="212" rx="76" ry="86" fill="url(#sskin)"/>
+    <!-- الشعر -->
+    <path d="M256 126 C 196 126 178 158 180 196 C 190 166 214 150 256 150 C 298 150 322 166 332 196 C 334 158 316 126 256 126 Z" fill="#3b3129"/>
+    <path d="M180 196 C 174 232 182 258 196 274 C 186 240 188 214 196 196 Z" fill="#3b3129"/>
+    <path d="M332 196 C 338 232 330 258 316 274 C 326 240 324 214 316 196 Z" fill="#3b3129"/>
+
+    <!-- الحاجبان -->
+    <path d="M214 198 q 16 -11 33 -2" stroke="#6b4a3a" stroke-width="7" stroke-linecap="round" fill="none"/>
+    <path d="M298 198 q -16 -11 -33 -2" stroke="#6b4a3a" stroke-width="7" stroke-linecap="round" fill="none"/>
+    <!-- العينان -->
+    <ellipse cx="230" cy="218" rx="8.5" ry="10" fill="#2f241f"/>
+    <ellipse cx="282" cy="218" rx="8.5" ry="10" fill="#2f241f"/>
+    <circle cx="233" cy="214" r="3" fill="#ffffff"/>
+    <circle cx="285" cy="214" r="3" fill="#ffffff"/>
+    <!-- الأنف -->
+    <path d="M256 228 q 5 12 -6 15" stroke="#c99470" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <!-- الابتسامة الهادئة -->
+    <path d="M234 254 q 22 18 44 0" stroke="#a8564a" stroke-width="7" stroke-linecap="round" fill="none"/>
+
+    <!-- عدسة الرقابة (نظارة) -->
+    <circle cx="230" cy="218" r="26" fill="none" stroke="#1e3a4a" stroke-width="8"/>
+    <circle cx="282" cy="218" r="26" fill="none" stroke="#1e3a4a" stroke-width="8"/>
+    <path d="M256 218 h 0" stroke="#1e3a4a" stroke-width="8"/>
+    <path d="M256 214 q 0 6 0 8" stroke="#1e3a4a" stroke-width="8" stroke-linecap="round" fill="none"/>
+    <path d="M204 212 L 178 206" stroke="#1e3a4a" stroke-width="8" stroke-linecap="round"/>
+    <path d="M308 212 L 334 206" stroke="#1e3a4a" stroke-width="8" stroke-linecap="round"/>
+
+    <!-- شارة الرقابة: عين + درع -->
+    <g transform="translate(392 392)">
+      <circle cx="0" cy="0" r="46" fill="#f3d68a"/>
+      <circle cx="0" cy="0" r="36" fill="#1e3a4a"/>
+      <path d="M-19 0 q 19 -17 38 0 q -19 17 -38 0 Z" fill="none" stroke="#f3d68a" stroke-width="6"/>
+      <circle cx="0" cy="0" r="6" fill="#f3d68a"/>
+    </g>
+  </g>
+</svg>

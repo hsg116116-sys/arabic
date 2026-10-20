@@ -193,6 +193,16 @@ const isObserverBlockedPath = (path: string) =>
   OBSERVER_BLOCKED_PATHS.some((p) => path === p || path.startsWith(p + '/'));
 
 /* ═══════════════════════════════════════════════════════════════════════
+   هوية كل إدارة على حدة
+   صاحب المنصة (بريد الإدارة المعتمد) يرث هوية المنصة العامة — صورة
+   الأستاذ واسمه. أما أي إدارة أخرى فهويتها من ملفها هي: اسمها وصورتها
+   في profiles (full_name + avatar_url) — فالصورة تخصّها وحدها.
+   ═══════════════════════════════════════════════════════════════════════ */
+const STAFF_FALLBACK_NAME = 'المعلم أحمد يحيى الأسطل';
+const STAFF_FALLBACK_SHORT = 'الأستاذ أحمد';
+const STAFF_FALLBACK_IMAGE = '/teacher-ahmed.jpg';
+
+/* ═══════════════════════════════════════════════════════════════════════
    روابط العودة (return-URL): طالب يفتح رابط واجب/اختبار وهو خارج الدخول
    يُحفظ مساره، وبعد تسجيل الدخول أو إنشاء الحساب (بريد أو Google) يرجع
    لنفس الصفحة مباشرة بدل الصفحة الرئيسية. تُحفظ في sessionStorage فتبقى
@@ -2590,16 +2600,30 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
   const studentDash = useGetStudentDashboard();
   // صورة الحساب (صورة Google إن سجل بها) — للطالب والمعلم
   const [meAvatar, setMeAvatar] = useState('');
+  const [meName, setMeName] = useState('');
+  const [meIsOwner, setMeIsOwner] = useState(true);
   useEffect(() => {
     let cancelled = false;
     fetchAuthMe()
-      .then((me) => { if (!cancelled && me?.user?.avatarUrl) setMeAvatar(me.user.avatarUrl); })
+      .then((me) => {
+        if (cancelled) return;
+        if (me?.user?.avatarUrl) setMeAvatar(me.user.avatarUrl);
+        if (me?.user?.fullName) setMeName(String(me.user.fullName).trim());
+        setMeIsOwner(me?.isOwner !== false);
+      })
       .catch(() => undefined);
     return () => { cancelled = true; };
   }, []);
   const dashAvatar = studentDash.data?.student?.avatarUrl || '';
   const identity = usePlatformIdentity();
-  const avatarSrc = mode === 'teacher' ? (identity.teacherImageUrl || teacherImageUrl) : dashAvatar || meAvatar || undefined;
+  // هوية هذا الإدخال: صاحب المنصة يرث الهوية العامة، وغيره يأخذ اسمه وصورته
+  const isOwner = meIsOwner;
+  const staffImage = roMode
+    ? '/supervisor.svg'
+    : (isOwner
+        ? (identity.teacherImageUrl || teacherImageUrl)
+        : (meAvatar || identity.teacherImageUrl || teacherImageUrl));
+  const avatarSrc = mode === 'teacher' ? staffImage : dashAvatar || meAvatar || undefined;
 
   // بوابة الدخول: تحقق واحد يُحفظ 5 دقائق — لا شاشة تحقق مع كل تنقل
   const [authReady, setAuthReady] = useState(false);
@@ -2709,6 +2733,14 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
 
   const active = links.find((link) => location === link.href)?.label ?? links[0].label;
 
+  // اسم هذه الإدارة في الشريط: صاحب المنصة = هوية المنصة، وغيره = اسمه من ملفه
+  const staffName = roMode
+    ? 'مشرف الرقابة'
+    : (isOwner ? (identity.teacherName || STAFF_FALLBACK_NAME) : (meName || identity.teacherName || STAFF_FALLBACK_NAME));
+  const staffShort = roMode
+    ? 'مشرف الرقابة'
+    : (isOwner ? STAFF_FALLBACK_SHORT : (meName ? meName.split(' ').slice(0, 2).join(' ') : STAFF_FALLBACK_SHORT));
+  const staffCaption = roMode ? 'رقابة واطّلاع فقط' : 'إدارة ومتابعة المنصة';
   const signOut = () => {
     logout.mutate(undefined, {
       onSuccess: () => {
@@ -2754,17 +2786,17 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
             <span className="relative shrink-0">
               <span className="absolute -inset-1 rounded-2xl bg-gradient-to-br from-accent to-[#f3d68a] opacity-85 blur-[7px]" />
               <span className="relative block rounded-2xl ring-[3px] ring-accent/90">
-                <Avatar name={mode === 'student' ? studentName : 'أ'} src={avatarSrc} />
+                <Avatar name={mode === 'student' ? studentName : (staffName || 'أ')} src={avatarSrc} />
               </span>
               <span className="absolute -bottom-0.5 -left-0.5 grid h-[22px] w-[22px] place-items-center rounded-full border-[3px] border-[#17413f] bg-green-500 text-white shadow">
                 <Check size={12} strokeWidth={3.5} />
               </span>
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[16px] font-extrabold text-white drop-shadow-sm">{mode === 'student' ? studentName : (roMode ? 'مشرف الرقابة' : 'المعلم أحمد يحيى الأسطل')}</p>
+              <p className="truncate text-[16px] font-extrabold text-white drop-shadow-sm">{mode === 'student' ? studentName : staffName}</p>
               <p className="mt-1 flex items-center gap-1 truncate text-[11px] font-bold text-accent">
                 <GraduationCap size={12} />
-                {mode === 'student' ? (studentSubtitle || 'بوابة الطالب') : (roMode ? 'رقابة واطّلاع فقط' : 'إدارة ومتابعة المنصة')}
+                {mode === 'student' ? (studentSubtitle || 'بوابة الطالب') : staffCaption}
               </p>
             </div>
           </div>
@@ -2925,8 +2957,8 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
               </>
             )}
             <button onClick={() => setProfileMenu((open) => !open)} data-ro="keep" className="flex items-center gap-2 rounded-xl p-1.5 pl-2.5 ring-2 ring-accent/50 transition-all hover:bg-muted hover:ring-accent sm:pl-3" data-testid="button-profile-menu" aria-label="القائمة الشخصية">
-              <Avatar name={mode === 'student' ? studentName : 'أ'} src={avatarSrc} size="sm" />
-              <span className="hidden text-sm font-semibold sm:block">{mode === 'student' ? studentName.split(' ')[0] : (roMode ? 'مشرف الرقابة' : 'الأستاذ أحمد')}</span>
+              <Avatar name={mode === 'student' ? studentName : (staffName || 'أ')} src={avatarSrc} size="sm" />
+              <span className="hidden text-sm font-semibold sm:block">{mode === 'student' ? studentName.split(' ')[0] : staffShort}</span>
               <ChevronLeft size={15} className={`hidden transition-transform sm:block ${profileMenu ? 'rotate-90' : '-rotate-90'}`} />
             </button>
             {profileMenu && (
@@ -6714,10 +6746,99 @@ function SettingsPage() {
               </label>
             </div>
             <AccountSecurityCard />
+            <StaffIdentityCard />
           </div>
         </div>
       )}
     </Shell>
+  );
+}
+
+/* =========================================================================
+   هويتي في الإدارة — الاسم والصورة الشخصيان
+   من يبحث عن جهة إدارية ثانية (غير صاحب المنصة) يرى هويته هي:
+   اسمها وصورتها في الشريط الجانبي ورأس الصفحة. والرفع هنا يغيّرها
+   وحدها ولا يمسّ هوية المنصة العامة.
+   ========================================================================= */
+function StaffIdentityCard() {
+  const [me, setMe] = useState<any>(null);
+  const [name, setName] = useState('');
+  const [avatar, setAvatar] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [ok, setOk] = useState(true);
+
+  useEffect(() => {
+    fetchAuthMe()
+      .then((d) => {
+        setMe(d);
+        setName(String(d?.user?.fullName || ''));
+        setAvatar(String(d?.user?.avatarUrl || ''));
+      })
+      .catch(() => undefined);
+  }, []);
+
+  if (!me || me.isOwner !== false) return null;
+  // حساب الرقابة يقرأ فقط — لا بطاقة هوية له (ولا زر حفظ)
+  if (me.role === OBSERVER_ROLE) return null;
+
+  const upload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || uploading) return;
+    setUploading(true);
+    setMsg('');
+    uploadFileToCloud(file, '/ard-al-lughah/staff')
+      .then((res) => { if (res?.url) setAvatar(res.url); })
+      .catch(() => setMsg('تعذر رفع الصورة سحابياً — تحقق من الاتصال.'))
+      .finally(() => { setUploading(false); e.target.value = ''; });
+  };
+
+  const save = async () => {
+    setBusy(true);
+    setMsg('');
+    try {
+      const res = await jsonFetch('/api/teacher/account/profile', {
+        method: 'PATCH',
+        body: { fullName: name.trim(), avatarUrl: avatar },
+      });
+      setOk(true);
+      setMsg(res?.message || 'تم حفظ هويتك ✓');
+      resetAuthGate();
+    } catch (e: any) {
+      setOk(false);
+      setMsg(e?.message || 'تعذر الحفظ');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-8 border-t border-border pt-6" data-testid="card-staff-identity">
+      <p className="font-bold text-primary text-sm">هويتي في الإدارة</p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        اسمك وصورتك في بوابة الإدارة — يظهران في الشريط الجانبي ورأس الصفحة. لا يؤثران على هوية المنصة العامة.
+      </p>
+      <div className="mt-4 flex flex-wrap items-center gap-4">
+        <Avatar name={name || 'أ'} src={avatar || undefined} />
+        <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-border px-4 py-3 transition-colors hover:bg-secondary/40">
+          <span className="text-sm font-bold text-primary">{uploading ? 'جارٍ الرفع...' : 'تغيير صورتي'}</span>
+          <Upload size={18} className="text-primary" />
+          <input type="file" accept="image/png,image/jpeg" onChange={upload} className="hidden" data-testid="input-staff-avatar" />
+        </label>
+      </div>
+      <div className="mt-4">
+        <SettingsField label="اسمي" value={name} onChange={setName} testId="input-staff-name" />
+      </div>
+      {msg ? (
+        <p className={`mt-3 rounded-xl px-4 py-3 text-sm font-bold ${ok ? 'bg-accent/20 text-accent-foreground' : 'bg-destructive/10 text-destructive'}`}>{msg}</p>
+      ) : null}
+      <div className="mt-4 flex justify-end">
+        <Button onClick={save} disabled={busy} data-testid="button-save-staff-identity">
+          <Save size={17} /> {busy ? 'يحفظ...' : 'حفظ هويتي'}
+        </Button>
+      </div>
+    </div>
   );
 }
 
