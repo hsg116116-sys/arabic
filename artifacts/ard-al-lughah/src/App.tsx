@@ -202,6 +202,46 @@ const STAFF_FALLBACK_NAME = 'المعلم أحمد يحيى الأسطل';
 const STAFF_FALLBACK_SHORT = 'الأستاذ أحمد';
 const STAFF_FALLBACK_IMAGE = '/teacher-ahmed.jpg';
 
+/* هوية من سجّل الدخول الآن — اسمه وصورته من ملفه.
+   صاحب المنصة (isOwner) يرث هوية المنصة العامة، وغيره يأخذ اسم نفسه.
+   النتيجة مُخزّنة دقيقة واحدة: الصفحة تسأل مرتين (الشريط + اللوحة). */
+let staffIdentityCache: { at: number; data: any } | null = null;
+const STAFF_IDENTITY_TTL = 60 * 1000;
+
+function useStaffIdentity() {
+  const [me, setMe] = useState<any>(() => staffIdentityCache?.data || null);
+  useEffect(() => {
+    if (staffIdentityCache && Date.now() - staffIdentityCache.at < STAFF_IDENTITY_TTL) {
+      setMe(staffIdentityCache.data);
+      return;
+    }
+    let cancelled = false;
+    fetchAuthMe()
+      .then((d) => {
+        if (cancelled) return;
+        if (d?.authenticated) staffIdentityCache = { at: Date.now(), data: d };
+        setMe(d);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+  return me;
+}
+
+/** الاسم الذي يظهر للمدير الحالي: «مشرف الرقابة» / اسمها / اسم صاحب المنصة */
+function staffDisplayName(me: any, identity: any): string {
+  const own = String(me?.user?.fullName || '').trim();
+  if (own && me?.isOwner === false) return own;
+  return identity?.teacherName || STAFF_FALLBACK_NAME;
+}
+
+/** الاسم المختصر لرأس الصفحة */
+function staffDisplayShort(me: any, identity: any): string {
+  const own = String(me?.user?.fullName || '').trim();
+  if (own && me?.isOwner === false) return own.split(' ').slice(0, 2).join(' ');
+  return STAFF_FALLBACK_SHORT;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    روابط العودة (return-URL): طالب يفتح رابط واجب/اختبار وهو خارج الدخول
    يُحفظ مساره، وبعد تسجيل الدخول أو إنشاء الحساب (بريد أو Google) يرجع
@@ -2467,7 +2507,7 @@ function CompleteProfilePage() {
 // ذاكرة بوابة الدخول: تحقق واحد صالح لـ 5 دقائق بدل شاشة "نتحقق..." مع كل صفحة
 let authGateCache: { mode: string; at: number } | null = null;
 const AUTH_GATE_TTL = 5 * 60 * 1000;
-export function resetAuthGate() { authGateCache = null; }
+export function resetAuthGate() { authGateCache = null; staffIdentityCache = null; }
 
 // حلقة تجديد الجلسة: تنعش التوكن كل 45 دقيقة طالما الموقع مفتوح (جلسة تدوم 30 يوماً)
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -2598,26 +2638,19 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
   }, [mobileMenu, closeDrawer]);
   const logout = useLogoutAccount();
   const studentDash = useGetStudentDashboard();
-  // صورة الحساب (صورة Google إن سجل بها) — للطالب والمعلم
-  const [meAvatar, setMeAvatar] = useState('');
-  const [meName, setMeName] = useState('');
-  const [meIsOwner, setMeIsOwner] = useState(true);
-  useEffect(() => {
-    let cancelled = false;
-    fetchAuthMe()
-      .then((me) => {
-        if (cancelled) return;
-        if (me?.user?.avatarUrl) setMeAvatar(me.user.avatarUrl);
-        if (me?.user?.fullName) setMeName(String(me.user.fullName).trim());
-        setMeIsOwner(me?.isOwner !== false);
-      })
-      .catch(() => undefined);
-    return () => { cancelled = true; };
-  }, []);
+  // هوية من سجّل الدخول: صورته واسمه من ملفه
+  const meIdentity = useStaffIdentity();
+  const meAvatar = String(meIdentity?.user?.avatarUrl || '');
   const dashAvatar = studentDash.data?.student?.avatarUrl || '';
   const identity = usePlatformIdentity();
+
+  // بوابة الدخول: تحقق واحد يُحفظ 5 دقائق — لا شاشة تحقق مع كل تنقل
+  const [authReady, setAuthReady] = useState(false);
+  // حساب الرقابة: يمرّ من نفس البوابة بلا صلاحية كتابة واحدة
+  const [roMode, setRoMode] = useState(false);
+
   // هوية هذا الإدخال: صاحب المنصة يرث الهوية العامة، وغيره يأخذ اسمه وصورته
-  const isOwner = meIsOwner;
+  const isOwner = meIdentity?.isOwner !== false;
   const staffImage = roMode
     ? '/supervisor.svg'
     : (isOwner
@@ -2625,10 +2658,6 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
         : (meAvatar || identity.teacherImageUrl || teacherImageUrl));
   const avatarSrc = mode === 'teacher' ? staffImage : dashAvatar || meAvatar || undefined;
 
-  // بوابة الدخول: تحقق واحد يُحفظ 5 دقائق — لا شاشة تحقق مع كل تنقل
-  const [authReady, setAuthReady] = useState(false);
-  // حساب الرقابة: يمرّ من نفس البوابة بلا صلاحية كتابة واحدة
-  const [roMode, setRoMode] = useState(false);
   useEffect(() => {
     ensureRefreshLoop();
     let cancelled = false;
@@ -2736,10 +2765,10 @@ function Shell({ mode, children }: { mode: 'student' | 'teacher'; children: Reac
   // اسم هذه الإدارة في الشريط: صاحب المنصة = هوية المنصة، وغيره = اسمه من ملفه
   const staffName = roMode
     ? 'مشرف الرقابة'
-    : (isOwner ? (identity.teacherName || STAFF_FALLBACK_NAME) : (meName || identity.teacherName || STAFF_FALLBACK_NAME));
+    : staffDisplayName(meIdentity, identity);
   const staffShort = roMode
     ? 'مشرف الرقابة'
-    : (isOwner ? STAFF_FALLBACK_SHORT : (meName ? meName.split(' ').slice(0, 2).join(' ') : STAFF_FALLBACK_SHORT));
+    : staffDisplayShort(meIdentity, identity);
   const staffCaption = roMode ? 'رقابة واطّلاع فقط' : 'إدارة ومتابعة المنصة';
   const signOut = () => {
     logout.mutate(undefined, {
@@ -10476,12 +10505,14 @@ function TeacherDashboardNew() {
   const query = useGetTeacherDashboard();
   const d = query.data;
   const identity = usePlatformIdentity();
+  const meIdentity = useStaffIdentity();
+  const greeting = staffDisplayName(meIdentity, identity);
 
   return (
     <Shell mode="teacher">
       <SectionHero
         eyebrow="لوحة المتابعة الإدارية"
-        title={`مرحباً بـ${identity.teacherName}`}
+        title={`مرحباً بـ${greeting}`}
         body="نبض منصة أرض اللغة: الطلاب والوحدات والملخصات والدفاتر والاختبارات — كلها تحت عينك."
         action={
           <Link href="/teacher/content" className="inline-flex items-center gap-2 rounded-2xl bg-accent px-6 py-3.5 text-sm font-extrabold text-[#3a2c07] shadow-lg shadow-accent/30 transition-all hover:-translate-y-0.5 hover:shadow-xl" data-testid="button-teacher-action">
