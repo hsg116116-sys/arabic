@@ -497,6 +497,7 @@ const navStudentBase = [
   { href: '/student', label: 'نظرة عامة', icon: LayoutDashboard },
   { href: '/student/courses', label: 'الوحدات التعليمية', icon: BookOpen },
   { href: '/student/foundation', label: 'التأسيس', icon: Sprout, gated: true },
+  { href: '/student/summaries', label: 'الملخصات وأوراق العمل', icon: FileText },
   { href: '/student/notebook', label: 'دفتري', icon: NotebookPen },
   { href: '/student/assessments', label: 'التقييمات', icon: Target },
   { href: '/student/assignments', label: 'الواجبات', icon: ClipboardCheck },
@@ -509,6 +510,7 @@ const navTeacher = [
   { href: '/teacher/students', label: 'الطلاب', icon: UsersRound },
   { href: '/teacher/foundation', label: 'إعداد التأسيس', icon: Sprout },
   { href: '/teacher/content', label: 'المنهاج والوحدات', icon: Library },
+  { href: '/teacher/summaries', label: 'الملخصات وأوراق العمل', icon: FileText },
   { href: '/teacher/books', label: 'الكتب المدرسية', icon: BookOpen },
   { href: '/teacher/exams', label: 'الاختبارات', icon: Target },
   { href: '/teacher/assignments', label: 'الواجبات', icon: ClipboardCheck },
@@ -938,8 +940,10 @@ async function uploadFileToCloud(file: File, folder: string): Promise<any> {
   const dataUrl = isImage ? await compressImageFile(file) : await fileToDataUrl(file);
   if (!dataUrl) throw new Error('تعذر قراءة الملف — حاول مجدداً');
   // حارس الحجم: لا ترسل طلباً سيفشل حتماً على الإنتاج — رسالة واضحة بدل خطأ مبهم
-  if (dataUrl.length > 3_200_000) {
-    throw new Error('الصورة كبيرة جداً حتى بعد الضغط — اختر صورة أصغر أو التقط بجودة أقل');
+  // حد الحجم: 3.2MB للصور، 10MB للمستندات الأخرى
+  const sizeLimit = file.type.startsWith('image/') ? 3_200_000 : 10_000_000;
+  if (dataUrl.length > sizeLimit) {
+    throw new Error(file.type.startsWith('image/') ? 'الصورة كبيرة جداً حتى بعد الضغط — اختر صورة أصغر أو التقط بجودة أقل' : 'الملف كبير جداً (الحد الأقصى 10MB) — اختر ملفاً أصغر أو اضغطه أولاً');
   }
   return jsonFetch('/api/teacher/upload', {
     method: 'POST',
@@ -7243,9 +7247,219 @@ function ExtHtmlViewer({ url, fill }: { url: string; fill?: boolean }) {
    كتلة HTML المدمجة — 6 مميزات احترافية:
    تكبير/ملء شاشة/طباعة/تبويب جديد/تقدم القراءة/اختبار النهاية
 ========================================================================= */
+
+/* ═══════════════════════════════ عارض المستندات العام (PDF / بوربوينت / وورد / دوكس) ═══════════════════════════════
+   يعرض المستندات مباشرة وبشكل سلس ومتجاوب داخل الصفحة (على الهاتف والكمبيوتر) دون إشعار الطالب بنوع القارئ:
+   - PDF: عرض تفاعلي مباشر داخل الصفحة مع خيارات التكبير والملء والتحميل
+   - بوربوينت (PPTX/PPT) ووورد (DOCX/DOC): عرض مضمن تفاعلي بالكامل عبر قارئ المستندات السحابي
+   - ضغط وتكيف كامل مع مساحة الشاشة
+═══════════════════════════════════════════════════════════════════════════════════════════════════════════════ */
+function detectDocType(url?: string, hint?: string): 'pdf' | 'pptx' | 'docx' | 'doc' | 'unknown' {
+  if (hint && ['pdf', 'pptx', 'docx', 'doc'].includes(hint)) return hint as any;
+  const raw = String(url || '').toLowerCase().split('?')[0];
+  if (raw.endsWith('.pdf') || raw.includes('/pdf') || raw.includes('.pdf?')) return 'pdf';
+  if (raw.endsWith('.pptx') || raw.includes('.pptx?')) return 'pptx';
+  if (raw.endsWith('.ppt') || raw.includes('.ppt?')) return 'pptx';
+  if (raw.endsWith('.docx') || raw.includes('.docx?')) return 'docx';
+  if (raw.endsWith('.doc') || raw.includes('.doc?')) return 'doc';
+  return 'unknown';
+}
+
+const DOC_TYPE_META: Record<string, { label: string; color: string; icon: string }> = {
+  pdf: { label: 'PDF', color: '#c62828', icon: '📄' },
+  pptx: { label: 'بوربوينت', color: '#d84315', icon: '📊' },
+  docx: { label: 'وورد', color: '#1565c0', icon: '📝' },
+  doc: { label: 'وورد', color: '#1565c0', icon: '📝' },
+  unknown: { label: 'مستند', color: '#37474f', icon: '📎' },
+};
+
+function DocumentViewer({ url, name, docType: hintType }: { url: string; name?: string; docType?: string }) {
+  const docUrl = String(url || '').trim();
+  if (!docUrl) return null;
+  const dtype = detectDocType(docUrl, hintType);
+  const meta = DOC_TYPE_META[dtype] || DOC_TYPE_META.unknown;
+  const fileName = name || docUrl.split('/').pop()?.split('?')[0] || 'مستند تعليمي';
+  const [expanded, setExpanded] = useState(true);
+  const [useFallback, setUseFallback] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(100);
+
+  // PDF: عرض مباشر داخل iframe أو عبر Google Docs Viewer
+  // بوربوينت ووورد: Microsoft Office Online Viewer أو Google Docs Viewer
+  const officeViewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(docUrl)}`;
+  const gdocsViewerUrl = `https://docs.google.com/gview?url=${encodeURIComponent(docUrl)}&embedded=true`;
+
+  const primarySrc = dtype === 'pdf' ? docUrl : officeViewerUrl;
+  const secondarySrc = gdocsViewerUrl;
+  const currentSrc = useFallback ? secondarySrc : primarySrc;
+
+  return (
+    <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm transition-all" data-testid="document-viewer">
+      {/* شريط أدوات المستند الأنيق */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-secondary/30 px-5 py-3.5 sm:px-6">
+        <div className="flex min-w-[200px] flex-1 items-center gap-3">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-lg text-white shadow-sm" style={{ background: meta.color }}>
+            {meta.icon}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate font-display text-sm font-extrabold text-primary sm:text-base">{fileName}</p>
+            <div className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground">
+              <span className="rounded-md px-1.5 py-0.5 text-white" style={{ background: meta.color }}>{meta.label}</span>
+              <span>مستند تفاعلي مضمن</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* تبديل العرض/الطي */}
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl border border-border bg-card px-3.5 text-xs font-bold text-primary transition-colors hover:bg-secondary active:scale-95"
+            title={expanded ? 'طي المستند' : 'عرض المستند'}
+          >
+            {expanded ? <><EyeOff size={14} /> طي</> : <><Eye size={14} /> عرض</>}
+          </button>
+
+          {/* تبديل محرك العرض إن لم يظهر */}
+          {expanded && dtype !== 'pdf' ? (
+            <button
+              type="button"
+              onClick={() => setUseFallback((f) => !f)}
+              className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-xs font-semibold text-muted-foreground transition-colors hover:text-primary active:scale-95"
+              title="التبديل بين قارئ مايكروسوفت وقارئ جوجل"
+            >
+              <RefreshCw size={12} /> {useFallback ? 'قارئ مايكروسوفت' : 'قارئ بديل'}
+            </button>
+          ) : null}
+
+          {/* فتح وتبويب جديد */}
+          <a
+            href={docUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-xs font-bold text-muted-foreground transition-colors hover:text-primary active:scale-95"
+            title="فتح المستند في تبويب مستقل"
+          >
+            <ExternalLink size={14} />
+          </a>
+
+          {/* تحميل */}
+          <a
+            href={docUrl}
+            target="_blank"
+            rel="noreferrer"
+            download={fileName}
+            className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl px-4 text-xs font-extrabold text-white shadow-sm transition-transform hover:scale-105 active:scale-95"
+            style={{ background: meta.color }}
+            title="تحميل الملف"
+          >
+            <Download size={14} /> تحميل
+          </a>
+        </div>
+      </div>
+
+      {/* شاشة العرض المضمنة */}
+      {expanded ? (
+        <div className="relative w-full bg-[#f8f9fa] dark:bg-[#121212]">
+          <iframe
+            key={currentSrc}
+            src={currentSrc}
+            title={fileName}
+            className="w-full border-0 transition-opacity"
+            style={{ height: 'min(82vh, 750px)', minHeight: '440px' }}
+            sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+            loading="lazy"
+          />
+          {/* شريط المساعدة السفلي */}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-card/60 px-4 py-2 text-[11px] text-muted-foreground">
+            <span>إذا كان المستند لا يظهر على جهازك، يمكنك النقر على الزر بالأعلى للتحميل أو التبديل.</span>
+            <div className="flex items-center gap-3">
+              <a href={gdocsViewerUrl.replace('&embedded=true', '')} target="_blank" rel="noreferrer" className="font-bold text-primary hover:underline">عرض عبر Google Docs ←</a>
+              {dtype !== 'pdf' ? (
+                <a href={`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(docUrl)}`} target="_blank" rel="noreferrer" className="font-bold text-primary hover:underline">عرض عبر Office ←</a>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** محرر كتلة المستند في صفحة إعداد التأسيس (الأستاذ) */
+function DocumentBlockEditor({ block, onPatch }: { block: LessonBlock; onPatch: (p: Partial<LessonBlock>) => void }) {
+  const [uploading, setUploading] = useState(false);
+  const ACCEPT = '.pdf,.pptx,.ppt,.docx,.doc,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword';
+
+  const handleUpload = async (file: File) => {
+    if (!file) return;
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+    const allowed = ['pdf', 'pptx', 'ppt', 'docx', 'doc'];
+    if (!allowed.includes(ext)) {
+      alert('صيغة غير مدعومة — يرجى اختيار PDF أو بوربوينت (PPTX/PPT) أو وورد (DOCX/DOC)');
+      return;
+    }
+    setUploading(true);
+    try {
+      const res = await uploadFileToCloud(file, '/ard-al-lughah/documents');
+      if (res?.url) {
+        const docType = ext === 'ppt' ? 'pptx' : ext as any;
+        onPatch({ docUrl: res.url, docName: file.name, docType });
+      }
+    } catch (err: any) {
+      alert(err?.message || 'تعذر رفع المستند');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const dtype = block.docType || detectDocType(block.docUrl || '');
+  const meta = DOC_TYPE_META[dtype] || DOC_TYPE_META.unknown;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border-2 border-dashed border-border bg-card/50 p-6 text-center">
+        {block.docUrl ? (
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-lg text-white shadow-md" style={{ background: meta.color }}>{meta.icon}</span>
+            <div className="text-right">
+              <p className="truncate text-sm font-extrabold text-primary">{block.docName || 'مستند مرفوع'}</p>
+              <p className="text-xs font-bold" style={{ color: meta.color }}>{meta.label} — معتمد في الدرس</p>
+            </div>
+            <button type="button" onClick={() => onPatch({ docUrl: '', docName: '', docType: undefined })} className="rounded-xl px-3 py-2 text-xs font-bold text-destructive hover:bg-destructive/10">إزالة</button>
+          </div>
+        ) : (
+          <div>
+            <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-[#c62828]/10 text-2xl">📄</span>
+            <p className="font-display text-base font-bold text-primary">ارفع مستنداً للدرس</p>
+            <p className="mt-1 text-xs text-muted-foreground">PDF · عرض تقديمي بوربوينت (PPTX/PPT) · وورد (DOCX/DOC)</p>
+          </div>
+        )}
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+          <label className={`inline-flex min-h-[50px] cursor-pointer items-center gap-2 rounded-2xl px-6 text-sm font-extrabold text-white shadow-md transition-all hover:-translate-y-0.5 active:scale-95 ${uploading ? 'opacity-60 pointer-events-none' : ''}`} style={{ background: '#c62828' }}>
+            {uploading ? <><RefreshCw size={16} className="animate-spin" /> جارٍ الرفع السحابي...</> : <><Upload size={16} /> {block.docUrl ? 'استبدال المستند' : 'اختيار ملف من الجهاز'}</>}
+            <input type="file" accept={ACCEPT} className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); e.target.value = ''; }} />
+          </label>
+        </div>
+      </div>
+
+      {/* معاينة المستند المباشرة في لوحة الأستاذ */}
+      {block.docUrl ? <DocumentViewer url={block.docUrl} name={block.docName} docType={block.docType} /> : null}
+    </div>
+  );
+}
+
 function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
   lesson: any; exam?: any; onStartExam?: () => void; onReachEnd?: () => void;
 }) {
+  // إذا كان المحتوى المرفق مستنداً (PDF / بوربوينت / وورد) يُعرض عبر قارئ المستندات المدمج المباشر
+  if (detectDocType(lesson?.htmlFileUrl) !== 'unknown') {
+    return (
+      <div className="my-4">
+        <DocumentViewer url={lesson.htmlFileUrl} name={lesson.title} />
+      </div>
+    );
+  }
   const [zoom, setZoom] = useState(1);
   const [full, setFull] = useState(false);
   const [extHtml, setExtHtml] = useState<string | null>(null);
@@ -7538,6 +7752,14 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
 
 /** معاينة HTML في لوحة المعلم — تعمل مع الكود الملصق ومع الملف المرفوع (تفك ARDB64 مثله مثل العارض) ومع الحزم المضغوطة */
 function HtmlPreviewFrame({ content, fileUrl }: { content?: string; fileUrl?: string }) {
+  // إذا كان الرابط مستنداً (PDF / بوربوينت / وورد) يُعرض بقارئ المستندات
+  if (fileUrl && detectDocType(fileUrl) !== 'unknown') {
+    return (
+      <div className="mt-3">
+        <DocumentViewer url={fileUrl} />
+      </div>
+    );
+  }
   const [text, setText] = useState<string | null>(content || null);
   const [failed, setFailed] = useState(false);
   // نفس القرار المركزي: رابط الحزمة يفوز على اللصق حتى في المعاينة
@@ -8083,13 +8305,21 @@ function StudentCoursesPage() {
       />
       <GradeTermBadge grade={effectiveGrade} term={term} split={split} gender={gender} school={school} />
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={() => { loadCourses(); loadUnitTasks(); }}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-2.5 text-xs font-bold text-primary shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
-        >
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> تحديث الوحدات
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => { loadCourses(); loadUnitTasks(); }}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-2.5 text-xs font-bold text-primary shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> تحديث الوحدات
+          </button>
+          <Link
+            href="/student/summaries"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-l from-[#17413f] to-[#2a7a72] px-4 py-2.5 text-xs font-extrabold text-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+          >
+            <FileText size={14} /> الملخصات وأوراق العمل ↗
+          </Link>
+        </div>
         <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-secondary/60 px-4 py-2.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary">
           <input type="checkbox" checked={showLocked} onChange={(e) => setShowLocked(e.target.checked)} className="h-4 w-4 accent-primary" /> عرض الوحدات المقفلة أيضاً
         </label>
@@ -9718,6 +9948,27 @@ function CurriculumManagerPage({ onlyTab, hero }: {
                   <div className="mb-3 flex items-center justify-between">
                     <p className="text-sm font-semibold">الكود والمرفقات</p>
                     <div className="flex flex-wrap items-center gap-2">
+                      {/* زر رفع مستند: PDF / بوربوينت / وورد */}
+                      <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-[#c62828] px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:brightness-110 ${uploadingHtml ? 'opacity-60 pointer-events-none' : ''}`} title="ارفع مستنداً (PDF أو بوربوينت PPTX أو وورد DOCX/DOC) ليُعرض مباشرة داخل الدرس">
+                        {uploadingHtml ? <RefreshCw size={13} className="animate-spin" /> : <FileText size={13} />} ارفع مستند (PDF / بوربوينت / وورد)
+                        <input type="file" accept=".pdf,.pptx,.ppt,.docx,.doc,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword" className="hidden" onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          const target = e.target;
+                          if (!f || uploadingHtml) return;
+                          setUploadingHtml(true);
+                          uploadFileToCloud(f, '/ard-al-lughah/documents')
+                            .then((res) => {
+                              if (res?.url) {
+                                setLessonForm((lf: any) => ({ ...lf, htmlFileUrl: res.url, htmlContent: '' }));
+                                setBundleInfo(null);
+                                setShowHtmlPreview(true);
+                                flash(`تم رفع المستند «${f.name}» سحابياً بنجاح ✓ — المعاينة ظهرت بالأسفل`);
+                              }
+                            })
+                            .catch((err: Error) => flash(err?.message || 'تعذر رفع المستند'))
+                            .finally(() => { setUploadingHtml(false); target.value = ''; });
+                        }} />
+                      </label>
                       <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-secondary px-3 py-1.5 text-xs font-bold text-primary hover:bg-accent/40 ${uploadingHtml ? 'opacity-60' : ''}`} title="يُرفع كنص (.txt) على ImageKit فيُعرض بدون خطأ 403 وبدون استهلاك Supabase">
                         {uploadingHtml ? <RefreshCw size={13} className="animate-spin" /> : <Upload size={13} />} {uploadingHtml ? 'جارٍ الرفع سحابياً...' : 'ارفع ملف HTML'}
                         <input type="file" accept=".html,.htm,text/html" className="hidden" onChange={(e) => {
@@ -10637,6 +10888,217 @@ function summaryTypeColor(type: string) {
   }
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════════
+   صفحة ملخصات الطالب — بطاقات التفوق وأوراق العمل والمستندات (PDF / بوربوينت / وورد)
+═══════════════════════════════════════════════════════════════════════ */
+function StudentSummariesPage() {
+  const { grade: effectiveGrade, term, split, gender } = useStudentGradeTerm();
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState('');
+  const [typeFilter, setTypeFilter] = useState('الكل');
+  const [previewItem, setPreviewItem] = useState<any | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    const params = new URLSearchParams({ grade: effectiveGrade, term });
+    jsonFetch(`/api/curriculum/summaries?${params.toString()}`)
+      .then((data) => {
+        if (!live) return;
+        setItems(Array.isArray(data) ? data : []);
+      })
+      .catch(() => { if (live) setItems([]); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [effectiveGrade, term]);
+
+  const types = ['الكل', ...SUMMARY_TYPES];
+
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return items.filter((it) => {
+      if (typeFilter !== 'الكل' && it.summaryType !== typeFilter) return false;
+      if (split && it.section && it.section !== 'الجميع') {
+        const expected = gender === 'female' ? 'طالبة' : 'طالب';
+        if (it.section !== expected) return false;
+      }
+      if (!needle) return true;
+      return (
+        String(it.title || '').toLowerCase().includes(needle) ||
+        String(it.unitTitle || '').toLowerCase().includes(needle) ||
+        String(it.description || '').toLowerCase().includes(needle)
+      );
+    });
+  }, [items, q, typeFilter, split, gender]);
+
+  return (
+    <Shell mode="student">
+      <SectionHero
+        eyebrow={`${effectiveGrade} · ${term}`}
+        title="الملخصات وأوراق العمل"
+        body="خرائط ذهنية، بطاقات تفوق، مراجعات شاملة، وأوراق عمل بصيغ PDF وبوربوينت ووورد مع إمكانية القراءة المباشرة والتحميل."
+        tone="emerald"
+        action={
+          <div className="flex items-center gap-2">
+            <span className="rounded-2xl bg-white/10 px-4 py-2.5 text-xs font-extrabold text-white ring-1 ring-white/20">
+              {filtered.length} مادة دراسية متاحة
+            </span>
+          </div>
+        }
+      />
+
+      {/* البحث والفلترة */}
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[240px] flex-1">
+          <Search size={18} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="ابحث بالعنوان أو اسم الوحدة..."
+            className="w-full rounded-2xl border-2 border-border bg-card pr-11 pl-4 py-3 text-sm font-semibold outline-none transition-colors focus:border-primary"
+            data-testid="input-search-student-summaries"
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {types.map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTypeFilter(t)}
+              className={`min-h-[44px] rounded-xl px-4 text-xs font-extrabold transition-all active:scale-95 ${typeFilter === t ? 'bg-primary text-primary-foreground shadow-sm' : 'border border-border bg-card text-muted-foreground hover:bg-secondary hover:text-primary'}`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? (
+        <StateNotice type="loading" />
+      ) : !filtered.length ? (
+        <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-16 text-center">
+          <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-secondary text-primary">
+            <FileText size={32} />
+          </span>
+          <p className="font-display text-xl font-bold text-primary">لا توجد ملخصات بعد</p>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-muted-foreground">
+            {q || typeFilter !== 'الكل' ? 'لا توجد نتائج تطابق بحثك — جرب كلمات أخرى.' : `سيضيف الأستاذ ملخصات وأوراق عمل ${effectiveGrade} قريباً.`}
+          </p>
+        </div>
+      ) : (
+        <div className="grid gap-5 md:grid-cols-2">
+          {filtered.map((s) => {
+            const hasDoc = !!s.fileUrl;
+            const dtype = detectDocType(s.fileUrl);
+            const dmeta = DOC_TYPE_META[dtype] || DOC_TYPE_META.unknown;
+            return (
+              <div key={s.id} className="group flex flex-col justify-between overflow-hidden rounded-3xl border border-border bg-card p-5 shadow-sm transition-all hover:-translate-y-1 hover:border-primary/35 hover:shadow-lg">
+                <div>
+                  <div className="flex items-start gap-4">
+                    {s.coverUrl ? (
+                      <img src={s.coverUrl} alt="" className="h-24 w-20 shrink-0 rounded-2xl object-cover shadow-sm" />
+                    ) : (
+                      <span className="grid h-24 w-20 shrink-0 place-items-center rounded-2xl text-2xl text-white shadow-sm" style={{ background: summaryTypeColor(s.summaryType) }}>
+                        {dmeta.icon}
+                      </span>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="rounded-lg px-2.5 py-0.5 text-[11px] font-extrabold text-white" style={{ background: summaryTypeColor(s.summaryType) }}>
+                          {s.summaryType}
+                        </span>
+                        {s.unitTitle ? (
+                          <span className="rounded-lg bg-secondary px-2.5 py-0.5 text-[11px] font-bold text-muted-foreground">
+                            {s.unitTitle}
+                          </span>
+                        ) : null}
+                        {hasDoc ? (
+                          <span className="rounded-lg px-2 py-0.5 text-[10px] font-extrabold text-white" style={{ background: dmeta.color }}>
+                            {dmeta.label}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <h3 className="mt-2 font-display text-base font-extrabold text-primary group-hover:text-primary">
+                        {s.title}
+                      </h3>
+                      {s.description ? (
+                        <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                          {s.description}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {s.content ? (
+                    <div className="mt-4 rounded-2xl border border-border bg-secondary/30 p-4 font-serif text-sm leading-7 text-primary/90">
+                      {s.content}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="mt-5 flex items-center justify-between gap-2 border-t border-border pt-4">
+                  {hasDoc ? (
+                    <button
+                      type="button"
+                      onClick={() => setPreviewItem(s)}
+                      className="inline-flex min-h-[44px] items-center gap-2 rounded-xl bg-primary px-5 text-xs font-extrabold text-primary-foreground shadow-sm transition-transform active:scale-95"
+                      data-testid={`btn-view-summary-${s.id}`}
+                    >
+                      <Eye size={15} /> عرض المستند بالصفحة
+                    </button>
+                  ) : (
+                    <span className="text-xs font-semibold text-muted-foreground">ملخص نصي</span>
+                  )}
+
+                  {hasDoc ? (
+                    <a
+                      href={s.fileUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      download={s.title}
+                      className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border border-border bg-card px-4 text-xs font-bold text-muted-foreground transition-colors hover:text-primary active:scale-95"
+                      title="تحميل الملف"
+                    >
+                      <Download size={15} /> تحميل
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* نافذة عرض المستند المباشر للطالب */}
+      {previewItem && (
+        <Modal
+          title={previewItem.title}
+          eyebrow={`${previewItem.summaryType} · ${previewItem.unitTitle || effectiveGrade}`}
+          onClose={() => setPreviewItem(null)}
+          maxWidth="max-w-5xl"
+        >
+          <div className="space-y-4">
+            {previewItem.description ? (
+              <p className="text-sm font-semibold text-muted-foreground">{previewItem.description}</p>
+            ) : null}
+            {previewItem.fileUrl ? (
+              <DocumentViewer url={previewItem.fileUrl} name={previewItem.title} />
+            ) : null}
+            {previewItem.content ? (
+              <div className="rounded-2xl border border-border bg-secondary/30 p-4 font-serif text-sm leading-7 text-primary">
+                {previewItem.content}
+              </div>
+            ) : null}
+          </div>
+        </Modal>
+      )}
+    </Shell>
+  );
+}
+
 function TeacherSummariesPage() {
   // الصفوف والمدارس تأتي من قاعدة البيانات — يشترك هنا ليعيد الرسم فور تغيّرها
   useCatalog();
@@ -10752,6 +11214,9 @@ function TeacherSummariesPage() {
                 </div>
                     <p className="mt-1 text-xs text-muted-foreground">{s.summaryType} · {s.unitTitle || 'عام'} {s.fileUrl ? '· مرفق' : ''}{s.section && s.section !== 'الجميع' ? ` · ${s.section === 'طالب' ? 'الطلاب فقط' : 'الطالبات فقط'}` : ''}</p>
                 <div className="mt-2.5 flex items-center gap-1">
+                  {s.fileUrl ? (
+                    <Button onClick={() => openEdit(s)} variant="soft" className="px-3 py-1.5 text-xs text-[#c62828]"><Eye size={13} /> عرض المرفق</Button>
+                  ) : null}
                   <Button onClick={() => openEdit(s)} variant="soft" className="px-3 py-1.5 text-xs"><Pencil size={13} /> تعديل</Button>
                   <Button onClick={() => remove(s)} variant="ghost" className="px-2 py-1.5 text-xs text-destructive"><Trash2 size={14} /></Button>
                 </div>
@@ -10777,11 +11242,11 @@ function TeacherSummariesPage() {
               <div className="sm:col-span-2"><ImageUrlField label="صورة غلاف الملخص" value={form.coverUrl || ''} onChange={(v) => setForm({ ...form, coverUrl: v })} testId="input-summary-cover" folder="/ard-al-lughah/summaries" /></div>
               <div className="sm:col-span-2">
                 <div className="rounded-2xl border border-dashed border-border p-4">
-                  <p className="mb-2 flex items-center gap-2 text-sm font-semibold">ملف المرفق (PDF / صورة) {isCloudUrl(form.fileUrl) ? <span className="rounded-full bg-green-500/15 px-2 py-0.5 text-[10px] font-bold text-green-800">سحابي ✓</span> : null}</p>
+                  <p className="mb-2 flex items-center gap-2 text-sm font-semibold">ملف المرفق (PDF · بوربوينت · وورد · صورة) {isCloudUrl(form.fileUrl) ? <span className="rounded-full bg-green-500/15 px-2 py-0.5 text-[10px] font-bold text-green-800">سحابي ✓</span> : null}</p>
                   <div className="flex flex-wrap items-center gap-2">
                     <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-secondary px-3 py-2 text-xs font-bold text-primary hover:bg-accent/40 ${uploadingFile ? 'opacity-60' : ''}`}>
                       {uploadingFile ? <RefreshCw size={13} className="animate-spin" /> : <Upload size={13} />} {uploadingFile ? 'جارٍ الرفع...' : 'ارفع المرفق'}
-                      <input type="file" accept=".pdf,image/*" className="hidden" onChange={(e) => {
+                      <input type="file" accept=".pdf,.pptx,.ppt,.docx,.doc,image/*,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword" className="hidden" onChange={(e) => {
                         const f = e.target.files?.[0];
                         const target = e.target;
                         if (!f || uploadingFile) return;
@@ -10792,9 +11257,14 @@ function TeacherSummariesPage() {
                           .finally(() => { setUploadingFile(false); target.value = ''; });
                       }} />
                     </label>
-                    {form.fileUrl ? <a href={form.fileUrl} target="_blank" rel="noreferrer" className="text-xs font-bold text-primary hover:underline">معاينة المرفق</a> : null}
+                    {form.fileUrl ? <a href={form.fileUrl} target="_blank" rel="noreferrer" className="text-xs font-bold text-primary hover:underline">فتح المرفق ↗</a> : null}
                     {form.fileUrl ? <button type="button" onClick={() => setForm({ ...form, fileUrl: '' })} className="text-xs font-bold text-destructive hover:underline">إزالة</button> : null}
                   </div>
+                  {form.fileUrl && detectDocType(form.fileUrl) !== 'unknown' ? (
+                    <div className="mt-4">
+                      <DocumentViewer url={form.fileUrl} />
+                    </div>
+                  ) : null}
                 </div>
               </div>
               <Field2 label="الترتيب"><input type="number" min={1} value={form.sortOrder || 1} onChange={(e) => setForm({ ...form, sortOrder: Number(e.target.value) })} className={inputCls} /></Field2>
@@ -12705,14 +13175,15 @@ const FOUNDATION_COLORS = [
 ];
 
 const FOUNDATION_KINDS: Record<string, { label: string; hint: string; Icon: any; tone: string }> = {
-  text:  { label: 'درس نصي',     hint: 'عنوان ونصّ',            Icon: BookOpen,  tone: '#17413f' },
-  image: { label: 'صور الدرس',   hint: 'غلاف ومعرض صور',         Icon: ImagePlus, tone: '#a85d3d' },
-  video: { label: 'فيديو',       hint: 'يوتيوب أو ملف فيديو',    Icon: Video,     tone: '#0d47a1' },
-  html:  { label: 'صفحة HTML',   hint: 'محتوى تفاعلي',           Icon: FileCode2, tone: '#6a1b9a' },
-  mixed: { label: 'مختلط',       hint: 'نص + صور + فيديو + HTML', Icon: Layers,    tone: '#2f7772' },
+  text:     { label: 'درس نصي',     hint: 'عنوان ونصّ',                 Icon: BookOpen,  tone: '#17413f' },
+  image:    { label: 'صور الدرس',   hint: 'غلاف ومعرض صور',              Icon: ImagePlus, tone: '#a85d3d' },
+  video:    { label: 'فيديو',       hint: 'يوتيوب أو ملف فيديو',         Icon: Video,     tone: '#0d47a1' },
+  html:     { label: 'صفحة HTML',   hint: 'محتوى تفاعلي',                Icon: FileCode2, tone: '#6a1b9a' },
+  document: { label: 'مستند',       hint: 'PDF · بوربوينت · وورد',       Icon: FileText,  tone: '#c62828' },
+  mixed:    { label: 'مختلط',       hint: 'نص + صور + فيديو + HTML + مستند', Icon: Layers,    tone: '#2f7772' },
 };
 
-const FOUNDATION_KIND_ORDER = ['text', 'image', 'video', 'html', 'mixed'] as const;
+const FOUNDATION_KIND_ORDER = ['text', 'image', 'video', 'html', 'document', 'mixed'] as const;
 
 /** حقول الإدخال للّمس: 16px+ (حتى لا يكبّر الآيباد الصفحة) وحدود سميكة */
 const touchCls =
@@ -13005,6 +13476,7 @@ function FoundationHtmlView({ content, fileUrl, title }: { content?: string; fil
 /* ═══════════════════════════════════════════════════════════════════════
    عرض عنصر واحد من عناصر الدرس (طالب ومعاينة المعلم) — نفس الشكل هنا وهناك.
    ═══════════════════════════════════════════════════════════════════════ */
+
 function FoundationBlockView({ block, lesson, compact = false, onOpenImages }: {
   block: LessonBlock;
   lesson: any;
@@ -13046,6 +13518,9 @@ function FoundationBlockView({ block, lesson, compact = false, onOpenImages }: {
   if (block.type === 'html' && (String(block.html || '').trim() || String(block.fileUrl || '').trim())) {
     return <FoundationHtmlView content={String(block.html || '')} fileUrl={String(block.fileUrl || '')} title={lesson?.title} />;
   }
+  if (block.type === 'document' && String(block.docUrl || '').trim()) {
+    return <DocumentViewer url={String(block.docUrl)} name={block.docName} docType={block.docType} />;
+  }
   return null;
 }
 
@@ -13065,7 +13540,8 @@ function FoundationLessonBody({ lesson, compact = false }: { lesson: any; compac
       (b.type === 'text' && String(b.text || '').trim()) ||
       (b.type === 'images' && (b.images || []).some(Boolean)) ||
       (b.type === 'video' && String(b.url || '').trim()) ||
-      (b.type === 'html' && (String(b.html || '').trim() || String(b.fileUrl || '').trim())),
+      (b.type === 'html' && (String(b.html || '').trim() || String(b.fileUrl || '').trim())) ||
+      (b.type === 'document' && String(b.docUrl || '').trim()),
     );
     return (
       <div className="space-y-6">
@@ -13189,13 +13665,19 @@ function Toast({ msg }: { msg: { text: string; tone: 'ok' | 'err' } | null }) {
    ═══════════════════════════════════════════════════════════════════════ */
 type LessonBlock = {
   id: string;
-  type: 'text' | 'images' | 'video' | 'html';
+  type: 'text' | 'images' | 'video' | 'html' | 'document';
   text?: string;
   images?: string[];
   url?: string;
   caption?: string;
   html?: string;
   fileUrl?: string;
+  /** document block: رابط الملف المرفوع (PDF/PPTX/DOCX/DOC) */
+  docUrl?: string;
+  /** document block: اسم الملف الأصلي */
+  docName?: string;
+  /** document block: نوع المستند */
+  docType?: 'pdf' | 'pptx' | 'docx' | 'doc';
 };
 
 function parseLessonBlocks(bodyText: unknown): LessonBlock[] | null {
@@ -13242,6 +13724,7 @@ const LESSON_BLOCK_TYPES = [
   { id: 'images', label: 'صور', hint: 'معرض صور', Icon: ImagePlus, tone: '#a85d3d' },
   { id: 'video', label: 'فيديو', hint: 'رفع أو رابط', Icon: Video, tone: '#0d47a1' },
   { id: 'html', label: 'HTML / موقع', hint: 'كود أو ملف أو حزمة', Icon: FileCode2, tone: '#6a1b9a' },
+  { id: 'document', label: 'مستند', hint: 'PDF · بوربوينت · وورد', Icon: FileText, tone: '#c62828' },
 ] as const;
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -13650,6 +14133,10 @@ function LessonBlockCard({ block, index, total, onPatch, onMove, onRemove, onDup
           </div>
         ) : null}
 
+        {block.type === 'document' ? (
+          <DocumentBlockEditor block={block} onPatch={onPatch} />
+        ) : null}
+
         {block.type === 'html' ? (
           <div className="space-y-3">
             <Field2 label="كود HTML مباشر (اختياري)" hint="الصقه هنا إن كان عندك">
@@ -13864,7 +14351,7 @@ function TeacherFoundationPage() {
       <SectionHero
         eyebrow="المستوى ثم مواضيعه ثم الدرس"
         title="إعداد التأسيس"
-        body="الطالب يفتح المستوى فيرى مواضيعه العشرة مرقّمة، ويفتح الموضوع فيقرأ الدرس في صفحة مستقلة. أنت تتحكّم بالترتيب بالأسهم، وتحرّر كل درس بما تريد — نصاً أو صوراً أو فيديو أو HTML."
+        body="الطالب يفتح المستوى فيرى مواضيعه مرقّمة، ويفتح الموضوع فيقرأ الدرس في صفحة مستقلة. أنت تتحكّم بالترتيب بالأسهم، وتحرّر كل درس بما تريد — نصاً أو صوراً أو فيديو أو HTML."
         action={
           <div className="flex flex-wrap gap-2.5">
             <button type="button" onClick={openSectionCreate} className={touchBtnSoft} data-testid="button-add-foundation-section"><Layers size={18} /> مستوى جديد</button>
@@ -13891,7 +14378,7 @@ function TeacherFoundationPage() {
                 <div className="min-w-0 flex-1">
                   <h2 className="font-display text-xl font-extrabold sm:text-2xl">المستويات</h2>
                   <p className="mt-1 text-sm leading-6 text-white/85">
-                    اختر المستوى لترى مواضيعه العشرة وتحرّر دروسه — ورتّب المستويات بالأسهم.
+                    اختر المستوى لترى مواضيعه وتحرّر دروسه — ورتّب المستويات بالأسهم.
                   </p>
                 </div>
                 <button
@@ -13984,7 +14471,7 @@ function TeacherFoundationPage() {
               <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-16 text-center">
                 <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-gradient-to-br from-primary to-[#2a7a72] text-primary-foreground shadow-lg"><NotebookPen size={30} /></span>
                 <p className="font-display text-xl font-bold text-primary">ابدأ أول مستوى</p>
-                <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-muted-foreground">المستوى هو الصفحة الأولى التي يراها الطالب. أنشئ واحداً ثم ضع فيه مواضيعه العشرة.</p>
+                <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-muted-foreground">المستوى هو الصفحة الأولى التي يراها الطالب. أنشئ واحداً ثم ضع فيه مواضيعه ودروسه.</p>
                 <button type="button" onClick={openSectionCreate} className={`${touchBtnPrimary} mt-6`}><Plus size={20} /> أنشئ مستوىً</button>
               </div>
             ) : !visibleLessons.length ? (
@@ -14857,9 +15344,9 @@ function StudentFoundationPage() {
     <Shell mode="student">
       <FoundationPageHead
         color="#17413f" icon={Sprout}
-        eyebrow="خمسة مستويات · خمسون درساً"
+        eyebrow="عشرة مستويات · مئة وأربعة وعشرون درساً"
         title="إعداد التأسيس"
-        description="من الجملة إلى الكلمة، ومن النحو إلى الصرف فالبلاغة فالإملاء. اختر المستوى ثم القسم ثم الدرس — ثلاث خطوات فقط."
+        description="من المهارات الأولى والحروف إلى النحو والصرف والإملاء والبلاغة والعروض والأدب والنصوص. اختر المستوى ثم الدرس."
         done={stats.done} total={stats.lessons}
       />
 
@@ -15165,6 +15652,7 @@ function Router() {
         <Route path="/student" component={StudentDashboardNew} />
         <Route path="/student/courses" component={StudentCoursesPage} />
         <Route path="/student/courses/:courseId" component={StudentCoursesPage} />
+        <Route path="/student/summaries" component={StudentSummariesPage} />
         <Route path="/student/courses/:courseId/lessons/:lessonId" component={StudentLessonPage} />
         <Route path="/student/foundation" component={StudentFoundationPage} />
         <Route path="/student/foundation/section/:sectionId" component={FoundationSectionPage} />
@@ -15182,6 +15670,7 @@ function Router() {
         <Route path="/teacher/foundation" component={TeacherFoundationPage} />
         <Route path="/teacher/foundation/lesson/:lessonId" component={TeacherFoundationLessonPage} />
         <Route path="/teacher/content" component={CurriculumManagerPage} />
+        <Route path="/teacher/summaries" component={TeacherSummariesPage} />
         <Route path="/teacher/exams" component={TeacherExamsPage} />
         <Route path="/teacher/assignments" component={TeacherAssignmentsPage} />
         <Route path="/teacher/announcements" component={TeacherAnnouncementsPage} />

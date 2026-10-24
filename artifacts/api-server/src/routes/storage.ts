@@ -1,4 +1,4 @@
-﻿import { Router, type IRouter } from "express";
+import { Router, type IRouter } from "express";
 import { uploadFile, deleteFileById, deleteFileByUrl, getStorageStatus, createUploadAuth, getAccountUsage } from "../lib/imagekit";
 import { requireAdmin } from "../middlewares/auth";
 import { logger } from "../lib/logger";
@@ -18,6 +18,8 @@ const ALLOWED_FOLDERS = [
   "/ard-al-lughah/bundles",
   "/ard-al-lughah/teacher",
   "/ard-al-lughah/books",
+  "/ard-al-lughah/documents",
+  "/ard-al-lughah/summaries",
 ];
 
 function sanitizeFolder(folder: unknown): string {

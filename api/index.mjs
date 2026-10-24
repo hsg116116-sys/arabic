@@ -37071,7 +37071,9 @@ var ALLOWED_FOLDERS = [
   "/ard-al-lughah/html",
   "/ard-al-lughah/bundles",
   "/ard-al-lughah/teacher",
-  "/ard-al-lughah/books"
+  "/ard-al-lughah/books",
+  "/ard-al-lughah/documents",
+  "/ard-al-lughah/summaries"
 ];
 function sanitizeFolder(folder) {
   const f = String(folder || "/ard-al-lughah/lessons");
