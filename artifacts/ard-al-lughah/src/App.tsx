@@ -7274,14 +7274,15 @@ const DOC_TYPE_META: Record<string, { label: string; color: string; icon: string
 };
 
 function DocumentViewer({ url, name, docType: hintType }: { url: string; name?: string; docType?: string }) {
+  const [expanded, setExpanded] = useState(true);
+  const [useFallback, setUseFallback] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(100);
+
   const docUrl = String(url || '').trim();
   if (!docUrl) return null;
   const dtype = detectDocType(docUrl, hintType);
   const meta = DOC_TYPE_META[dtype] || DOC_TYPE_META.unknown;
   const fileName = name || docUrl.split('/').pop()?.split('?')[0] || 'مستند تعليمي';
-  const [expanded, setExpanded] = useState(true);
-  const [useFallback, setUseFallback] = useState(false);
-  const [zoomLevel, setZoomLevel] = useState(100);
 
   // جميع المستندات تُعرض عبر قارئ سحابي لأنها مستضافة على CDN خارجي (ImageKit)
   // Chrome يحجب عرض PDF مباشر في iframe مع sandbox من origin مختلف
@@ -7451,18 +7452,57 @@ function DocumentBlockEditor({ block, onPatch }: { block: LessonBlock; onPatch: 
 function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
   lesson: any; exam?: any; onStartExam?: () => void; onReachEnd?: () => void;
 }) {
-  // إذا كان المحتوى المرفق مستنداً (PDF / بوربوينت / وورد) يُعرض عبر قارئ المستندات المدمج المباشر
-  if (detectDocType(lesson?.htmlFileUrl) !== 'unknown') {
+  const fileUrl = String(lesson?.htmlFileUrl || '').trim();
+  const docType = detectDocType(fileUrl);
+
+  // 1. إذا كان الملف مستنداً (PDF أو بوربوينت أو وورد) يُعرض بقارئ المستندات
+  if (docType !== 'unknown') {
     return (
       <div className="my-4">
-        <DocumentViewer url={lesson.htmlFileUrl} name={lesson.title} />
+        <DocumentViewer url={fileUrl} name={lesson?.title} docType={docType} />
       </div>
     );
   }
+
+  // 2. المحتوى التفاعلي (مواقع إنترنت تفاعلية، صفحات HTML، حزم مضغوطة، كود مدمج)
+  return (
+    <LessonInteractiveContent
+      lesson={lesson}
+      exam={exam}
+      onStartExam={onStartExam}
+      onReachEnd={onReachEnd}
+    />
+  );
+}
+
+
+/** فحص هل الرابط هو موقع إنترنت تفاعلي خارجي (ألعاب، وورد وول، كانفا، مواقع تعليمية، أدوات ويب) */
+function isExternalWebSite(url?: string): boolean {
+  if (!url) return false;
+  const u = String(url).trim();
+  if (!u.startsWith('http://') && !u.startsWith('https://')) return false;
+  if (detectDocType(u) !== 'unknown') return false;
+  if (isSourceBundleUrl(u) || isBundleUrl(u)) return false;
+  const clean = u.toLowerCase().split('?')[0];
+  if (clean.includes('ik.imagekit.io') && (clean.endsWith('.txt') || clean.endsWith('.html') || clean.endsWith('.htm'))) {
+    return false;
+  }
+  return true;
+}
+
+
+/** العارض المتكامل لجميع أنواع المحتوى التفاعلي (مواقع خارجية، صفحات HTML، أكواد، حزم برمجية) */
+function LessonInteractiveContent({ lesson, exam, onStartExam, onReachEnd }: {
+  lesson: any; exam?: any; onStartExam?: () => void; onReachEnd?: () => void;
+}) {
+  const fileUrl = String(lesson?.htmlFileUrl || '').trim();
+  const isDirectWeb = isExternalWebSite(fileUrl);
+
   const [zoom, setZoom] = useState(1);
   const [full, setFull] = useState(false);
   const [extHtml, setExtHtml] = useState<string | null>(null);
   const [extFailed, setExtFailed] = useState(false);
+  const [useIframeSrcFallback, setUseIframeSrcFallback] = useState(false);
   const [progress, setProgress] = useState(0);
   const [fluidH, setFluidH] = useState<number | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -7470,21 +7510,21 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const endedRef = useRef(false);
   const scrollBoundRef = useRef(false);
-  // القرار المركزي: رابط الحزمة يفوز على اللصق (بقايا ثنائية في اللصق كانت تسمّمه)
+
   const resolved = resolveLessonHtml(lesson);
   const inline = resolved.mode === 'inline';
-  // حزمة مضغوطة (ZIP/TAR): تُفك محلياً في المتصفح بدل جلب نص HTML
   const bundleUrl = resolved.mode === 'bundle' ? resolved.url : null;
   const bundle = useBundleHtml(bundleUrl);
-  // حاوية كود مصدري مبني (.srcbundle.gz): srcdoc معزول بلا same-origin
   const sourceUrl = resolved.mode === 'source' ? resolved.url : null;
   const source = useSourceContainer(sourceUrl, lesson?.title);
   const [sourceErrors, setSourceErrors] = useState<string[]>([]);
-  // ارتفاع وتقدم يبلّغهما الإطار المعزول (لا يمكن قراءته من الخارج بدون same-origin)
   const [srcHeight, setSrcHeight] = useState<number | null>(null);
   const [srcProgress, setSrcProgress] = useState<number | null>(null);
   const [sourceNotes, setSourceNotes] = useState<string[]>([]);
-  useEffect(() => setSourceNotes(source.notes || []), [source.notes]);
+
+  useEffect(() => {
+    setSourceNotes(source.notes || []);
+  }, [source.notes]);
 
   // جسر رسائل الإطار المعزول: أخطاء + ارتفاع + تقدم القراءة
   useEffect(() => {
@@ -7518,30 +7558,30 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
   useEffect(() => {
     setExtHtml(null);
     setExtFailed(false);
+    setUseIframeSrcFallback(false);
     setProgress(0);
     setFluidH(null);
     setHtmlSize(0);
     endedRef.current = false;
     scrollBoundRef.current = false;
+
     if (inline) {
       setHtmlSize(htmlKb(lesson?.htmlContent));
       return;
     }
-    if (bundleUrl) return; // الحزمة لها خطافها الخاص — لا جلب نصي هنا
-    if (sourceUrl) {
-      // الحاوية لها خطافها الخاص — نمسح أخطاء التشغيل ونبدأ من الصفر
-      setSourceErrors([]);
-      setSrcHeight(null);
-      setSrcProgress(null);
-      endedRef.current = false;
+    if (bundleUrl || sourceUrl) return;
+    if (!fileUrl) return;
+
+    // إذا كان الرابط موقع إنترنت خارجي مباشر (مثل ألعاب Wordwall، Canva، مواقع تعليمية)، نستخدم iframe src فوراً
+    if (isDirectWeb) {
+      setUseIframeSrcFallback(true);
       return;
     }
-    if (!lesson?.htmlFileUrl) return;
+
     let live = true;
     const ctrl = new AbortController();
-    // مهلة 30 ثانية للملفات الكبيرة — بعدها فشل واضح مع زر إعادة بدل التعليق الأبدي
     const timer = window.setTimeout(() => ctrl.abort(), 30000);
-    fetch(lesson.htmlFileUrl, { signal: ctrl.signal })
+    fetch(fileUrl, { signal: ctrl.signal })
       .then((r) => { if (!r.ok) throw new Error('http-' + r.status); return r.text(); })
       .then((t) => {
         window.clearTimeout(timer);
@@ -7550,23 +7590,29 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
         setHtmlSize(htmlKb(decoded));
         setExtHtml(decoded);
       })
-      .catch(() => { window.clearTimeout(timer); if (live) setExtFailed(true); });
+      .catch(() => {
+        window.clearTimeout(timer);
+        if (!live) return;
+        // إذا تعذر الجلب النصي (مثلاً قيود CORS على موقع إنترنت خارجي)، ننتقل تلقائياً للعرض المباشر
+        setUseIframeSrcFallback(true);
+      });
     return () => { live = false; window.clearTimeout(timer); ctrl.abort(); };
-  }, [lesson, inline, bundleUrl, sourceUrl, attempt]);
+  }, [lesson, inline, bundleUrl, sourceUrl, fileUrl, isDirectWeb, attempt]);
 
   const html: string | null = inline && resolved.mode === 'inline' ? resolved.inline : sourceUrl ? source.srcdoc : bundleUrl ? bundle.html : extHtml;
   const bundleMeta = bundleUrl ? bundle.meta : null;
   const sourceMeta = sourceUrl ? source.meta : null;
 
+  // هل يُعرض كموقع ويب عبر رابط src مباشر بدلاً من كود srcDoc
+  const shouldUseDirectSrc = (isDirectWeb || useIframeSrcFallback) && !html && !!fileUrl;
+
   const trackProgress = () => {
-    // الوضع المعزول (بلا same-origin): الارتفاع والتقدمة يبلّغهما الجسر من الداخل
-    if (sourceUrl) return;
+    if (sourceUrl || shouldUseDirectSrc) return;
     try {
       const win = iframeRef.current?.contentWindow;
       const doc = iframeRef.current?.contentDocument;
       if (!win || !doc || !doc.body) return;
       const h = Math.max(doc.body?.scrollHeight || 0, doc.documentElement?.scrollHeight || 0);
-      // ارتفاع مرن يتوسع مع المحتوى الديناميكي (أكورديون/تبويبات) ولا يتقلص فجأة
       if (h > 120) {
         setFluidH((old) => {
           const next = Math.min(h + 48, 8000);
@@ -7582,11 +7628,11 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
         endedRef.current = true;
         onReachEnd?.();
       }
-    } catch { /* cross-origin: لا تتبع */ }
+    } catch { /* cross-origin */ }
   };
 
   const bindFrameScroll = () => {
-    if (sourceUrl) return; // المعزول يتابع التمرير عبر الجسر
+    if (sourceUrl || shouldUseDirectSrc) return;
     try {
       const win = iframeRef.current?.contentWindow;
       if (!win || scrollBoundRef.current) return;
@@ -7595,15 +7641,17 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
     } catch { /* cross-origin */ }
   };
 
-  // إعادة القياس دورياً للمحتوى الديناميكي الذي يتغير ارتفاعه بعد التحميل
   useEffect(() => {
-    if (!html) return;
+    if (!html || shouldUseDirectSrc) return;
     const id = window.setInterval(trackProgress, 1500);
     return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [html, attempt]);
+  }, [html, shouldUseDirectSrc, attempt]);
 
   const openNewTab = () => {
+    if (shouldUseDirectSrc || fileUrl) {
+      window.open(fileUrl, '_blank', 'noopener');
+      return;
+    }
     const src = inline && resolved.mode === 'inline' ? resolved.inline : sourceUrl ? source.srcdoc : bundleUrl ? bundle.html : extHtml;
     if (!src) return;
     const blob = new Blob([src], { type: 'text/html;charset=utf-8' });
@@ -7618,30 +7666,24 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
     }
   };
 
-  // الارتفاع المرئي: المعزول يبلّغ ارتفاعه، وإلا نقيس مباشرة.
-// نستخدم style بالوحدات لأن سمة height لا تقبل وحدات CSS.
   const reportedH = sourceUrl ? srcHeight : null;
   const measuredH = fluidH;
   const visibleH = reportedH || measuredH || null;
-  const frameH = visibleH ? `${visibleH}px` : '62vh';
+  const frameH = visibleH ? `${visibleH}px` : shouldUseDirectSrc ? 'min(82vh, 760px)' : '62vh';
   const shownProgress = sourceUrl ? (srcProgress ?? 0) : progress;
-
-  if (isDoc) {
-    return (
-      <div className="my-4">
-        <DocumentViewer url={lesson?.htmlFileUrl} name={lesson?.title} />
-      </div>
-    );
-  }
 
   return (
     <div className="overflow-hidden rounded-3xl border border-primary/20 bg-card shadow-md">
-      {/* شريط الأدوات */}
+      {/* شريط الأدوات الذكي */}
       <div className="flex flex-wrap items-center gap-1.5 border-b border-border bg-gradient-to-l from-secondary/80 to-card px-3 py-2.5 sm:px-4">
         <span className="flex items-center gap-1.5 rounded-xl bg-primary px-2.5 py-1.5 text-xs font-extrabold text-primary-foreground">
-          <FileCode2 size={14} /> المحتوى التفاعلي
+          <FileCode2 size={14} /> {shouldUseDirectSrc ? 'موقع تفاعلي مباشر' : 'المحتوى التفاعلي'}
         </span>
-        {sourceMeta ? (
+        {shouldUseDirectSrc ? (
+          <span className="rounded-lg bg-emerald-500/15 px-2.5 py-1.5 text-[11px] font-extrabold text-emerald-800">
+            🌐 منصة ويب مدمجة
+          </span>
+        ) : sourceMeta ? (
           <span className="rounded-lg bg-secondary px-2.5 py-1.5 text-[11px] font-bold tabular-nums text-muted-foreground" title={`بُني من: ${sourceMeta.entry}`}>
             ⚛️ كود مبني · {Math.max(1, Math.round((sourceMeta.sizes?.gz || 0) / 1024))} ك.ب
           </span>
@@ -7650,27 +7692,36 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
             📦 موقع مضغوط · {bundleMeta.totalKB} ك.ب · {bundleMeta.fileCount} ملفات
           </span>
         ) : htmlSize > 0 ? (
-          <span className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold tabular-nums ${htmlSize > 600 ? 'bg-amber-500/15 text-amber-800' : 'bg-secondary text-muted-foreground'}`} title={htmlSize > 600 ? 'ملف كبير — قد يكون بطيئاً على الأجهزة الضعيفة، فضّل ملء الشاشة' : 'حجم المحتوى'}>
+          <span className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold tabular-nums ${htmlSize > 600 ? 'bg-amber-500/15 text-amber-800' : 'bg-secondary text-muted-foreground'}`}>
             {htmlSize > 600 ? 'ملف كبير ' : ''}{htmlSize} ك.ب
           </span>
         ) : null}
+
         <span className="mr-auto" />
-        <span className="flex items-center gap-1 rounded-xl bg-background p-1 ring-1 ring-border">
-          <button type="button" onClick={() => setZoom((z) => Math.max(0.7, +(z - 0.1).toFixed(2)))} title="تصغير العرض" className="grid h-8 w-9 place-items-center rounded-lg text-sm font-extrabold text-primary hover:bg-secondary">أ-</button>
-          <button type="button" onClick={() => setZoom(1)} title="إعادة الحجم الأصلي" className="min-w-12 rounded-lg px-1 text-xs font-extrabold tabular-nums text-muted-foreground hover:text-primary">{Math.round(zoom * 100)}%</button>
-          <button type="button" onClick={() => setZoom((z) => Math.min(1.6, +(z + 0.1).toFixed(2)))} title="تكبير العرض" className="grid h-8 w-9 place-items-center rounded-lg text-sm font-extrabold text-primary hover:bg-secondary">أ+</button>
-        </span>
-        <button type="button" onClick={printHtml} title="طباعة الدرس" className="grid h-9 w-9 place-items-center rounded-xl bg-background text-muted-foreground ring-1 ring-border transition-colors hover:text-primary"><Printer size={16} /></button>
-        <button type="button" onClick={openNewTab} title="فتح في تبويب جديد" className="grid h-9 w-9 place-items-center rounded-xl bg-background text-muted-foreground ring-1 ring-border transition-colors hover:text-primary"><ArrowUpLeft size={16} /></button>
+
+        {!shouldUseDirectSrc ? (
+          <span className="flex items-center gap-1 rounded-xl bg-background p-1 ring-1 ring-border">
+            <button type="button" onClick={() => setZoom((z) => Math.max(0.7, +(z - 0.1).toFixed(2)))} title="تصغير العرض" className="grid h-8 w-9 place-items-center rounded-lg text-sm font-extrabold text-primary hover:bg-secondary">أ-</button>
+            <button type="button" onClick={() => setZoom(1)} title="إعادة الحجم الأصلي" className="min-w-12 rounded-lg px-1 text-xs font-extrabold tabular-nums text-muted-foreground hover:text-primary">{Math.round(zoom * 100)}%</button>
+            <button type="button" onClick={() => setZoom((z) => Math.min(1.6, +(z + 0.1).toFixed(2)))} title="تكبير العرض" className="grid h-8 w-9 place-items-center rounded-lg text-sm font-extrabold text-primary hover:bg-secondary">أ+</button>
+          </span>
+        ) : null}
+
+        <button type="button" onClick={printHtml} title="طباعة" className="grid h-9 w-9 place-items-center rounded-xl bg-background text-muted-foreground ring-1 ring-border transition-colors hover:text-primary"><Printer size={16} /></button>
+        <button type="button" onClick={openNewTab} title="فتح في تبويب جديد" className="grid h-9 w-9 place-items-center rounded-xl bg-background text-muted-foreground ring-1 ring-border transition-colors hover:text-primary"><ExternalLink size={16} /></button>
         <button type="button" onClick={() => setFull(true)} title="ملء الشاشة" className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-primary px-3 text-xs font-extrabold text-primary-foreground shadow-sm transition-transform hover:scale-105" data-testid="button-fullscreen-html">
           <Maximize2 size={15} /> ملء الشاشة
         </button>
       </div>
-      {/* شريط تقدم القراءة */}
-      <div className="h-1.5 bg-muted/60">
-        <div className="h-full rounded-l-full bg-gradient-to-l from-primary via-accent to-accent transition-[width] duration-300" style={{ width: `${shownProgress}%` }} />
-      </div>
-      {/* أخطاء وقت التشغيل من التطبيق المعزول — بدل الشاشة البيضاء */}
+
+      {/* شريط تقدم القراءة للمحتوى النصي */}
+      {!shouldUseDirectSrc ? (
+        <div className="h-1.5 bg-muted/60">
+          <div className="h-full rounded-l-full bg-gradient-to-l from-primary via-accent to-accent transition-[width] duration-300" style={{ width: `${shownProgress}%` }} />
+        </div>
+      ) : null}
+
+      {/* تنبيهات أخطاء التشغيل إن وجدت */}
       {sourceUrl && sourceErrors.length > 0 ? (
         <div className="border-b border-amber-500/40 bg-amber-500/10 px-4 py-3 text-[11px] font-bold leading-6 text-amber-800">
           <span className="flex items-center justify-between gap-2">
@@ -7678,29 +7729,32 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
             <button type="button" onClick={() => setSourceErrors([])} className="rounded-lg px-2 py-0.5 text-amber-800 hover:bg-amber-500/20">إخفاء</button>
           </span>
           {sourceErrors.map((m, i) => <span key={i} className="mt-1 block rounded-lg bg-background/60 px-2.5 py-1" dir="auto">{m}</span>)}
-          <span className="mt-1 block font-normal">أخبر الأستاذ بهذه الرسالة — وغالباً السبب مكتبة تحتاج شبكة أو ميزة غير مدعومة.</span>
         </div>
       ) : null}
-      {/* رسائل الشفاء التلقائي (استبدال نسخة مكتبة معطوبة على CDN) */}
-      {sourceUrl && source.notes.length > 0 ? (
-        <div className="border-b border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-[11px] font-bold leading-6 text-emerald-900">
-          <span className="flex items-center justify-between gap-2">
-            <span>🔧 تم إصلاح تلقائي قبل العرض:</span>
-            <button type="button" onClick={() => setSourceNotes([])} className="rounded-lg px-2 py-0.5 text-emerald-900 hover:bg-emerald-500/20">إخفاء</button>
-          </span>
-          {source.notes.map((m, i) => <span key={i} className="mt-1 block rounded-lg bg-background/60 px-2.5 py-1">{m}</span>)}
-        </div>
-      ) : null}
-      {/* المحتوى المدمج */}
+
+      {/* المحتوى الفعلي */}
       <div className="bg-white">
-        {!inline && (sourceUrl ? !!source.error : bundleUrl ? !!bundle.error : extFailed) ? (
+        {shouldUseDirectSrc ? (
+          <iframe
+            ref={iframeRef}
+            title={`موقع ${lesson?.title || 'التفاعلي'}`}
+            src={fileUrl}
+            loading="lazy"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowFullScreen
+            sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-presentation allow-downloads"
+            style={{ zoom, height: frameH, minHeight: '420px' }}
+            className="w-full border-0 bg-white"
+            data-testid="iframe-lesson-web-direct"
+          />
+        ) : !inline && (sourceUrl ? !!source.error : bundleUrl ? !!bundle.error : extFailed) ? (
           <div className="p-6 text-center">
             <p className="text-sm font-bold text-destructive">تعذر تحميل المحتوى التفاعلي</p>
-            <p className="mx-auto mt-1 max-w-md text-xs leading-5 text-muted-foreground">{sourceUrl && source.error ? source.error : bundleUrl && bundle.error ? bundle.error : 'تحقق من الاتصال — للملفات الكبيرة جداً جرّب فتحها في تبويب جديد أو أخبر الأستاذ لتقسيمها.'}</p>
+            <p className="mx-auto mt-1 max-w-md text-xs leading-5 text-muted-foreground">{sourceUrl && source.error ? source.error : bundleUrl && bundle.error ? bundle.error : 'تحقق من الاتصال أو افتح الرابط في نافذة جديدة.'}</p>
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
               <button type="button" onClick={() => { if (sourceUrl) source.retry(); else if (bundleUrl) bundle.retry(); else setAttempt((a) => a + 1); }} className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-extrabold text-primary-foreground shadow-sm transition-transform hover:scale-105"><RefreshCw size={14} /> إعادة المحاولة</button>
-              {!bundleUrl && !sourceUrl ? (
-              <a href={lesson.htmlFileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-secondary px-4 py-2.5 text-xs font-bold text-primary">فتح الملف مباشرة <ArrowLeft size={14} /></a>
+              {fileUrl ? (
+                <a href={fileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-secondary px-4 py-2.5 text-xs font-bold text-primary">فتح الرابط مباشرة <ExternalLink size={14} /></a>
               ) : null}
             </div>
           </div>
@@ -7723,8 +7777,9 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
           />
         )}
       </div>
-      {/* ملء الشاشة الحقيقي */}
-      {full && html ? (
+
+      {/* وضع ملء الشاشة المتكامل للمواقع والمحتوى */}
+      {full && (html || shouldUseDirectSrc) ? (
         <div className="fixed inset-0 z-[95] flex flex-col bg-gradient-to-b from-[#0d2926] to-[#081a19]" dir="rtl" data-testid="fullscreen-html">
           <div className="flex items-center gap-2.5 px-3 py-3 sm:gap-3 sm:px-6">
             <button type="button" onClick={() => setFull(false)} className="inline-flex shrink-0 items-center gap-1.5 rounded-2xl bg-white/10 px-3.5 py-2.5 text-xs font-extrabold text-white ring-1 ring-white/20 transition-colors hover:bg-white/20 sm:px-4" aria-label="رجوع">
@@ -7732,11 +7787,12 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
             </button>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-extrabold text-white sm:text-base">{lesson?.title}</p>
-              <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/15">
-                <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${progress}%` }} />
-              </div>
+              {!shouldUseDirectSrc ? (
+                <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/15">
+                  <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${progress}%` }} />
+                </div>
+              ) : null}
             </div>
-            <span className="hidden rounded-xl bg-white/10 px-3 py-2 text-xs font-extrabold text-white tabular-nums ring-1 ring-white/15 sm:block">{Math.round(zoom * 100)}%</span>
             {exam && onStartExam ? (
               <button type="button" onClick={() => { setFull(false); onStartExam(); }} className="inline-flex shrink-0 items-center gap-2 rounded-2xl bg-accent px-4 py-2.5 text-xs font-extrabold text-[#3a2c07] shadow-lg transition-transform hover:scale-105 sm:px-5 sm:text-sm">
                 <PlayCircle size={17} /> ابدأ الاختبار
@@ -7748,7 +7804,27 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
           </div>
           <div className="min-h-0 flex-1 px-2 pb-2 sm:px-5 sm:pb-5">
             <div className="h-full overflow-hidden rounded-2xl bg-white shadow-2xl">
-              <iframe title={`محتوى ${lesson.title}`} sandbox={sourceUrl ? SOURCE_FRAME_SANDBOX : HTML_FRAME_SANDBOX} srcDoc={html} loading="lazy" referrerPolicy="no-referrer" style={{ zoom }} className="h-full w-full" />
+              {shouldUseDirectSrc ? (
+                <iframe
+                  title={`محتوى ${lesson?.title}`}
+                  src={fileUrl}
+                  loading="lazy"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-presentation allow-downloads"
+                  className="h-full w-full border-0"
+                />
+              ) : (
+                <iframe
+                  title={`محتوى ${lesson?.title}`}
+                  sandbox={sourceUrl ? SOURCE_FRAME_SANDBOX : HTML_FRAME_SANDBOX}
+                  srcDoc={html!}
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  style={{ zoom }}
+                  className="h-full w-full"
+                />
+              )}
             </div>
           </div>
         </div>
@@ -7759,18 +7835,30 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
 
 /** معاينة HTML في لوحة المعلم — تعمل مع الكود الملصق ومع الملف المرفوع (تفك ARDB64 مثله مثل العارض) ومع الحزم المضغوطة */
 function HtmlPreviewFrame({ content, fileUrl }: { content?: string; fileUrl?: string }) {
-  const isDoc = Boolean(fileUrl && detectDocType(fileUrl) !== 'unknown');
+  const docType = detectDocType(fileUrl);
+  if (fileUrl && docType !== 'unknown') {
+    return (
+      <div className="mt-3">
+        <DocumentViewer url={fileUrl} docType={docType} />
+      </div>
+    );
+  }
+  return <HtmlPreviewInternal content={content} fileUrl={fileUrl} />;
+}
+
+function HtmlPreviewInternal({ content, fileUrl }: { content?: string; fileUrl?: string }) {
+  const isDirectWeb = Boolean(fileUrl && isExternalWebSite(fileUrl));
   const [text, setText] = useState<string | null>(content || null);
   const [failed, setFailed] = useState(false);
-  // نفس القرار المركزي: رابط الحزمة يفوز على اللصق حتى في المعاينة
   const previewResolved = resolveLessonHtml({ htmlContent: content, htmlFileUrl: fileUrl });
   const bundleActive = previewResolved.mode === 'bundle';
   const bundle = useBundleHtml(bundleActive ? previewResolved.url : null);
   const sourceActive = previewResolved.mode === 'source';
   const source = useSourceContainer(sourceActive ? previewResolved.url : null);
+
   useEffect(() => {
-    if (isDoc) return;
-    if (bundleActive || sourceActive) return; // الحزم عبر خطافاتها — لا جلب نصي
+    if (isDirectWeb) return;
+    if (bundleActive || sourceActive) return;
     if (content) { setText(content); setFailed(false); return; }
     if (!fileUrl) { setText(null); setFailed(false); return; }
     let live = true;
@@ -7782,14 +7870,31 @@ function HtmlPreviewFrame({ content, fileUrl }: { content?: string; fileUrl?: st
         window.clearTimeout(timer);
         if (live) { setText(t.startsWith('ARDB64') ? decodeArdB64(t) : t); setFailed(false); }
       })
-      .catch(() => { window.clearTimeout(timer); if (live) setFailed(true); });
+      .catch(() => {
+        window.clearTimeout(timer);
+        if (live) setFailed(true);
+      });
     return () => { live = false; window.clearTimeout(timer); ctrl.abort(); };
-  }, [content, fileUrl, isDoc]);
+  }, [content, fileUrl, isDirectWeb]);
 
-  if (isDoc) {
+  if (isDirectWeb && fileUrl) {
     return (
-      <div className="mt-3">
-        <DocumentViewer url={fileUrl!} />
+      <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="flex items-center justify-between border-b border-border bg-secondary/40 px-4 py-2 text-xs font-bold text-primary">
+          <span>🌐 معاينة موقع إنترنت مدمج</span>
+          <a href={fileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-primary hover:underline">
+            فتح في تبويب مستقل <ExternalLink size={13} />
+          </a>
+        </div>
+        <iframe
+          src={fileUrl}
+          title="معاينة الموقع"
+          loading="lazy"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+          sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-presentation allow-downloads"
+          className="h-80 w-full bg-white"
+        />
       </div>
     );
   }
@@ -13390,9 +13495,11 @@ function FoundationVideoPlayer({ url, caption }: { url: string; caption?: string
 
 /* ──────────────────── عارض HTML مع ملء شاشة ───────────────────────────── */
 function FoundationHtmlView({ content, fileUrl, title }: { content?: string; fileUrl?: string; title?: string }) {
+  const isDirectWeb = Boolean(fileUrl && isExternalWebSite(fileUrl));
   const [text, setText] = useState<string | null>(content || null);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [useIframeFallback, setUseIframeFallback] = useState(false);
   const [full, setFull] = useState(false);
   const [zoom, setZoom] = useState(1);
 
@@ -13404,6 +13511,11 @@ function FoundationHtmlView({ content, fileUrl, title }: { content?: string; fil
   const source = useSourceContainer(sourceOn ? resolved.url : null);
 
   useEffect(() => {
+    setUseIframeFallback(false);
+    if (isDirectWeb && fileUrl) {
+      setUseIframeFallback(true);
+      return;
+    }
     if (bundleOn) {
       setLoading(bundle.loading);
       if (bundle.error) { setFailed(true); return; }
@@ -13427,25 +13539,49 @@ function FoundationHtmlView({ content, fileUrl, title }: { content?: string; fil
     fetch(fileUrl, { signal: ctrl.signal })
       .then((r) => { if (!r.ok) throw new Error('http'); return r.text(); })
       .then((t) => { window.clearTimeout(timer); if (live) { setText(t.startsWith('ARDB64') ? decodeArdB64(t) : t); setFailed(false); } })
-      .catch(() => { window.clearTimeout(timer); if (live) setFailed(true); })
+      .catch(() => {
+        window.clearTimeout(timer);
+        // عند فشل fetch (مثل CORS)، نحاول عرضه مباشرة في iframe src
+        if (live && fileUrl) {
+          setUseIframeFallback(true);
+          setFailed(false);
+        } else if (live) {
+          setFailed(true);
+        }
+      })
       .finally(() => { window.clearTimeout(timer); if (live) setLoading(false); });
     return () => { live = false; window.clearTimeout(timer); ctrl.abort(); };
-  }, [content, fileUrl, bundleOn, sourceOn, bundle.html, bundle.loading, bundle.error, source.srcdoc, source.error]);
+  }, [content, fileUrl, isDirectWeb, bundleOn, sourceOn, bundle.html, bundle.loading, bundle.error, source.srcdoc, source.error]);
 
-  const body = failed
+  const showDirectSrc = (isDirectWeb || useIframeFallback) && !text && !!fileUrl;
+
+  const body = failed && !showDirectSrc
     ? <p className="p-8 text-center text-sm font-bold text-destructive">تعذر تحميل المحتوى — أعد رفع الملف أو الصق الكود مباشرة.</p>
-    : loading || !text
-      ? <p className="flex items-center justify-center gap-2.5 p-10 text-sm font-bold text-primary"><RefreshCw size={18} className="animate-spin" /> جارٍ تجهيز المحتوى...</p>
-      : (
+    : showDirectSrc
+      ? (
         <iframe
-          title={title || 'محتوى الدرس التفاعلي'}
-          sandbox={HTML_FRAME_SANDBOX}
-          srcDoc={text}
-          referrerPolicy="no-referrer"
-          className="h-[62vh] min-h-[380px] w-full bg-white"
+          title={title || 'موقع تفاعلي مدمج'}
+          src={fileUrl}
+          loading="lazy"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+          sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-presentation allow-downloads"
+          className="h-[68vh] min-h-[420px] w-full border-0 bg-white"
           style={{ zoom }}
         />
-      );
+      )
+      : loading || !text
+        ? <p className="flex items-center justify-center gap-2.5 p-10 text-sm font-bold text-primary"><RefreshCw size={18} className="animate-spin" /> جارٍ تجهيز المحتوى...</p>
+        : (
+          <iframe
+            title={title || 'محتوى الدرس التفاعلي'}
+            sandbox={HTML_FRAME_SANDBOX}
+            srcDoc={text}
+            referrerPolicy="no-referrer"
+            className="h-[62vh] min-h-[380px] w-full bg-white"
+            style={{ zoom }}
+          />
+        );
 
   return (
     <>
@@ -13463,7 +13599,7 @@ function FoundationHtmlView({ content, fileUrl, title }: { content?: string; fil
         <div className="bg-white">{body}</div>
       </div>
 
-      {full && text ? (
+      {full && (text || showDirectSrc) ? (
         <div className="fixed inset-0 z-[95] flex flex-col bg-gradient-to-b from-[#0d2926] to-[#081a19]" dir="rtl">
           <div className="flex items-center gap-2 px-3 py-3 sm:px-6">
             <button type="button" onClick={() => setFull(false)} className="inline-flex min-h-[48px] items-center gap-2 rounded-2xl bg-white/10 px-5 text-sm font-extrabold text-white ring-1 ring-white/20 active:bg-white/20"><ChevronRight size={20} /> رجوع</button>
@@ -13472,7 +13608,18 @@ function FoundationHtmlView({ content, fileUrl, title }: { content?: string; fil
           </div>
           <div className="min-h-0 flex-1 px-2 pb-2 sm:px-5 sm:pb-5">
             <div className="h-full overflow-hidden rounded-2xl bg-white shadow-2xl">
-              <iframe title={title || 'محتوى الدرس'} sandbox={HTML_FRAME_SANDBOX} srcDoc={text} referrerPolicy="no-referrer" className="h-full w-full" />
+              {showDirectSrc ? (
+                <iframe
+                  title={title || 'موقع الدرس'}
+                  src={fileUrl}
+                  className="h-full w-full border-0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-presentation allow-downloads"
+                />
+              ) : (
+                <iframe title={title || 'محتوى الدرس'} sandbox={HTML_FRAME_SANDBOX} srcDoc={text!} referrerPolicy="no-referrer" className="h-full w-full" />
+              )}
             </div>
           </div>
         </div>
