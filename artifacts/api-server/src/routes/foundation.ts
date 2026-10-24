@@ -21,7 +21,7 @@ const enc = (v: string | string[] | undefined): string =>
 const V7_HINT = "نفّذ الملف sql_foundation_v7.sql في Supabase ← SQL Editor أولاً.";
 const V10_HINT = "نفّذ الملف sql_foundation_units_v10.sql في Supabase ← SQL Editor لتفعيل الأقسام الفرعية.";
 
-const KINDS = new Set(["text", "image", "video", "html", "mixed"]);
+const KINDS = new Set(["text", "image", "video", "html", "mixed", "document"]);
 const kindOf = (v: unknown): string => {
   const k = String(v || "text").toLowerCase();
   return KINDS.has(k) ? k : "text";

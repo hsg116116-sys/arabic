@@ -37901,7 +37901,7 @@ var router7 = (0, import_express7.Router)();
 var enc3 = (v) => encodeURIComponent(Array.isArray(v) ? v[0] ?? "" : v ?? "");
 var V7_HINT = "\u0646\u0641\u0651\u0630 \u0627\u0644\u0645\u0644\u0641 sql_foundation_v7.sql \u0641\u064A Supabase \u2190 SQL Editor \u0623\u0648\u0644\u0627\u064B.";
 var V10_HINT = "\u0646\u0641\u0651\u0630 \u0627\u0644\u0645\u0644\u0641 sql_foundation_units_v10.sql \u0641\u064A Supabase \u2190 SQL Editor \u0644\u062A\u0641\u0639\u064A\u0644 \u0627\u0644\u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u0641\u0631\u0639\u064A\u0629.";
-var KINDS = /* @__PURE__ */ new Set(["text", "image", "video", "html", "mixed"]);
+var KINDS = /* @__PURE__ */ new Set(["text", "image", "video", "html", "mixed", "document"]);
 var kindOf = (v) => {
   const k = String(v || "text").toLowerCase();
   return KINDS.has(k) ? k : "text";

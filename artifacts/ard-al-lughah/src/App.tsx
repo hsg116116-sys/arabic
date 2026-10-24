@@ -43,6 +43,7 @@ import {
   ClipboardCheck,
   Clock3,
   Download,
+  ExternalLink,
   Eye,
   EyeOff,
   FileCode2,
@@ -64,7 +65,6 @@ import {
   LogOut,
   Mail,
   Maximize2,
-LayoutDashboard,
   Medal,
   Menu,
   MessagesSquare,
@@ -7627,6 +7627,14 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
   const frameH = visibleH ? `${visibleH}px` : '62vh';
   const shownProgress = sourceUrl ? (srcProgress ?? 0) : progress;
 
+  if (isDoc) {
+    return (
+      <div className="my-4">
+        <DocumentViewer url={lesson?.htmlFileUrl} name={lesson?.title} />
+      </div>
+    );
+  }
+
   return (
     <div className="overflow-hidden rounded-3xl border border-primary/20 bg-card shadow-md">
       {/* شريط الأدوات */}
@@ -7752,14 +7760,7 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
 
 /** معاينة HTML في لوحة المعلم — تعمل مع الكود الملصق ومع الملف المرفوع (تفك ARDB64 مثله مثل العارض) ومع الحزم المضغوطة */
 function HtmlPreviewFrame({ content, fileUrl }: { content?: string; fileUrl?: string }) {
-  // إذا كان الرابط مستنداً (PDF / بوربوينت / وورد) يُعرض بقارئ المستندات
-  if (fileUrl && detectDocType(fileUrl) !== 'unknown') {
-    return (
-      <div className="mt-3">
-        <DocumentViewer url={fileUrl} />
-      </div>
-    );
-  }
+  const isDoc = Boolean(fileUrl && detectDocType(fileUrl) !== 'unknown');
   const [text, setText] = useState<string | null>(content || null);
   const [failed, setFailed] = useState(false);
   // نفس القرار المركزي: رابط الحزمة يفوز على اللصق حتى في المعاينة
@@ -7769,6 +7770,7 @@ function HtmlPreviewFrame({ content, fileUrl }: { content?: string; fileUrl?: st
   const sourceActive = previewResolved.mode === 'source';
   const source = useSourceContainer(sourceActive ? previewResolved.url : null);
   useEffect(() => {
+    if (isDoc) return;
     if (bundleActive || sourceActive) return; // الحزم عبر خطافاتها — لا جلب نصي
     if (content) { setText(content); setFailed(false); return; }
     if (!fileUrl) { setText(null); setFailed(false); return; }
@@ -7783,7 +7785,15 @@ function HtmlPreviewFrame({ content, fileUrl }: { content?: string; fileUrl?: st
       })
       .catch(() => { window.clearTimeout(timer); if (live) setFailed(true); });
     return () => { live = false; window.clearTimeout(timer); ctrl.abort(); };
-  }, [content, fileUrl]);
+  }, [content, fileUrl, isDoc]);
+
+  if (isDoc) {
+    return (
+      <div className="mt-3">
+        <DocumentViewer url={fileUrl!} />
+      </div>
+    );
+  }
   if (bundleActive) {
     if (bundle.error) return (
       <div className="mt-3 rounded-xl bg-destructive/10 px-4 py-3 text-xs font-bold leading-6 text-destructive">
