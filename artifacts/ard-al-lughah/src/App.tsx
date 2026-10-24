@@ -7283,13 +7283,15 @@ function DocumentViewer({ url, name, docType: hintType }: { url: string; name?: 
   const [useFallback, setUseFallback] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(100);
 
-  // PDF: عرض مباشر داخل iframe أو عبر Google Docs Viewer
-  // بوربوينت ووورد: Microsoft Office Online Viewer أو Google Docs Viewer
+  // جميع المستندات تُعرض عبر قارئ سحابي لأنها مستضافة على CDN خارجي (ImageKit)
+  // Chrome يحجب عرض PDF مباشر في iframe مع sandbox من origin مختلف
   const officeViewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(docUrl)}`;
   const gdocsViewerUrl = `https://docs.google.com/gview?url=${encodeURIComponent(docUrl)}&embedded=true`;
 
-  const primarySrc = dtype === 'pdf' ? docUrl : officeViewerUrl;
-  const secondarySrc = gdocsViewerUrl;
+  // PDF → Google Docs Viewer أولاً (يعمل بدون مشاكل sandbox)
+  // Office docs → Office Online أولاً
+  const primarySrc = dtype === 'pdf' ? gdocsViewerUrl : officeViewerUrl;
+  const secondarySrc = dtype === 'pdf' ? officeViewerUrl : gdocsViewerUrl;
   const currentSrc = useFallback ? secondarySrc : primarySrc;
 
   return (
@@ -7321,14 +7323,14 @@ function DocumentViewer({ url, name, docType: hintType }: { url: string; name?: 
           </button>
 
           {/* تبديل محرك العرض إن لم يظهر */}
-          {expanded && dtype !== 'pdf' ? (
+          {expanded ? (
             <button
               type="button"
               onClick={() => setUseFallback((f) => !f)}
               className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-xs font-semibold text-muted-foreground transition-colors hover:text-primary active:scale-95"
               title="التبديل بين قارئ مايكروسوفت وقارئ جوجل"
             >
-              <RefreshCw size={12} /> {useFallback ? 'قارئ مايكروسوفت' : 'قارئ بديل'}
+              <RefreshCw size={12} /> {useFallback ? (dtype === 'pdf' ? 'قارئ Google' : 'قارئ مايكروسوفت') : 'قارئ بديل'}
             </button>
           ) : null}
 
@@ -7367,7 +7369,6 @@ function DocumentViewer({ url, name, docType: hintType }: { url: string; name?: 
             title={fileName}
             className="w-full border-0 transition-opacity"
             style={{ height: 'min(82vh, 750px)', minHeight: '440px' }}
-            sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
             loading="lazy"
           />
           {/* شريط المساعدة السفلي */}
@@ -7375,9 +7376,7 @@ function DocumentViewer({ url, name, docType: hintType }: { url: string; name?: 
             <span>إذا كان المستند لا يظهر على جهازك، يمكنك النقر على الزر بالأعلى للتحميل أو التبديل.</span>
             <div className="flex items-center gap-3">
               <a href={gdocsViewerUrl.replace('&embedded=true', '')} target="_blank" rel="noreferrer" className="font-bold text-primary hover:underline">عرض عبر Google Docs ←</a>
-              {dtype !== 'pdf' ? (
-                <a href={`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(docUrl)}`} target="_blank" rel="noreferrer" className="font-bold text-primary hover:underline">عرض عبر Office ←</a>
-              ) : null}
+              <a href={`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(docUrl)}`} target="_blank" rel="noreferrer" className="font-bold text-primary hover:underline">عرض عبر Office ←</a>
             </div>
           </div>
         </div>
