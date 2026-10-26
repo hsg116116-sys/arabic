@@ -1986,6 +1986,66 @@ function FeatureCard({ number, icon: Icon, title, body }: { number: string; icon
   );
 }
 
+/* رفّ الكتب — شبكة أغلفة أنيقة + بطاقة تفاصيل للكتاب المختار.
+   يستوعب أي عدد من الصفوف (٦ كتب الآن) بلا ازدحام أو خروج عن العرض. */
+function BookShelf({ items }: { items: any[] }) {
+  const [sel, setSel] = useState(0);
+  const idx = Math.min(sel, items.length - 1);
+  const current = items[idx];
+  if (!current) return null;
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
+        {items.map((book, i) => (
+          <button
+            key={book.id || book.grade}
+            type="button"
+            onClick={() => setSel(i)}
+            title={book.title}
+            className={`group relative overflow-hidden rounded-2xl border-2 bg-card text-right shadow-lg transition-all duration-300 hover:-translate-y-1.5 hover:shadow-2xl ${i === idx ? 'border-accent ring-4 ring-accent/25' : 'border-white/70'}`}
+            data-testid={`shelf-book-${book.grade}`}
+          >
+            <div className="relative aspect-[3/4] overflow-hidden bg-muted">
+              <img src={book.coverUrl} alt={book.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent" />
+              <span className="absolute right-2.5 top-2.5 rounded-full border border-white/30 bg-black/35 px-2.5 py-1 text-[10px] font-extrabold text-white backdrop-blur-md">
+                {book.grade}
+              </span>
+              {i === idx ? (
+                <span className="absolute left-2.5 top-2.5 grid h-6 w-6 place-items-center rounded-full bg-accent text-[#3a2c07] shadow-md">
+                  <Check size={14} />
+                </span>
+              ) : null}
+              <div className="absolute inset-x-0 bottom-0 p-3">
+                <p className="text-[10px] font-bold text-white/75">{book.term}</p>
+                <p className="mt-0.5 line-clamp-2 text-xs font-extrabold leading-5 text-white">
+                  {String(book.title).replace(/^كتاب اللغة العربية\s*-?\s*/, '')}
+                </p>
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+      <div className="overflow-hidden rounded-3xl border border-accent/35 bg-gradient-to-l from-accent/20 via-card to-card p-5 shadow-lg sm:p-6">
+        <div className="flex flex-wrap items-center gap-2 text-[11px] font-extrabold">
+          <span className="rounded-lg bg-primary px-3 py-1.5 text-primary-foreground">{current.grade}</span>
+          <span className="rounded-lg bg-secondary px-3 py-1.5 text-primary">{current.term}</span>
+        </div>
+        <p className="mt-3 font-display text-xl font-extrabold leading-snug text-primary">{current.title}</p>
+        <p className="mt-1 text-xs font-semibold text-muted-foreground">المقرر الرسمي المعتمد · مفتوح للقراءة والتحميل</p>
+        <div className="mt-4 flex flex-wrap gap-2.5">
+          <a href={current.pdfUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-accent px-6 py-3 text-sm font-extrabold text-[#3a2c07] shadow-md transition-all hover:-translate-y-0.5 hover:shadow-xl" data-testid={`link-open-book-${current.grade}`}>
+            <BookOpen size={17} /> إظهار الكتاب وقراءته
+          </a>
+          <a href={current.pdfUrl} download={`${current.title}.pdf`} className="inline-flex items-center gap-2 rounded-xl border-2 border-primary/20 bg-card px-6 py-3 text-sm font-extrabold text-primary transition-all hover:-translate-y-0.5 hover:border-primary/50" data-testid={`link-dl-book-${current.grade}`}>
+            <Download size={17} /> تنزيل الكتاب PDF
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function HomeBookCard({ book, tone }: { book: any; tone: 'purple' | 'rose' | 'gold' }) {
   const tones = {
     purple: 'from-[#2d2040]/80 via-transparent',
