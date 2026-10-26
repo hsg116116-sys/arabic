@@ -7476,6 +7476,61 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
 }
 
 
+
+/** فتح أي محتوى HTML أو موقع متكامل في علامة تبويب جديدة كصفحة ويب حقيقية تفاعلية بالكامل دون إظهاره كنص */
+function openHtmlInNewTab(htmlString: string, title?: string, baseFileUrl?: string) {
+  let finalHtml = String(htmlString || '').trim();
+  if (!finalHtml) return;
+
+  // إذا لم يكن هناك عنوان في الكود، نضيف عنوان الدرس
+  if (title && !finalHtml.includes('<title>') && !finalHtml.includes('<title ')) {
+    if (finalHtml.includes('<head>')) {
+      finalHtml = finalHtml.replace('<head>', `<head><title>${title}</title>`);
+    } else if (finalHtml.includes('<head ')) {
+      finalHtml = finalHtml.replace(/<head[^>]*>/, `/** فحص هل الرابط هو موقع إنترنت تفاعلي خارجي<title>${title}</title>`);
+    }
+  }
+
+  // إذا كان هناك رابط ملف أصلي للمحتوى ولا يحتوي الكود على <base>، نضيف <base> لتضمن تحميل الموارد والوسائط النسبية
+  if (baseFileUrl && !finalHtml.includes('<base ') && !finalHtml.includes('<base>')) {
+    const baseDir = baseFileUrl.substring(0, baseFileUrl.lastIndexOf('/') + 1);
+    if (baseDir.startsWith('http')) {
+      if (finalHtml.includes('<head>')) {
+        finalHtml = finalHtml.replace('<head>', `<head><base href="${baseDir}">`);
+      } else if (finalHtml.includes('<head ')) {
+        finalHtml = finalHtml.replace(/<head[^>]*>/, `/** فحص هل الرابط هو موقع إنترنت تفاعلي خارجي<base href="${baseDir}">`);
+      } else {
+        finalHtml = `<base href="${baseDir}">${finalHtml}`;
+      }
+    }
+  }
+
+  // الطريقة 1 (الأكثر توافقاً وأماناً): كتابة الكود داخل مستند النافذة الجديدة مباشرة
+  try {
+    const newWin = window.open('about:blank', '_blank');
+    if (newWin) {
+      newWin.document.open();
+      newWin.document.write(finalHtml);
+      newWin.document.close();
+      if (title && newWin.document) {
+        newWin.document.title = title;
+      }
+      return;
+    }
+  } catch {
+    /* في حال منع النوافذ المنبثقة ننتقل للـ blob */
+  }
+
+  // الطريقة 2 (احتياطية عبر Blob كصفحة text/html):
+  try {
+    const blob = new Blob([finalHtml], { type: 'text/html;charset=utf-8' });
+    const blobUrl = URL.createObjectURL(blob);
+    window.open(blobUrl, '_blank');
+  } catch {
+    if (baseFileUrl) window.open(baseFileUrl, '_blank');
+  }
+}
+
 /** فحص هل الرابط هو موقع إنترنت تفاعلي خارجي (ألعاب، وورد وول، كانفا، مواقع تعليمية، أدوات ويب) */
 function isExternalWebSite(url?: string): boolean {
   if (!url) return false;
@@ -7648,14 +7703,23 @@ function LessonInteractiveContent({ lesson, exam, onStartExam, onReachEnd }: {
   }, [html, shouldUseDirectSrc, attempt]);
 
   const openNewTab = () => {
-    if (shouldUseDirectSrc || fileUrl) {
+    // 1. إذا كان المحتوى موقع إنترنت خارجي مباشر حقيقي (مثل وورد وول أو كانفا)
+    if (shouldUseDirectSrc && isDirectWeb && fileUrl) {
       window.open(fileUrl, '_blank', 'noopener');
       return;
     }
-    const src = inline && resolved.mode === 'inline' ? resolved.inline : sourceUrl ? source.srcdoc : bundleUrl ? bundle.html : extHtml;
-    if (!src) return;
-    const blob = new Blob([src], { type: 'text/html;charset=utf-8' });
-    window.open(URL.createObjectURL(blob), '_blank', 'noopener');
+
+    // 2. إذا كان المحتوى صفحة HTML أو موقع متكامل أو حزمة مبنية
+    const liveHtml = html || (inline && resolved.mode === 'inline' ? resolved.inline : sourceUrl ? source.srcdoc : bundleUrl ? bundle.html : extHtml);
+    if (liveHtml) {
+      openHtmlInNewTab(liveHtml, lesson?.title || 'محتوى الدرس', fileUrl);
+      return;
+    }
+
+    // 3. احتياط إذا كان هناك رابط مباشر
+    if (fileUrl) {
+      window.open(fileUrl, '_blank', 'noopener');
+    }
   };
 
   const printHtml = () => {
@@ -7754,7 +7818,7 @@ function LessonInteractiveContent({ lesson, exam, onStartExam, onReachEnd }: {
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
               <button type="button" onClick={() => { if (sourceUrl) source.retry(); else if (bundleUrl) bundle.retry(); else setAttempt((a) => a + 1); }} className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-extrabold text-primary-foreground shadow-sm transition-transform hover:scale-105"><RefreshCw size={14} /> إعادة المحاولة</button>
               {fileUrl ? (
-                <a href={fileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-secondary px-4 py-2.5 text-xs font-bold text-primary">فتح الرابط مباشرة <ExternalLink size={14} /></a>
+                <button type="button" onClick={openNewTab} className="inline-flex items-center gap-2 rounded-xl bg-secondary px-4 py-2.5 text-xs font-bold text-primary hover:bg-secondary/80">فتح في علامة تبويب جديدة <ExternalLink size={14} /></button>
               ) : null}
             </div>
           </div>
@@ -13589,6 +13653,24 @@ function FoundationHtmlView({ content, fileUrl, title }: { content?: string; fil
         <div className="flex items-center gap-2 border-b border-border bg-gradient-to-l from-secondary/80 to-card px-3 py-2.5">
           <span className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-xs font-extrabold text-primary-foreground"><FileCode2 size={14} /> المحتوى التفاعلي</span>
           <span className="mr-auto" />
+          <button
+            type="button"
+            onClick={() => {
+              if (showDirectSrc && isDirectWeb && fileUrl) {
+                window.open(fileUrl, '_blank', 'noopener');
+                return;
+              }
+              if (text) {
+                openHtmlInNewTab(text, title || 'محتوى الدرس', fileUrl);
+                return;
+              }
+              if (fileUrl) window.open(fileUrl, '_blank', 'noopener');
+            }}
+            title="فتح في تبويب جديد"
+            className="grid h-10 w-10 place-items-center rounded-xl bg-background text-muted-foreground ring-1 ring-border transition-colors hover:text-primary active:scale-95"
+          >
+            <ExternalLink size={16} />
+          </button>
           <span className="flex items-center gap-1 rounded-xl bg-background p-1 ring-1 ring-border">
             <button type="button" onClick={() => setZoom((z) => Math.max(0.6, +(z - 0.1).toFixed(2)))} className="grid h-10 w-10 place-items-center rounded-lg text-sm font-extrabold text-primary active:bg-secondary">أ-</button>
             <button type="button" onClick={() => setZoom(1)} className="min-w-12 rounded-lg px-1 text-xs font-extrabold tabular-nums text-muted-foreground">{Math.round(zoom * 100)}%</button>
