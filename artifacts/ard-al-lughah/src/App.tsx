@@ -568,6 +568,9 @@ const FALLBACK_GRADE_COLORS = ['#b7791f', '#17413f', '#17413f', '#17413f', '#6a1
 const FALLBACK_SCHOOLS = ['مدرسة وايلد', 'مبادرة أهرامات الأمل'];
 const TERMS = ['الفصل الأول', 'الفصل الثاني'];
 
+/* أرقام عربية-هندية موحّدة في الواجهة */
+const arNum = (n: number | string) => String(n).replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[Number(d)]);
+
 /* كتب احتياطية تظهر حتى لو تعذّر جلبها من القاعدة — بنفس مسارات الملفات. */
 const STATIC_BOOKS: Record<string, { coverUrl: string; pdfUrl: string }> = {
   'الصف السابع|الفصل الأول': { coverUrl: '/books/arab-7-term1.jpg', pdfUrl: '/books/arabic-7-term1.pdf' },
@@ -1614,6 +1617,17 @@ function Home() {
   const allBooks = platform?.books ?? [];
   const norm = (s: string) => s.replace(/[\u0622\u0623\u0625]/g, '\u0627').replace(/\s+/g, ' ').trim();
   const currentTermBooks = allBooks.filter((b) => norm(b.term) === norm(semester));
+  /* كتب الفصل الحالي لكل الصفوف الستة — من القاعدة، وإن تعذّر فمن نسخة الموقع الاحتياطية */
+  const shelfBooks = ['الصف السابع', 'الصف الثامن', 'الصف التاسع', 'الصف العاشر', 'الصف الحادي عشر الأدبي', 'الصف الحادي عشر العلمي']
+    .map((g) => {
+      const live = currentTermBooks.find((b) => b.grade === g && b.pdfUrl);
+      if (live) return live;
+      const fallback = STATIC_BOOKS[`${g}|${semester}`];
+      return fallback
+        ? { id: `static-${g}-${semester}`, grade: g, term: semester, title: `كتاب اللغة العربية - ${g}`, coverUrl: fallback.coverUrl, pdfUrl: fallback.pdfUrl }
+        : null;
+    })
+    .filter(Boolean);
   const [resourceTab, setResourceTab] = useState<'quizzes' | 'downloads' | 'grammar'>('quizzes');
   const [activeBlog, setActiveBlog] = useState(-1);
 
@@ -1713,8 +1727,8 @@ function Home() {
 
         {/* Books */}
         <section id="books" className="border-y border-border bg-card/60 py-16 lg:py-24">
-          <div className="mx-auto grid max-w-7xl gap-12 px-5 lg:grid-cols-[.72fr_1.28fr] lg:items-center lg:px-8">
-            <div>
+          <div className="mx-auto grid max-w-7xl gap-12 px-5 lg:grid-cols-[.72fr_1.28fr] lg:items-start lg:px-8">
+            <div className="lg:pt-6">
               <p className="text-sm font-bold text-accent-foreground">كتب ترافقك في كل خطوة</p>
               <h2 className="mt-3 font-display text-3xl font-bold leading-[1.55] text-primary sm:text-4xl">
                 كتب واضحة،
@@ -1730,24 +1744,22 @@ function Home() {
               <Link href="/register" className="mt-7 inline-flex items-center gap-2 font-semibold text-primary hover:text-accent-foreground" data-testid="link-books-register">
                 ابدأ مع كتبك <ArrowLeft size={17} />
               </Link>
+              <div className="mt-8 grid max-w-sm grid-cols-3 gap-3">
+                {[
+                  { value: arNum(shelfBooks.length), label: 'كتب معتمدة', icon: BookOpen },
+                  { value: arNum(2), label: 'فصلان دراسيان', icon: Layers },
+                  { value: 'PDF', label: 'نسخة رقمية', icon: Download },
+                ].map((stat) => (
+                  <div key={stat.label} className="rounded-2xl border border-primary/10 bg-card/70 px-3 py-3 text-center shadow-sm">
+                    <stat.icon size={16} className="mx-auto text-accent-foreground" />
+                    <p className="mt-1.5 font-display text-lg font-extrabold text-primary">{stat.value}</p>
+                    <p className="text-[11px] font-bold text-muted-foreground">{stat.label}</p>
+                  </div>
+                ))}
+              </div>
             </div>
-            {/* رفّ الكتب — يعرض كتب الفصل الحالي لكل الصفوف الستة.
-                إن تعذّر جلب كتاب من القاعدة نعرض نسخته الاحتياطية من ملفات الموقع. */}
-            {(() => {
-              const gradeOrder = [
-                'الصف السابع', 'الصف الثامن', 'الصف التاسع', 'الصف العاشر',
-                'الصف الحادي عشر الأدبي', 'الصف الحادي عشر العلمي',
-              ];
-              const shelf = gradeOrder.map((g) => {
-                const live = currentTermBooks.find((b) => b.grade === g && b.pdfUrl);
-                if (live) return live;
-                const fallback = STATIC_BOOKS[`${g}|${semester}`];
-                return fallback
-                  ? { id: `static-${g}-${semester}`, grade: g, term: semester, title: `كتاب اللغة العربية - ${g}`, coverUrl: fallback.coverUrl, pdfUrl: fallback.pdfUrl }
-                  : null;
-              }).filter(Boolean);
-              return shelf.length ? <BookShelf items={shelf} /> : null;
-            })()}
+            {/* رفّ الكتب — يعرض كتب الفصل الحالي لكل الصفوف الستة */}
+            {shelfBooks.length ? <BookShelf items={shelfBooks} /> : null}
           </div>
         </section>
 
@@ -1986,60 +1998,158 @@ function FeatureCard({ number, icon: Icon, title, body }: { number: string; icon
   );
 }
 
-/* رفّ الكتب — شبكة أغلفة أنيقة + بطاقة تفاصيل للكتاب المختار.
-   يستوعب أي عدد من الصفوف (٦ كتب الآن) بلا ازدحام أو خروج عن العرض. */
+/* رفّ الكتب — عرض دوّار (Coverflow) يحافظ على روح «المروحة» القديمة:
+   الكتاب المختار في المركز مرفوعاً، وبقية الكتب مائلة خلفه على الجانبين
+   بمنظور ثلاثي الأبعاد، مع أسهم ودوتات ولوحة مفاتيح — يستوعب أي عدد من الكتب. */
 function BookShelf({ items }: { items: any[] }) {
   const [sel, setSel] = useState(0);
-  const idx = Math.min(sel, items.length - 1);
-  const current = items[idx];
+  const count = items.length;
+  const current = items[Math.min(sel, count - 1)];
+  /* دوران لا نهائي: الكتاب الأخير يعود للأول، فيبقى التوزيع متوازناً على الجانبين */
+  const go = useCallback((dir: number) => {
+    setSel((s) => (s + dir + count) % count);
+  }, [count]);
+
   if (!current) return null;
+
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
-        {items.map((book, i) => (
-          <button
-            key={book.id || book.grade}
-            type="button"
-            onClick={() => setSel(i)}
-            title={book.title}
-            className={`group relative overflow-hidden rounded-2xl border-2 bg-card text-right shadow-lg transition-all duration-300 hover:-translate-y-1.5 hover:shadow-2xl ${i === idx ? 'border-accent ring-4 ring-accent/25' : 'border-white/70'}`}
-            data-testid={`shelf-book-${book.grade}`}
-          >
-            <div className="relative aspect-[3/4] overflow-hidden bg-muted">
-              <img src={book.coverUrl} alt={book.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent" />
-              <span className="absolute right-2.5 top-2.5 rounded-full border border-white/30 bg-black/35 px-2.5 py-1 text-[10px] font-extrabold text-white backdrop-blur-md">
-                {book.grade}
-              </span>
-              {i === idx ? (
-                <span className="absolute left-2.5 top-2.5 grid h-6 w-6 place-items-center rounded-full bg-accent text-[#3a2c07] shadow-md">
-                  <Check size={14} />
+    <div className="relative">
+      {/* هالة ناعمة خلف الأغلفة */}
+      <div className="pointer-events-none absolute inset-x-6 top-8 h-56 rounded-[50%] bg-accent/25 blur-3xl" aria-hidden />
+
+      {/* مسرح العرض — يُدار بالأسهم أو الدوتات أو لوحة المفاتيح */}
+      <div
+        className="relative h-[290px] overflow-hidden rounded-3xl outline-none focus-visible:ring-2 focus-visible:ring-accent/50 sm:h-[340px] lg:h-[365px]"
+        style={{
+          perspective: '1400px',
+          maskImage: 'linear-gradient(to right, transparent, black 7%, black 93%, transparent)',
+          WebkitMaskImage: 'linear-gradient(to right, transparent, black 7%, black 93%, transparent)',
+        }}
+        tabIndex={0}
+        role="group"
+        aria-roledescription="عرض الكتب"
+        aria-label="كتب اللغة العربية المعتمدة"
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowLeft') { e.preventDefault(); go(1); }
+          if (e.key === 'ArrowRight') { e.preventDefault(); go(-1); }
+        }}
+        data-testid="shelf-stage"
+      >
+        {items.map((book, i) => {
+          /* إزاحة ملتفّة حول الحلقة: تظهر الكتب على الجانبين دائماً */
+          let offset = i - sel;
+          if (offset > count / 2) offset -= count;
+          if (offset < -count / 2) offset += count;
+          const abs = Math.abs(offset);
+          const isSel = offset === 0;
+          const hidden = abs > 2;
+          /* إزاحة أفقية بنسبة من عرض الغلاف نفسه: يبقى التباعد متناسباً مع كل الشاشات */
+          const tx = -50 - offset * 80;
+          return (
+            <button
+              key={book.id || book.grade}
+              type="button"
+              onClick={() => setSel(i)}
+              aria-current={isSel ? 'true' : undefined}
+              title={book.title}
+              tabIndex={hidden ? -1 : 0}
+              className={`group absolute left-1/2 top-1/2 w-[56%] cursor-pointer overflow-hidden rounded-2xl border-2 bg-card text-right shadow-xl transition-all duration-500 ease-out will-change-transform sm:w-[40%] lg:w-[34%] ${
+                isSel ? 'border-accent shadow-2xl ring-4 ring-accent/30' : 'border-white/70 hover:border-accent/70'
+              } ${hidden ? 'pointer-events-none' : ''}`}
+              style={{
+                transform: `translate(${tx}%, calc(-50% + ${abs * 9}px)) rotate(${offset * -6}deg) scale(${1 - abs * 0.07}) translateZ(${-abs * 50}px)`,
+                zIndex: 40 - abs,
+                opacity: hidden ? 0 : 1 - abs * 0.2,
+              }}
+              data-testid={`shelf-book-${book.grade}`}
+            >
+              <div className="relative aspect-[3/4] overflow-hidden bg-muted">
+                <img
+                  src={book.coverUrl}
+                  alt={book.title}
+                  loading="lazy"
+                  className={`h-full w-full object-cover transition-transform duration-700 ${isSel ? 'scale-105' : 'group-hover:scale-105'}`}
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent" />
+                <span className="absolute right-2.5 top-2.5 rounded-full border border-white/30 bg-black/40 px-2.5 py-1 text-[10px] font-extrabold text-white backdrop-blur-md">
+                  {book.grade}
                 </span>
-              ) : null}
-              <div className="absolute inset-x-0 bottom-0 p-3">
-                <p className="text-[10px] font-bold text-white/75">{book.term}</p>
-                <p className="mt-0.5 line-clamp-2 text-xs font-extrabold leading-5 text-white">
-                  {String(book.title).replace(/^كتاب اللغة العربية\s*-?\s*/, '')}
-                </p>
+                {isSel ? (
+                  <span className="absolute left-2.5 top-2.5 grid h-6 w-6 place-items-center rounded-full bg-accent text-[#3a2c07] shadow-md">
+                    <Check size={14} />
+                  </span>
+                ) : null}
+                <div className="absolute inset-x-0 bottom-0 p-3">
+                  <p className="text-[10px] font-bold text-white/75">{book.term}</p>
+                  <p className="mt-0.5 line-clamp-2 text-xs font-extrabold leading-5 text-white">
+                    {String(book.title).replace(/^كتاب اللغة العربية\s*-?\s*/, '')}
+                  </p>
+                </div>
               </div>
-            </div>
-          </button>
-        ))}
+            </button>
+          );
+        })}
+        {/* خط الرفّ الخفيف تحت الأغلفة */}
+        <div className="pointer-events-none absolute inset-x-8 bottom-2.5 h-px bg-gradient-to-l from-transparent via-primary/25 to-transparent" aria-hidden />
+        <div className="pointer-events-none absolute inset-x-14 bottom-1 h-4 rounded-[50%] bg-primary/10 blur-md" aria-hidden />
       </div>
-      <div className="overflow-hidden rounded-3xl border border-accent/35 bg-gradient-to-l from-accent/20 via-card to-card p-5 shadow-lg sm:p-6">
+
+      {/* أدوات التنقّل */}
+      <div className="mt-3 flex items-center justify-center gap-3" dir="rtl">
+        <button
+          type="button"
+          onClick={() => go(-1)}
+          aria-label="الكتاب السابق"
+          className="grid h-9 w-9 place-items-center rounded-full border border-primary/20 bg-card text-primary shadow-sm transition-all hover:border-primary/50 hover:bg-secondary active:scale-95"
+          data-testid="shelf-prev"
+        >
+          <ChevronRight size={18} />
+        </button>
+        <div className="flex items-center gap-1.5">
+          {items.map((book, i) => (
+            <button
+              key={book.id || book.grade}
+              type="button"
+              onClick={() => setSel(i)}
+              aria-label={`اختيار ${book.grade}`}
+              aria-current={i === sel ? 'true' : undefined}
+              className={`h-2 rounded-full transition-all duration-300 ${i === sel ? 'w-7 bg-primary' : 'w-2 bg-primary/25 hover:bg-primary/45'}`}
+            />
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => go(1)}
+          aria-label="الكتاب التالي"
+          className="grid h-9 w-9 place-items-center rounded-full border border-primary/20 bg-card text-primary shadow-sm transition-all hover:border-primary/50 hover:bg-secondary active:scale-95"
+          data-testid="shelf-next"
+        >
+          <ChevronLeft size={18} />
+        </button>
+      </div>
+
+      {/* بطاقة تفاصيل الكتاب المختار */}
+      <div key={current.id || current.grade} aria-live="polite" className="animate-fade-up mt-4 overflow-hidden rounded-3xl border border-accent/35 bg-gradient-to-l from-accent/20 via-card to-card p-5 shadow-lg sm:p-6">
         <div className="flex flex-wrap items-center gap-2 text-[11px] font-extrabold">
           <span className="rounded-lg bg-primary px-3 py-1.5 text-primary-foreground">{current.grade}</span>
           <span className="rounded-lg bg-secondary px-3 py-1.5 text-primary">{current.term}</span>
+          <span className="ms-auto rounded-lg border border-primary/15 bg-card px-2.5 py-1.5 text-primary/70">
+            {arNum(sel + 1)} من {arNum(count)}
+          </span>
         </div>
-        <p className="mt-3 font-display text-xl font-extrabold leading-snug text-primary">{current.title}</p>
-        <p className="mt-1 text-xs font-semibold text-muted-foreground">المقرر الرسمي المعتمد · مفتوح للقراءة والتحميل</p>
-        <div className="mt-4 flex flex-wrap gap-2.5">
-          <a href={current.pdfUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-accent px-6 py-3 text-sm font-extrabold text-[#3a2c07] shadow-md transition-all hover:-translate-y-0.5 hover:shadow-xl" data-testid={`link-open-book-${current.grade}`}>
-            <BookOpen size={17} /> إظهار الكتاب وقراءته
-          </a>
-          <a href={current.pdfUrl} download={`${current.title}.pdf`} className="inline-flex items-center gap-2 rounded-xl border-2 border-primary/20 bg-card px-6 py-3 text-sm font-extrabold text-primary transition-all hover:-translate-y-0.5 hover:border-primary/50" data-testid={`link-dl-book-${current.grade}`}>
-            <Download size={17} /> تنزيل الكتاب PDF
-          </a>
+        <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="font-display text-xl font-extrabold leading-snug text-primary">{current.title}</p>
+            <p className="mt-1 text-xs font-semibold text-muted-foreground">المقرر الرسمي المعتمد · مفتوح للقراءة والتحميل</p>
+          </div>
+          <div className="flex flex-wrap gap-2.5 sm:shrink-0 sm:flex-col">
+            <a href={current.pdfUrl} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-6 py-3 text-sm font-extrabold text-[#3a2c07] shadow-md transition-all hover:-translate-y-0.5 hover:shadow-xl" data-testid={`link-open-book-${current.grade}`}>
+              <BookOpen size={17} /> إظهار الكتاب وقراءته
+            </a>
+            <a href={current.pdfUrl} download={`${current.title}.pdf`} className="inline-flex items-center justify-center gap-2 rounded-xl border-2 border-primary/20 bg-card px-6 py-3 text-sm font-extrabold text-primary transition-all hover:-translate-y-0.5 hover:border-primary/50" data-testid={`link-dl-book-${current.grade}`}>
+              <Download size={17} /> تنزيل الكتاب PDF
+            </a>
+          </div>
         </div>
       </div>
     </div>
