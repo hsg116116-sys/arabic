@@ -48,6 +48,7 @@ import {
   EyeOff,
   FileCode2,
   FileText,
+  Globe,
   GraduationCap,
   Castle,
   HelpCircle,
@@ -65,6 +66,7 @@ import {
   LogOut,
   Mail,
   Maximize2,
+  Minimize2,
   Medal,
   Menu,
   MessagesSquare,
@@ -7449,8 +7451,8 @@ function DocumentBlockEditor({ block, onPatch }: { block: LessonBlock; onPatch: 
   );
 }
 
-function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
-  lesson: any; exam?: any; onStartExam?: () => void; onReachEnd?: () => void;
+function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd, isStandalone = false }: {
+  lesson: any; exam?: any; onStartExam?: () => void; onReachEnd?: () => void; isStandalone?: boolean;
 }) {
   const fileUrl = String(lesson?.htmlFileUrl || '').trim();
   const docType = detectDocType(fileUrl);
@@ -7458,7 +7460,7 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
   // 1. إذا كان الملف مستنداً (PDF أو بوربوينت أو وورد) يُعرض بقارئ المستندات
   if (docType !== 'unknown') {
     return (
-      <div className="my-4">
+      <div className={isStandalone ? "h-full w-full" : "my-4"}>
         <DocumentViewer url={fileUrl} name={lesson?.title} docType={docType} />
       </div>
     );
@@ -7471,23 +7473,22 @@ function LessonHtmlBlock({ lesson, exam, onStartExam, onReachEnd }: {
       exam={exam}
       onStartExam={onStartExam}
       onReachEnd={onReachEnd}
+      isStandalone={isStandalone}
     />
   );
 }
 
-
-
-/** فتح أي محتوى HTML أو موقع متكامل في علامة تبويب جديدة كصفحة ويب حقيقية تفاعلية بالكامل دون إظهاره كنص */
+/** فتح أي محتوى HTML أو موقع متكامل في علامة تبويب جديدة مع مسار حقيقي يدعم التحديث F5 دون فقدان المحتوى */
 function openHtmlInNewTab(htmlString: string, title?: string, baseFileUrl?: string) {
   let finalHtml = String(htmlString || '').trim();
-  if (!finalHtml) return;
+  if (!finalHtml && !baseFileUrl) return;
 
   // إذا لم يكن هناك عنوان في الكود، نضيف عنوان الدرس
   if (title && !finalHtml.includes('<title>') && !finalHtml.includes('<title ')) {
     if (finalHtml.includes('<head>')) {
       finalHtml = finalHtml.replace('<head>', `<head><title>${title}</title>`);
     } else if (finalHtml.includes('<head ')) {
-      finalHtml = finalHtml.replace(/<head[^>]*>/, `/** فحص هل الرابط هو موقع إنترنت تفاعلي خارجي<title>${title}</title>`);
+      finalHtml = finalHtml.replace(/<head[^>]*>/, `$&<title>${title}</title>`);
     }
   }
 
@@ -7498,36 +7499,81 @@ function openHtmlInNewTab(htmlString: string, title?: string, baseFileUrl?: stri
       if (finalHtml.includes('<head>')) {
         finalHtml = finalHtml.replace('<head>', `<head><base href="${baseDir}">`);
       } else if (finalHtml.includes('<head ')) {
-        finalHtml = finalHtml.replace(/<head[^>]*>/, `/** فحص هل الرابط هو موقع إنترنت تفاعلي خارجي<base href="${baseDir}">`);
+        finalHtml = finalHtml.replace(/<head[^>]*>/, `$&<base href="${baseDir}">`);
       } else {
         finalHtml = `<base href="${baseDir}">${finalHtml}`;
       }
     }
   }
 
-  // الطريقة 1 (الأكثر توافقاً وأماناً): كتابة الكود داخل مستند النافذة الجديدة مباشرة
+  // حفظ المحتوى في sessionStorage و localStorage ليظل متوفراً عند إعادة تحميل الصفحة F5
+  const cacheKey = 'content_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
   try {
-    const newWin = window.open('about:blank', '_blank');
-    if (newWin) {
-      newWin.document.open();
-      newWin.document.write(finalHtml);
-      newWin.document.close();
-      if (title && newWin.document) {
-        newWin.document.title = title;
-      }
-      return;
-    }
-  } catch {
-    /* في حال منع النوافذ المنبثقة ننتقل للـ blob */
-  }
+    const payload = JSON.stringify({ html: finalHtml, title, fileUrl: baseFileUrl, timestamp: Date.now() });
+    sessionStorage.setItem(`view_${cacheKey}`, payload);
+    localStorage.setItem(`view_${cacheKey}`, payload);
+  } catch {}
 
-  // الطريقة 2 (احتياطية عبر Blob كصفحة text/html):
+  const urlParams = new URLSearchParams();
+  urlParams.set('k', cacheKey);
+  if (title) urlParams.set('title', title);
+  if (baseFileUrl) urlParams.set('url', baseFileUrl);
+
+  const targetUrl = `/view/content?${urlParams.toString()}`;
+  try {
+    const win = window.open(targetUrl, '_blank');
+    if (win) return;
+  } catch {}
+
+  // في حال تعذر فتح المسار أو حظر النوافذ المنبثقة: نستخدم blob كبديل
   try {
     const blob = new Blob([finalHtml], { type: 'text/html;charset=utf-8' });
     const blobUrl = URL.createObjectURL(blob);
     window.open(blobUrl, '_blank');
   } catch {
     if (baseFileUrl) window.open(baseFileUrl, '_blank');
+  }
+}
+
+/** فتح الدرس أو الموقع التفاعلي في علامة تبويب جديدة كمسار دائم يدعم التحديث F5 */
+function openLessonInNewTab(lesson: any, liveHtml?: string | null, scope: 'curriculum' | 'foundation' = 'curriculum') {
+  if (!lesson) return;
+  const fileUrl = lesson.htmlFileUrl || lesson.fileUrl;
+  const isDirectWeb = Boolean(fileUrl && isExternalWebSite(fileUrl));
+
+  // إذا كان موقع إنترنت خارجي مباشر حقيقي (مثل وورد وول أو كانفا) يفتح رابطه المباشر
+  if (isDirectWeb && fileUrl) {
+    window.open(fileUrl, '_blank', 'noopener');
+    return;
+  }
+
+  // إذا كان المحتوى تابعاً لدرس معروف بالـ ID يُفتح في مسار العرض المستقل للدروس
+  if (lesson.id) {
+    try {
+      const payload = {
+        lesson,
+        html: liveHtml || lesson.htmlContent,
+        fileUrl,
+        title: lesson.title,
+        scope,
+        timestamp: Date.now(),
+      };
+      sessionStorage.setItem(`view_lesson_${lesson.id}`, JSON.stringify(payload));
+      localStorage.setItem(`view_lesson_${lesson.id}`, JSON.stringify(payload));
+    } catch {}
+    const query = scope === 'foundation' ? '?scope=foundation' : '';
+    window.open(`/view/lesson/${lesson.id}${query}`, '_blank');
+    return;
+  }
+
+  // إذا لم يكن هناك ID يُفتح كصفحة محتوى تفاعلي مستقل
+  if (liveHtml || lesson.htmlContent) {
+    openHtmlInNewTab(liveHtml || lesson.htmlContent, lesson.title, fileUrl);
+    return;
+  }
+
+  if (fileUrl) {
+    window.open(fileUrl, '_blank', 'noopener');
   }
 }
 
@@ -7547,8 +7593,8 @@ function isExternalWebSite(url?: string): boolean {
 
 
 /** العارض المتكامل لجميع أنواع المحتوى التفاعلي (مواقع خارجية، صفحات HTML، أكواد، حزم برمجية) */
-function LessonInteractiveContent({ lesson, exam, onStartExam, onReachEnd }: {
-  lesson: any; exam?: any; onStartExam?: () => void; onReachEnd?: () => void;
+function LessonInteractiveContent({ lesson, exam, onStartExam, onReachEnd, isStandalone = false }: {
+  lesson: any; exam?: any; onStartExam?: () => void; onReachEnd?: () => void; isStandalone?: boolean;
 }) {
   const fileUrl = String(lesson?.htmlFileUrl || '').trim();
   const isDirectWeb = isExternalWebSite(fileUrl);
@@ -7703,23 +7749,8 @@ function LessonInteractiveContent({ lesson, exam, onStartExam, onReachEnd }: {
   }, [html, shouldUseDirectSrc, attempt]);
 
   const openNewTab = () => {
-    // 1. إذا كان المحتوى موقع إنترنت خارجي مباشر حقيقي (مثل وورد وول أو كانفا)
-    if (shouldUseDirectSrc && isDirectWeb && fileUrl) {
-      window.open(fileUrl, '_blank', 'noopener');
-      return;
-    }
-
-    // 2. إذا كان المحتوى صفحة HTML أو موقع متكامل أو حزمة مبنية
     const liveHtml = html || (inline && resolved.mode === 'inline' ? resolved.inline : sourceUrl ? source.srcdoc : bundleUrl ? bundle.html : extHtml);
-    if (liveHtml) {
-      openHtmlInNewTab(liveHtml, lesson?.title || 'محتوى الدرس', fileUrl);
-      return;
-    }
-
-    // 3. احتياط إذا كان هناك رابط مباشر
-    if (fileUrl) {
-      window.open(fileUrl, '_blank', 'noopener');
-    }
+    openLessonInNewTab(lesson, liveHtml, 'curriculum');
   };
 
   const printHtml = () => {
@@ -7735,6 +7766,58 @@ function LessonInteractiveContent({ lesson, exam, onStartExam, onReachEnd }: {
   const visibleH = reportedH || measuredH || null;
   const frameH = visibleH ? `${visibleH}px` : shouldUseDirectSrc ? 'min(82vh, 760px)' : '62vh';
   const shownProgress = sourceUrl ? (srcProgress ?? 0) : progress;
+
+  if (isStandalone) {
+    return (
+      <div className="flex h-full w-full flex-col overflow-hidden bg-white">
+        {shouldUseDirectSrc ? (
+          <iframe
+            ref={iframeRef}
+            title={`موقع ${lesson?.title || 'التفاعلي'}`}
+            src={fileUrl}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+            allowFullScreen
+            sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-presentation allow-downloads"
+            className="h-full w-full border-0 bg-white"
+            data-testid="iframe-lesson-standalone-direct"
+          />
+        ) : !inline && (sourceUrl ? !!source.error : bundleUrl ? !!bundle.error : extFailed) ? (
+          <div className="flex h-full w-full flex-col items-center justify-center p-6 text-center">
+            <p className="text-sm font-bold text-destructive">تعذر تحميل المحتوى التفاعلي</p>
+            <p className="mx-auto mt-1 max-w-md text-xs leading-5 text-muted-foreground">
+              {sourceUrl && source.error ? source.error : bundleUrl && bundle.error ? bundle.error : 'تحقق من الاتصال أو أعد المحاولة.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                if (sourceUrl) source.retry();
+                else if (bundleUrl) bundle.retry();
+                else setAttempt((a) => a + 1);
+              }}
+              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-extrabold text-primary-foreground shadow-sm hover:scale-105"
+            >
+              <RefreshCw size={14} /> إعادة المحاولة
+            </button>
+          </div>
+        ) : !html ? (
+          <div className="flex h-full w-full items-center justify-center gap-3 p-6 text-sm font-bold text-primary">
+            <RefreshCw size={17} className="animate-spin" /> {sourceUrl ? 'جارٍ تجهيز الكود المبني...' : bundleUrl ? 'جارٍ فك ضغط الموقع وتجهيزه...' : 'جارٍ تحميل المحتوى التفاعلي...'}
+          </div>
+        ) : (
+          <iframe
+            ref={iframeRef}
+            title={`محتوى ${lesson?.title || 'الدرس'}`}
+            sandbox={sourceUrl ? SOURCE_FRAME_SANDBOX : HTML_FRAME_SANDBOX}
+            srcDoc={html}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+            referrerPolicy="no-referrer"
+            className="h-full w-full border-0 bg-white"
+            data-testid="iframe-lesson-standalone-html"
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="overflow-hidden rounded-3xl border border-primary/20 bg-card shadow-md">
@@ -13558,7 +13641,7 @@ function FoundationVideoPlayer({ url, caption }: { url: string; caption?: string
 }
 
 /* ──────────────────── عارض HTML مع ملء شاشة ───────────────────────────── */
-function FoundationHtmlView({ content, fileUrl, title }: { content?: string; fileUrl?: string; title?: string }) {
+function FoundationHtmlView({ content, fileUrl, title, lessonId }: { content?: string; fileUrl?: string; title?: string; lessonId?: string }) {
   const isDirectWeb = Boolean(fileUrl && isExternalWebSite(fileUrl));
   const [text, setText] = useState<string | null>(content || null);
   const [loading, setLoading] = useState(false);
@@ -13664,6 +13747,10 @@ function FoundationHtmlView({ content, fileUrl, title }: { content?: string; fil
                 openHtmlInNewTab(text, title || 'محتوى الدرس', fileUrl);
                 return;
               }
+              if (lessonId) {
+                openLessonInNewTab({ id: lessonId, title, htmlContent: text, htmlFileUrl: fileUrl }, text, 'foundation');
+                return;
+              }
               if (fileUrl) window.open(fileUrl, '_blank', 'noopener');
             }}
             title="فتح في تبويب جديد"
@@ -13754,7 +13841,7 @@ function FoundationBlockView({ block, lesson, compact = false, onOpenImages }: {
     return <FoundationVideoPlayer url={String(block.url).trim()} caption={block.caption} />;
   }
   if (block.type === 'html' && (String(block.html || '').trim() || String(block.fileUrl || '').trim())) {
-    return <FoundationHtmlView content={String(block.html || '')} fileUrl={String(block.fileUrl || '')} title={lesson?.title} />;
+    return <FoundationHtmlView content={String(block.html || '')} fileUrl={String(block.fileUrl || '')} title={lesson?.title} lessonId={lesson?.id} />;
   }
   if (block.type === 'document' && String(block.docUrl || '').trim()) {
     return <DocumentViewer url={String(block.docUrl)} name={block.docName} docType={block.docType} />;
@@ -13855,7 +13942,7 @@ function FoundationLessonBody({ lesson, compact = false }: { lesson: any; compac
 
       {video ? <FoundationVideoPlayer url={video} caption={lesson.videoCaption} /> : null}
 
-      {html || htmlFile ? <FoundationHtmlView content={html} fileUrl={htmlFile} title={lesson.title} /> : null}
+      {html || htmlFile ? <FoundationHtmlView content={html} fileUrl={htmlFile} title={lesson.title} lessonId={lesson.id} /> : null}
 
       {!text && !images.length && !video && !html && !htmlFile ? (
         <p className="rounded-3xl border border-dashed border-border bg-card px-6 py-10 text-center text-sm text-muted-foreground">
@@ -15875,6 +15962,392 @@ function FoundationLessonPage() {
    ROUTING & ROOT APP
    ========================================================================= */
 
+/* =========================================================================
+   صفحات العرض المستقلة للمواقع والمحتوى التفاعلي (تدعم التحديث F5 دون فقدان)
+   ========================================================================= */
+
+function StandaloneLessonViewerPage() {
+  const { lessonId = '' } = useParams<{ lessonId?: string }>();
+  const search = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+  const scope = search.get('scope') || 'curriculum';
+  const [reloadKey, setReloadKey] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // 1. تحميل المحتوى فوراً من الذاكرة المحلية للجلسة لمنع أي تأخير أو وميض عند الفتح أو التحديث
+  const [lesson, setLesson] = useState<any>(() => {
+    if (!lessonId) return null;
+    try {
+      const raw = sessionStorage.getItem(`view_lesson_${lessonId}`) || localStorage.getItem(`view_lesson_${lessonId}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return parsed.lesson || parsed;
+      }
+    } catch {}
+    return null;
+  });
+
+  const [loading, setLoading] = useState(!lesson);
+  const [error, setError] = useState<string | null>(null);
+
+  // 2. مزامنة وتحديث بيانات الدرس من الخادم للتأكد من أحدث نسخة ومواصلة العمل بعد F5
+  useEffect(() => {
+    if (!lessonId) return;
+    let active = true;
+    const fetchLesson = async () => {
+      try {
+        let data: any = null;
+        if (scope === 'foundation') {
+          try {
+            data = await jsonFetch(`/api/foundation/lessons/${lessonId}`);
+          } catch {
+            data = await jsonFetch(`/api/curriculum/lessons/${lessonId}`);
+          }
+        } else {
+          try {
+            data = await jsonFetch(`/api/curriculum/lessons/${lessonId}`);
+          } catch {
+            data = await jsonFetch(`/api/foundation/lessons/${lessonId}`);
+          }
+        }
+        if (active && data) {
+          const resolvedLesson = data.lesson || data;
+          setLesson(resolvedLesson);
+          setLoading(false);
+          try {
+            const payload = JSON.stringify({
+              lesson: resolvedLesson,
+              title: resolvedLesson.title,
+              fileUrl: resolvedLesson.htmlFileUrl || resolvedLesson.fileUrl,
+              scope,
+              timestamp: Date.now()
+            });
+            sessionStorage.setItem(`view_lesson_${lessonId}`, payload);
+            localStorage.setItem(`view_lesson_${lessonId}`, payload);
+          } catch {}
+        }
+      } catch (err: any) {
+        if (active) {
+          if (!lesson) {
+            setError(err?.message || 'تعذر تحميل الدرس من الخادم');
+          }
+          setLoading(false);
+        }
+      }
+    };
+    fetchLesson();
+    return () => { active = false; };
+  }, [lessonId, scope, reloadKey]);
+
+  useEffect(() => {
+    const handleFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  };
+
+  const fileUrl = lesson?.htmlFileUrl || lesson?.fileUrl;
+  const isDirectWeb = Boolean(fileUrl && isExternalWebSite(fileUrl));
+
+  if (loading && !lesson) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#071716] p-6 text-center text-white" dir="rtl">
+        <RefreshCw size={38} className="mb-4 animate-spin text-accent" />
+        <h2 className="mb-1 text-xl font-extrabold">جارٍ تحميل الموقع التعليمي...</h2>
+        <p className="text-sm text-white/70">يرجى الانتظار لحظات ريثما يتم تجهيز المحتوى التفاعلي</p>
+      </div>
+    );
+  }
+
+  if (error && !lesson) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#071716] p-6 text-center text-white" dir="rtl">
+        <div className="w-full max-w-md rounded-3xl border border-destructive/30 bg-destructive/10 p-8 shadow-2xl">
+          <CircleAlert size={44} className="mx-auto mb-3 text-destructive" />
+          <h2 className="mb-2 text-lg font-extrabold text-white">تعذر عرض المحتوى</h2>
+          <p className="mb-6 text-xs leading-6 text-white/80">{error}</p>
+          <div className="flex items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => { setError(null); setLoading(true); setReloadKey((k) => k + 1); }}
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-extrabold text-primary-foreground shadow transition-transform hover:scale-105 active:scale-95"
+            >
+              <RefreshCw size={14} /> إعادة المحاولة
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (window.history.length > 1) window.history.back();
+                else window.close();
+              }}
+              className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2.5 text-xs font-bold text-white hover:bg-white/20 active:scale-95"
+            >
+              إغلاق
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-[#071716]" dir="rtl">
+      {/* شريط التحكم العلوي */}
+      <header className="z-20 flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-[#0c2725] px-3 shadow-md sm:px-6">
+        <div className="flex items-center gap-3 overflow-hidden">
+          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+            {isDirectWeb ? <Globe size={18} /> : <FileCode2 size={18} />}
+          </div>
+          <div className="min-w-0">
+            <h1 className="truncate text-sm font-extrabold text-white sm:text-base">
+              {lesson?.title || 'المحتوى التفاعلي'}
+            </h1>
+            <p className="hidden text-[11px] font-bold text-accent sm:block">
+              {isDirectWeb ? 'موقع إنترنت تفاعلي مباشر' : 'صفحة ويب تعليمية تفاعلية بالكامل'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* زر إعادة تحميل المحتوى التفاعلي */}
+          <button
+            type="button"
+            onClick={() => setReloadKey((k) => k + 1)}
+            title="إعادة تحميل المحتوى"
+            className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-white/10 px-3 text-xs font-bold text-white transition-colors hover:bg-white/20 active:scale-95"
+          >
+            <RefreshCw size={14} />
+            <span className="hidden sm:inline">إعادة تحميل</span>
+          </button>
+
+          {/* زر ملء الشاشة */}
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? 'تصغير الشاشة' : 'ملء الشاشة'}
+            className="grid h-9 w-9 place-items-center rounded-xl bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
+          >
+            {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+          </button>
+
+          {/* زر الرجوع أو الإغلاق */}
+          <button
+            type="button"
+            onClick={() => {
+              if (window.history.length > 1) window.history.back();
+              else window.close();
+            }}
+            title="إغلاق الصفحة"
+            className="grid h-9 w-9 place-items-center rounded-xl bg-white/10 text-white transition-colors hover:bg-destructive/80 active:scale-95"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      </header>
+
+      {/* منطقة المحتوى بملء الشاشة */}
+      <main className="relative flex-1 w-full h-[calc(100vh-56px)] overflow-hidden bg-white">
+        <LessonHtmlBlock
+          key={reloadKey}
+          lesson={lesson}
+          isStandalone={true}
+        />
+      </main>
+    </div>
+  );
+}
+
+function StandaloneContentViewerPage() {
+  const [reloadKey, setReloadKey] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const search = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+  const k = search.get('k') || '';
+  const fileUrl = search.get('url') || '';
+  const titleParam = search.get('title') || '';
+
+  // 1. جلب البيانات المخزنة من الجلسة
+  const [cachedData] = useState(() => {
+    if (!k) return null;
+    try {
+      const raw = sessionStorage.getItem(`view_${k}`) || localStorage.getItem(`view_${k}`);
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return null;
+  });
+
+  const [liveHtml, setLiveHtml] = useState<string | null>(() => cachedData?.html || null);
+  const [title] = useState<string>(() => cachedData?.title || titleParam || 'المحتوى التفاعلي');
+  const [loading, setLoading] = useState<boolean>(() => !cachedData?.html && Boolean(fileUrl));
+  const [error, setError] = useState<string | null>(null);
+
+  // إذا لم يكن كود HTML موجوداً في الذاكرة لكن الرابط متوفر، نجلبه
+  useEffect(() => {
+    if (liveHtml || !fileUrl) {
+      setLoading(false);
+      return;
+    }
+    let active = true;
+    setLoading(true);
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => ctrl.abort(), 25000);
+
+    fetch(fileUrl, { signal: ctrl.signal })
+      .then((r) => {
+        if (!r.ok) throw new Error('فشل تحميل الملف من المصدر');
+        return r.text();
+      })
+      .then((t) => {
+        window.clearTimeout(timer);
+        if (active) {
+          const decoded = t.startsWith('ARDB64') ? decodeArdB64(t) : t;
+          setLiveHtml(decoded);
+          setLoading(false);
+          try {
+            const payload = JSON.stringify({ html: decoded, title, fileUrl, timestamp: Date.now() });
+            if (k) {
+              sessionStorage.setItem(`view_${k}`, payload);
+              localStorage.setItem(`view_${k}`, payload);
+            }
+          } catch {}
+        }
+      })
+      .catch((err) => {
+        window.clearTimeout(timer);
+        if (active) {
+          setError(err?.message || 'تعذر تحميل الملف');
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+      ctrl.abort();
+    };
+  }, [fileUrl, liveHtml, k, title, reloadKey]);
+
+  useEffect(() => {
+    const handleFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  };
+
+  const isDirectWeb = Boolean(fileUrl && isExternalWebSite(fileUrl));
+
+  return (
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-[#071716]" dir="rtl">
+      <header className="z-20 flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-[#0c2725] px-3 shadow-md sm:px-6">
+        <div className="flex items-center gap-3 overflow-hidden">
+          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+            {isDirectWeb ? <Globe size={18} /> : <FileCode2 size={18} />}
+          </div>
+          <div className="min-w-0">
+            <h1 className="truncate text-sm font-extrabold text-white sm:text-base">
+              {title}
+            </h1>
+            <p className="hidden text-[11px] font-bold text-accent sm:block">
+              {isDirectWeb ? 'موقع إنترنت تفاعلي مباشر' : 'محتوى تفاعلي مستقل'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <button
+            type="button"
+            onClick={() => setReloadKey((k) => k + 1)}
+            title="إعادة تحميل المحتوى"
+            className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-white/10 px-3 text-xs font-bold text-white transition-colors hover:bg-white/20 active:scale-95"
+          >
+            <RefreshCw size={14} />
+            <span className="hidden sm:inline">إعادة تحميل</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? 'تصغير الشاشة' : 'ملء الشاشة'}
+            className="grid h-9 w-9 place-items-center rounded-xl bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
+          >
+            {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (window.history.length > 1) window.history.back();
+              else window.close();
+            }}
+            title="إغلاق الصفحة"
+            className="grid h-9 w-9 place-items-center rounded-xl bg-white/10 text-white transition-colors hover:bg-destructive/80 active:scale-95"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      </header>
+
+      <main className="relative flex-1 w-full h-[calc(100vh-56px)] overflow-hidden bg-white">
+        {loading ? (
+          <div className="flex h-full w-full flex-col items-center justify-center bg-[#071716] p-6 text-center text-white">
+            <RefreshCw size={36} className="mb-4 animate-spin text-accent" />
+            <h2 className="mb-1 text-lg font-extrabold">جارٍ إعداد المحتوى التفاعلي...</h2>
+          </div>
+        ) : error ? (
+          <div className="flex h-full w-full flex-col items-center justify-center bg-[#071716] p-6 text-center text-white">
+            <CircleAlert size={40} className="mb-3 text-destructive" />
+            <p className="text-sm font-bold">{error}</p>
+            <button
+              type="button"
+              onClick={() => setReloadKey((k) => k + 1)}
+              className="mt-4 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground"
+            >
+              إعادة المحاولة
+            </button>
+          </div>
+        ) : isDirectWeb && fileUrl ? (
+          <iframe
+            key={reloadKey}
+            src={fileUrl}
+            title={title}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+            allowFullScreen
+            sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-presentation allow-downloads"
+            className="h-full w-full border-none"
+          />
+        ) : liveHtml ? (
+          <iframe
+            key={reloadKey}
+            srcDoc={liveHtml}
+            title={title}
+            sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-presentation allow-downloads"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+            referrerPolicy="no-referrer"
+            className="h-full w-full border-none"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center p-6 text-sm text-muted-foreground">
+            لا يوجد محتوى للعرض
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
 function Router() {
   const [location] = useLocation();
   useIdentityHead();
@@ -15916,6 +16389,8 @@ function Router() {
         <Route path="/teacher/report" component={TeacherReportPage} />
         <Route path="/teacher/books" component={TeacherBooksPage} />
         <Route path="/teacher/settings" component={SettingsPage} />
+        <Route path="/view/lesson/:lessonId" component={StandaloneLessonViewerPage} />
+        <Route path="/view/content" component={StandaloneContentViewerPage} />
         <Route component={NotFound} />
       </Switch>
     </ErrorBoundary>
