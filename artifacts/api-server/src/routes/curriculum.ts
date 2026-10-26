@@ -338,9 +338,12 @@ router.get("/curriculum/grades", async (_req, res) => {
     logger.warn({ err }, "grade_levels missing, using defaults");
   }
   res.json([
+    { id: "grade-7", name: "الصف السابع", sortOrder: 0 },
     { id: "grade-8", name: "الصف الثامن", sortOrder: 1 },
     { id: "grade-9", name: "الصف التاسع", sortOrder: 2 },
     { id: "grade-10", name: "الصف العاشر", sortOrder: 3 },
+    { id: "grade-11-lit", name: "الصف الحادي عشر الأدبي", sortOrder: 4 },
+    { id: "grade-11-sci", name: "الصف الحادي عشر العلمي", sortOrder: 5 },
   ]);
 });
 

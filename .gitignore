@@ -58,6 +58,9 @@ Thumbs.db
 /الفصل الاول/
 /الفصل الثاني/
 
+# أصول البذر الأصلية (أغلفة وكتب PDF كما وصلت) — نسخ نظيفة فقط في public/books
+artifacts/ard-al-lughah/seed-assets/
+
 # dev-only helpers
 _verify.mjs
 

@@ -398,8 +398,6 @@ const APP_VERSION = 'v25.10-SRC';
    يظهر مصغّراً غير مقروء إلى جانب الاسم فيصير الازدحام والازدواج. */
 const platformLogoUrl = '/ard-al-lughah-emblem.png';
 const platformBannerUrl = '/ard-al-lughah-banner.png';
-const bookNineUrl = '/arab-9.jpg';
-const bookTenUrl = '/arab-10.jpg';
 
 /* =========================================================================
    هوية المنصة الحية — من قاعدة البيانات إلى كل الموقع فوراً
@@ -557,9 +555,34 @@ function useFoundationNavCount(enabled: boolean, userKey: string): number {
    useCatalog() فيستطيع الأستاذ	add/delete/reorder من الإعدادات فتظهر
    في كل شاشات النظام فوراً. الثوابت التالية احتياط لCaso فشل الطلب فقط.
    ========================================================================= */
-const FALLBACK_GRADES = ['الصف الثامن', 'الصف التاسع', 'الصف العاشر'];
+const FALLBACK_GRADES = [
+  'الصف السابع',
+  'الصف الثامن',
+  'الصف التاسع',
+  'الصف العاشر',
+  'الصف الحادي عشر الأدبي',
+  'الصف الحادي عشر العلمي',
+];
+const FALLBACK_GRADE_IDS = ['grade-7', 'grade-8', 'grade-9', 'grade-10', 'grade-11-lit', 'grade-11-sci'];
+const FALLBACK_GRADE_COLORS = ['#b7791f', '#17413f', '#17413f', '#17413f', '#6a1b9a', '#0d47a1'];
 const FALLBACK_SCHOOLS = ['مدرسة وايلد', 'مبادرة أهرامات الأمل'];
 const TERMS = ['الفصل الأول', 'الفصل الثاني'];
+
+/* كتب احتياطية تظهر حتى لو تعذّر جلبها من القاعدة — بنفس مسارات الملفات. */
+const STATIC_BOOKS: Record<string, { coverUrl: string; pdfUrl: string }> = {
+  'الصف السابع|الفصل الأول': { coverUrl: '/books/arab-7-term1.jpg', pdfUrl: '/books/arabic-7-term1.pdf' },
+  'الصف السابع|الفصل الثاني': { coverUrl: '/books/arab-7-term2.jpg', pdfUrl: '/books/arabic-7-term2.pdf' },
+  'الصف الثامن|الفصل الأول': { coverUrl: '/books/arabic-8-term1.jpg', pdfUrl: '/books/arabic-8-term1.pdf' },
+  'الصف الثامن|الفصل الثاني': { coverUrl: '/books/arabic-8-term2.jpg', pdfUrl: '/books/arabic-8-term2.pdf' },
+  'الصف التاسع|الفصل الأول': { coverUrl: '/books/arabic-9-term1.jpg', pdfUrl: '/books/arabic-9-term1-v2.pdf' },
+  'الصف التاسع|الفصل الثاني': { coverUrl: '/books/arabic-9-term2.png', pdfUrl: '/books/arabic-9-term2.pdf' },
+  'الصف العاشر|الفصل الأول': { coverUrl: '/books/arabic-10-term1.jpg', pdfUrl: '/books/arabic-10-term1-v2.pdf' },
+  'الصف العاشر|الفصل الثاني': { coverUrl: '/books/arabic-10-term2.png', pdfUrl: '/books/arabic-10-term2.pdf' },
+  'الصف الحادي عشر الأدبي|الفصل الأول': { coverUrl: '/books/arab-11-term1.jpg', pdfUrl: '/books/arabic-11-term1.pdf' },
+  'الصف الحادي عشر الأدبي|الفصل الثاني': { coverUrl: '/books/arab-11-term2.jpg', pdfUrl: '/books/arabic-11-term2.pdf' },
+  'الصف الحادي عشر العلمي|الفصل الأول': { coverUrl: '/books/arab-11-term1.jpg', pdfUrl: '/books/arabic-11-term1.pdf' },
+  'الصف الحادي عشر العلمي|الفصل الثاني': { coverUrl: '/books/arab-11-term2.jpg', pdfUrl: '/books/arabic-11-term2.pdf' },
+};
 
 /* قوائم حيّة محدَّثة من قاعدة البيانات عند كل تحميل كتالوج.
    كل مكوّن يقرأها يستدعي useCatalog() أولاً ليعيد الرسم فور تغيّرها. */
@@ -571,7 +594,7 @@ type CatalogSchool = { id: string; name: string; sortOrder: number; color: strin
 
 const FALLBACK_CATALOG = {
   grades: FALLBACK_GRADES.map((name, i) => ({
-    id: `grade-${i + 8}`, name, sortOrder: i + 1, color: '#17413f', isActive: true,
+    id: FALLBACK_GRADE_IDS[i] || `grade-${i + 7}`, name, sortOrder: i, color: FALLBACK_GRADE_COLORS[i] || '#17413f', isActive: true,
     genderSplit: false, schools: FALLBACK_SCHOOLS.slice(), schoolIds: ['school-wild', 'school-ahramat'], students: 0,
   })) as CatalogGrade[],
   schools: FALLBACK_SCHOOLS.map((name, i) => ({
@@ -875,7 +898,10 @@ function CatalogGradeSelect({ name, value, onChange, testId, label, placeholder 
     </div>
   );
 }
-const LESSON_TYPES = ['مطالعة', 'قراءة', 'استماع', 'شعر', 'قواعد', 'بلاغة', 'عروض', 'إملاء', 'خط', 'تعبير', 'تقويم'];
+const LESSON_TYPES = [
+  'مطالعة', 'قراءة', 'استماع', 'محفوظات', 'شعر', 'نص شعري', 'قواعد', 'قواعد لغوية',
+  'بلاغة', 'عروض', 'إملاء', 'خط', 'تعبير', 'تقويم', 'أقيم ذاتي', 'مشروع',
+];
 const UNIT_STATUSES = [
   { id: 'published', label: 'منشورة ومفتوحة' },
   { id: 'locked', label: 'مقفلة مؤقتاً' },
@@ -903,15 +929,20 @@ const UNIT_ICONS: Record<string, typeof BookOpen> = {
 
 function lessonTypeIcon(type: string) {
   switch (type) {
-    case 'شعر': return Quote;
-    case 'قواعد': return Pencil;
+    case 'شعر':
+    case 'نص شعري': return Quote;
+    case 'قواعد':
+    case 'قواعد لغوية': return Pencil;
     case 'بلاغة': return Sparkles;
     case 'عروض': return TrendingUp;
     case 'إملاء': return FileText;
     case 'تعبير': return MessagesSquare;
-    case 'تقويم': return ClipboardCheck;
+    case 'تقويم':
+    case 'أقيم ذاتي': return ClipboardCheck;
+    case 'مشروع': return Target;
     case 'استماع': return Bell;
     case 'قراءة': return BookCopy;
+    case 'محفوظات': return Award;
     case 'خط': return Pencil;
     default: return BookOpen;
   }
@@ -1583,8 +1614,6 @@ function Home() {
   const allBooks = platform?.books ?? [];
   const norm = (s: string) => s.replace(/[\u0622\u0623\u0625]/g, '\u0627').replace(/\s+/g, ' ').trim();
   const currentTermBooks = allBooks.filter((b) => norm(b.term) === norm(semester));
-  const grade9Book = currentTermBooks.find((b) => b.grade === 'الصف التاسع');
-  const grade10Book = currentTermBooks.find((b) => b.grade === 'الصف العاشر');
   const [resourceTab, setResourceTab] = useState<'quizzes' | 'downloads' | 'grammar'>('quizzes');
   const [activeBlog, setActiveBlog] = useState(-1);
 
@@ -1656,7 +1685,7 @@ function Home() {
                     <Avatar key={letter} name={letter} size="sm" />
                   ))}
                 </div>
-                <span>محتوى مرتب للصفوف الثامن والتاسع والعاشر</span>
+                <span>محتوى مرتب للصفوف من السابع إلى الحادي عشر</span>
                 <span className="hidden h-1 w-1 rounded-full bg-accent sm:block" />
                 <span className="flex items-center gap-1.5 font-semibold text-primary">
                   <CheckCircle2 size={16} className="text-accent-foreground" /> تعلّم بثقة
@@ -1693,7 +1722,7 @@ function Home() {
                 تستحق أن تُفتح كل يوم.
               </h2>
               <p className="mt-5 max-w-md text-base leading-8 text-muted-foreground">
-                سلسلة اللغة العربية للصفوف الثامن والتاسع والعاشر في {semester}، مرتبة لتقرأ وتفهم وتطبّق بثقة — ويمكنك تحميل كل كتاب بنسخته الرقمية.
+                سلسلة اللغة العربية للصفوف من السابع إلى الحادي عشر (أدبي وعلمي) في {semester}، مرتبة لتقرأ وتفهم وتطبّق بثقة — ويمكنك تحميل كل كتاب بنسخته الرقمية.
               </p>
               <div className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-accent/45 bg-card px-3 py-1 text-xs font-bold text-primary shadow-sm" data-testid="badge-books-semester">
                 <BookOpen size={13} className="text-accent-foreground" /> كتب {semester} المعتمدة
@@ -1702,30 +1731,22 @@ function Home() {
                 ابدأ مع كتبك <ArrowLeft size={17} />
               </Link>
             </div>
-            {/* سلسلة الكتب الثلاثة — مروحة أغلفة فوق بعضها مائلة.
-                كتاب الثامن يظهر من ملفات الموقع مباشرة حتى قبل إضافته للقاعدة. */}
+            {/* رفّ الكتب — يعرض كتب الفصل الحالي لكل الصفوف الستة.
+                إن تعذّر جلب كتاب من القاعدة نعرض نسخته الاحتياطية من ملفات الموقع. */}
             {(() => {
-              const withPdf = (g: string) => currentTermBooks.find((b) => b.grade === g && b.pdfUrl);
-              const static8 = semester === 'الفصل الأول'
-                ? { id: 'static-8', grade: 'الصف الثامن', term: semester, title: 'كتاب اللغة العربية - الصف الثامن', coverUrl: '/books/arabic-8-term1.jpg', pdfUrl: '/books/arabic-8-term1.pdf' }
-                : null;
-              const fan = [
-                { book: withPdf('الصف الثامن') || static8, tone: 'gold' as const },
-                { book: withPdf('الصف التاسع'), tone: 'purple' as const },
-                { book: withPdf('الصف العاشر'), tone: 'rose' as const },
-              ].filter((x) => x.book);
-              if (!fan.length) {
-                return (
-                  <div className="grid gap-6 sm:grid-cols-3 sm:gap-4 lg:gap-5">
-                    {semester === 'الفصل الأول' ? (
-                      <div className="-rotate-3 transition-transform duration-300 hover:rotate-0"><BookCover image="/books/arabic-8-term1.jpg" grade="الصف الثامن" title="اللغة العربية" subtitle="المسار الأكاديمي" tone="gold" /></div>
-                    ) : null}
-                    <div className="sm:-translate-y-2"><BookCover image={bookNineUrl} grade="الجزء الأول · ٠٩" title="اللغة العربية" subtitle="المسار الأكاديمي" tone="purple" /></div>
-                    <div className="rotate-3 transition-transform duration-300 hover:rotate-0"><BookCover image={bookTenUrl} grade="الجزء الأول · ١٠" title="اللغة العربية" subtitle="المسار الأكاديمي" tone="rose" /></div>
-                  </div>
-                );
-              }
-              return <BookFan items={fan} />;
+              const gradeOrder = [
+                'الصف السابع', 'الصف الثامن', 'الصف التاسع', 'الصف العاشر',
+                'الصف الحادي عشر الأدبي', 'الصف الحادي عشر العلمي',
+              ];
+              const shelf = gradeOrder.map((g) => {
+                const live = currentTermBooks.find((b) => b.grade === g && b.pdfUrl);
+                if (live) return live;
+                const fallback = STATIC_BOOKS[`${g}|${semester}`];
+                return fallback
+                  ? { id: `static-${g}-${semester}`, grade: g, term: semester, title: `كتاب اللغة العربية - ${g}`, coverUrl: fallback.coverUrl, pdfUrl: fallback.pdfUrl }
+                  : null;
+              }).filter(Boolean);
+              return shelf.length ? <BookShelf items={shelf} /> : null;
             })()}
           </div>
         </section>
@@ -1874,7 +1895,7 @@ function Home() {
               <div>
                 <p className="text-sm font-bold text-accent-foreground">لا تتعلم وحدك</p>
                 <h2 className="mt-3 font-display text-3xl font-bold text-primary sm:text-4xl">مواعيد واجباتك القادمة.</h2>
-                <p className="mt-4 max-w-2xl leading-8 text-muted-foreground">واجبات حقيقية على المنصة بتواريخ استحقاق واضحة، لتبقى متابعة لصفوفك الثامن والتاسع والعاشر بلا أوراق ضائعة.</p>
+                <p className="mt-4 max-w-2xl leading-8 text-muted-foreground">واجبات حقيقية على المنصة بتواريخ استحقاق واضحة، لتبقى متابعة لصفوفك من السابع إلى الحادي عشر بلا أوراق ضائعة.</p>
               </div>
               <span className="inline-flex w-fit items-center gap-2 rounded-full border border-accent/40 bg-card px-4 py-2 text-xs font-bold text-primary"><ClipboardCheck size={15} className="text-accent-foreground" /> جدول حي من المنصة</span>
             </div>
@@ -1961,83 +1982,6 @@ function FeatureCard({ number, icon: Icon, title, body }: { number: string; icon
       </div>
       <h3 className="mt-7 text-xl font-bold text-primary">{title}</h3>
       <p className="mt-3 leading-7 text-muted-foreground text-sm">{body}</p>
-    </div>
-  );
-}
-
-function BookCover({ image, grade, title, subtitle, tone }: { image: string; grade: string; title: string; subtitle: string; tone: 'purple' | 'rose' | 'gold' }) {
-  const tones = {
-    purple: 'from-[#2d2040]/80 via-transparent',
-    rose: 'from-[#3d263f]/80 via-transparent',
-    gold: 'from-[#382b13]/85 via-transparent',
-  };
-  return (
-    <Link href="/register" className="group relative overflow-hidden rounded-[1.8rem] border border-primary/15 bg-primary p-3 shadow-md transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl" data-testid={`card-book-${grade}`}>
-      <div className="relative aspect-[3/4] overflow-hidden rounded-[1.3rem] bg-muted">
-        <img src={image} alt={`${title} ${grade}`} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
-        <div className={`absolute inset-0 bg-gradient-to-t ${tones[tone]} to-transparent`} />
-        <div className="absolute right-4 top-4 rounded-full border border-white/30 bg-black/30 px-3 py-1 text-xs font-bold text-white backdrop-blur-md">
-          {grade}
-        </div>
-        <div className="absolute inset-x-4 bottom-4 text-white">
-          <p className="text-lg font-bold leading-tight">{title}</p>
-          <p className="mt-1 text-xs text-white/80">{subtitle}</p>
-        </div>
-      </div>
-      <div className="flex items-center justify-between px-3 pb-1 pt-4 text-primary-foreground">
-        <span className="text-sm font-bold">تصفح المحتوى والدروس</span>
-        <ArrowLeft size={18} className="transition-transform group-hover:-translate-x-1" />
-      </div>
-    </Link>
-  );
-}
-
-/* مروحة الكتب الثلاثة — أغلفة فوق بعضها مائلة، والاختيار يعرض التفاصيل والأزرار */
-function BookFan({ items }: { items: { book: any; tone: 'purple' | 'rose' | 'gold' }[] }) {
-  const [sel, setSel] = useState(0);
-  const idx = Math.min(sel, items.length - 1);
-  const current = items[idx];
-  const tilt = (i: number) => {
-    const n = items.length;
-    if (n === 1) return '';
-    if (i === 0) return '-rotate-[10deg] translate-y-3';
-    if (i === n - 1) return 'rotate-[10deg] translate-y-3';
-    return '-translate-y-2';
-  };
-  return (
-    <div>
-      <div className="flex items-end justify-center pt-4" dir="ltr">
-        {items.map((it, i) => (
-          <button
-            key={it.book.id || it.book.grade}
-            type="button"
-            onClick={() => setSel(i)}
-            title={it.book.title}
-            className={`relative w-32 shrink-0 overflow-hidden rounded-2xl border-4 shadow-2xl transition-all duration-300 hover:-translate-y-2 hover:rotate-0 sm:w-48 lg:w-56 ${i > 0 ? '-ml-8 sm:-ml-12' : ''} ${tilt(i)} ${i === idx ? 'z-30 scale-[1.05] border-accent' : 'z-10 border-white/70'}`}
-            data-testid={`fan-book-${it.book.grade}`}
-          >
-            <img src={it.book.coverUrl} alt={it.book.title} className="aspect-[3/4] w-full bg-muted object-cover" />
-            <span className="absolute left-2 top-2 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-extrabold text-white backdrop-blur-md" dir="rtl">{it.book.grade}</span>
-            {i === idx ? <span className="absolute inset-x-0 bottom-0 h-1.5 bg-accent" /> : null}
-          </button>
-        ))}
-      </div>
-      <div className="mx-auto mt-6 max-w-xl overflow-hidden rounded-3xl border border-accent/35 bg-gradient-to-l from-accent/20 via-card to-card p-5 shadow-lg sm:p-6" dir="rtl">
-        <div className="flex flex-wrap items-center gap-2 text-[11px] font-extrabold">
-          <span className="rounded-lg bg-primary px-3 py-1.5 text-primary-foreground">{current.book.grade}</span>
-          <span className="rounded-lg bg-secondary px-3 py-1.5 text-primary">{current.book.term}</span>
-        </div>
-        <p className="mt-3 font-display text-xl font-extrabold leading-snug text-primary">{current.book.title}</p>
-        <p className="mt-1 text-xs font-semibold text-muted-foreground">المقرر الرسمي المعتمد · مفتوح للقراءة والتحميل</p>
-        <div className="mt-4 flex flex-wrap gap-2.5">
-          <a href={current.book.pdfUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-accent px-6 py-3 text-sm font-extrabold text-[#3a2c07] shadow-md transition-all hover:-translate-y-0.5 hover:shadow-xl" data-testid={`link-open-book-${current.book.grade}`}>
-            <BookOpen size={17} /> إظهار الكتاب وقراءته
-          </a>
-          <a href={current.book.pdfUrl} download={`${current.book.title}.pdf`} className="inline-flex items-center gap-2 rounded-xl border-2 border-primary/20 bg-card px-6 py-3 text-sm font-extrabold text-primary transition-all hover:-translate-y-0.5 hover:border-primary/50" data-testid={`link-dl-book-${current.book.grade}`}>
-            <Download size={17} /> تنزيل الكتاب PDF
-          </a>
-        </div>
-      </div>
     </div>
   );
 }

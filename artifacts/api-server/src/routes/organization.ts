@@ -17,9 +17,12 @@ const enc = (v: string | string[] | undefined): string =>
 const V8_HINT = "نفّذ الملف sql_grades_schools_v8.sql في Supabase ← SQL Editor أولاً.";
 
 const DEFAULT_GRADES = [
+  { id: "grade-7", name: "الصف السابع", sortOrder: 0, color: "#b7791f" },
   { id: "grade-8", name: "الصف الثامن", sortOrder: 1, color: "#2f7772" },
   { id: "grade-9", name: "الصف التاسع", sortOrder: 2, color: "#b7791f" },
   { id: "grade-10", name: "الصف العاشر", sortOrder: 3, color: "#17413f" },
+  { id: "grade-11-lit", name: "الصف الحادي عشر الأدبي", sortOrder: 4, color: "#6a1b9a" },
+  { id: "grade-11-sci", name: "الصف الحادي عشر العلمي", sortOrder: 5, color: "#0d47a1" },
 ];
 const DEFAULT_SCHOOLS = [
   { id: "school-wild", name: "مدرسة وايلد", sortOrder: 1, color: "#17413f" },
