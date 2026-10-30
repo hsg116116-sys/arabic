@@ -32,44 +32,69 @@ export function isObserverRole(role: unknown): boolean {
   return role === OBSERVER_ROLE;
 }
 
-async function trySilentRefresh(
+/** استدعاء Supabase للتجديد — بلا كوكيز: النتيجة تُشارك بين الطلبات المتوازية */
+async function performRefresh(
+  refreshToken: string,
+): Promise<{ accessToken: string; refreshToken?: string } | null> {
+  const base = (
+    process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co"
+  ).replace(/\/+$/, "");
+  const key =
+    process.env.SUPABASE_PUBLISHABLE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_SECRET_KEY ||
+    "sb_publishable_kPG7zfG0FFZpRTkNnHhO1Q_oXoOq8fg";
+  const response = await fetch(`${base}/auth/v1/token?grant_type=refresh_token`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+  const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!response.ok || typeof data.access_token !== "string") return null;
+  return {
+    accessToken: data.access_token,
+    refreshToken: typeof data.refresh_token === "string" ? data.refresh_token : undefined,
+  };
+}
+
+// صفحة واحدة تُطلق عدة طلبات في نفس اللحظة، وكلها تجدّد بنفس كوكي التحديث.
+// والتجديد يدوّره: الطلب الثاني يفشل ويُبطِل الجلسة كلها، فتفرغ قوائم الطالب
+// على الهاتف (الواجبات والدفاتر) بينما تبقى الوحدات ظاهرة. تجديد واحد لكل توكن.
+const refreshInFlight = new Map<string, Promise<{ accessToken: string; refreshToken?: string } | null>>();
+
+function refreshOnce(refreshToken: string) {
+  const running = refreshInFlight.get(refreshToken);
+  if (running) return running;
+  const p = performRefresh(refreshToken).finally(() => {
+    refreshInFlight.delete(refreshToken);
+  });
+  refreshInFlight.set(refreshToken, p);
+  return p;
+}
+
+export async function trySilentRefresh(
   req: Request,
   res: Parameters<RequestHandler>[1],
 ): Promise<string | null> {
   try {
     const refreshToken = (req as any)?.cookies?.supabase_refresh_token;
     if (typeof refreshToken !== "string" || !refreshToken) return null;
-    const base = (
-      process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co"
-    ).replace(/\/+$/, "");
-    const key =
-      process.env.SUPABASE_PUBLISHABLE_KEY ||
-      process.env.SUPABASE_ANON_KEY ||
-      process.env.SUPABASE_SECRET_KEY ||
-      "sb_publishable_kPG7zfG0FFZpRTkNnHhO1Q_oXoOq8fg";
-    const response = await fetch(`${base}/auth/v1/token?grant_type=refresh_token`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
-    const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-    if (!response.ok || typeof data.access_token !== "string") return null;
+    const session = await refreshOnce(refreshToken);
+    if (!session) return null;
     const secure = process.env.NODE_ENV === "production";
-    if (typeof data.access_token === "string") {
-      res.cookie("supabase_access_token", data.access_token, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure,
-        path: "/",
-        maxAge: 60 * 60 * 1000,
-      });
-    }
-    if (typeof data.refresh_token === "string") {
-      res.cookie("supabase_refresh_token", data.refresh_token, {
+    res.cookie("supabase_access_token", session.accessToken, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure,
+      path: "/",
+      maxAge: 60 * 60 * 1000,
+    });
+    if (session.refreshToken) {
+      res.cookie("supabase_refresh_token", session.refreshToken, {
         httpOnly: true,
         sameSite: "lax",
         secure,
@@ -77,14 +102,14 @@ async function trySilentRefresh(
         maxAge: 30 * 24 * 60 * 60 * 1000,
       });
     }
-    return data.access_token as string;
+    return session.accessToken;
   } catch (err) {
     logger.warn({ err }, "Middleware silent refresh failed");
     return null;
   }
 }
 
-async function resolveAuth(req: Request, res?: Parameters<RequestHandler>[1]): Promise<AuthInfo | null> {
+export async function resolveAuth(req: Request, res?: Parameters<RequestHandler>[1]): Promise<AuthInfo | null> {
   // نتيججة واحدة للطلب: حين يسبقنا حارس الرقابة لا نكرّر جلب البروفايل
   const cached = (req as AuthedRequest).auth;
   if (cached) return cached;

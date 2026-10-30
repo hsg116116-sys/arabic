@@ -2631,11 +2631,49 @@ export function resetAuthGate() { authGateCache = null; staffIdentityCache = nul
 
 // حلقة تجديد الجلسة: تنعش التوكن كل 45 دقيقة طالما الموقع مفتوح (جلسة تدوم 30 يوماً)
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
+let refreshVisibilityBound = false;
+let refreshInFlight: Promise<void> | null = null;
+
+function refreshSession() {
+  // طلب تجديد واحد في نفس اللحظة: التوازي يدوّّر كوكي التحديث مرتين، والمرة
+  // الثانية تُبطل الجلسة فتفرغ قوائم الواجبات والدفاتر على الهاتف.
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = fetch('/api/auth/refresh', { method: 'POST' })
+    .then(() => undefined)
+    .catch(() => undefined)
+    .finally(() => { refreshInFlight = null; });
+  return refreshInFlight;
+}
+
+// صفحات جلبت بياناتها بـ useState (لا react-query) تشترك هنا لتعيد الجلب بعد
+// استعادة الجلسة، فمحوها للقائمة الفارغة يبقى في الذاكرة ما لم تُجلب من جديد.
+let sessionListeners = new Set<() => void>();
+function onSessionRestored(fn: () => void) {
+  sessionListeners.add(fn);
+  return () => { sessionListeners.delete(fn); };
+}
+
+/** بعد غيبة التبويب أو انقطاع الشبكة: أعد جلب كل القوائم التي جُمّدت فارغة */
+function healAfterGap() {
+  queryClient.invalidateQueries();
+  sessionListeners.forEach((fn) => { try { fn(); } catch { /* تجاهل */ } });
+}
+
 function ensureRefreshLoop() {
-  if (refreshTimer) return;
-  refreshTimer = setInterval(() => {
-    fetch('/api/auth/refresh', { method: 'POST' }).catch(() => undefined);
-  }, 45 * 60 * 1000);
+  if (!refreshTimer) {
+    refreshTimer = setInterval(refreshSession, 45 * 60 * 1000);
+  }
+  if (refreshVisibilityBound) return;
+  refreshVisibilityBound = true;
+  // كروم أندرويد يجمّد التبويب في الخلفية ويوقف المؤقت: توكن الوصول (ساعة) تنتهي
+  // غيباً، فترد قوائم الواجبات والدفاتر فارغة وتُخزَّن ثلاث دقائق. عند الرجوع
+  // نجدّد الجلسة فوراً ونعيد جلب كل شيء فلا تبقى الأقسام مفرّغة.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    refreshSession().finally(healAfterGap);
+  });
+  // انقطاع الشبكة على الجوال ثم عودتها: ردّ فاشل واحد يُخزَّن ويُعرض «فارغ»
+  window.addEventListener('online', healAfterGap);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -8502,11 +8540,15 @@ function StudentCoursesPage() {
     }
   };
 
+  // إعادة الجلب عند استعادة الجلسة بعد تجميد التبويب (كروم أندرويد)
+  const [sessionTick, setSessionTick] = useState(0);
+  useEffect(() => onSessionRestored(() => setSessionTick((n) => n + 1)), []);
+
   useEffect(() => {
     loadCourses();
     loadUnitTasks();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveGrade, term, student?.id]);
+  }, [effectiveGrade, term, student?.id, sessionTick]);
 
   // تحميل المهام المرتبطة بالوحدات (واجبات مطلوبة + دفتر مطلوب + اختبارات)
   const loadUnitTasks = async () => {
@@ -11750,17 +11792,22 @@ function StudentNotebookPage() {
   const [mine, setMine] = useState<any | null>(null);
   const [deepOpened, setDeepOpened] = useState(false);
   const [needLogin, setNeedLogin] = useState(false);
+  const [loadErr, setLoadErr] = useState('');
+  // كروم أندرويد يجمّد التبويب فتنتهي الجلسة: نعيد الجلب عند العودة لا نبقى على فارغ
+  const [sessionTick, setSessionTick] = useState(0);
+  useEffect(() => onSessionRestored(() => setSessionTick((n) => n + 1)), []);
 
   const load = async () => {
     setLoading(true);
+    setLoadErr('');
     try {
       const params = new URLSearchParams({ grade: effectiveGrade, term });
       if (student?.id) params.set('student_id', student.id);
       const data = await jsonFetch(`/api/curriculum/notebooks?${params.toString()}`);
       setTasks(Array.isArray(data) ? data : []);
-    } catch { setTasks([]); } finally { setLoading(false); }
+    } catch (e: any) { setTasks([]); setLoadErr(e?.message || 'تعذر جلب مهام الدفتر — تحقق من الاتصال'); } finally { setLoading(false); }
   };
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [effectiveGrade, term, student?.id]);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [effectiveGrade, term, student?.id, sessionTick]);
 
   // فتح مهمة محددة من رابط الوحدة: /student/notebook?task=ID
   useEffect(() => {
@@ -11859,7 +11906,9 @@ function StudentNotebookPage() {
       />
       <GradeTermBadge grade={effectiveGrade} term={term} split={split} gender={gender} school={school} />
 
-      {loading ? <StateNotice type="loading" /> : !tasks.length ? (
+      {loading ? <StateNotice type="loading" /> : loadErr ? (
+        <StateNotice type="error" onRetry={load} />
+      ) : !tasks.length ? (
         <div className="rounded-[2rem] border border-dashed border-border bg-card px-6 py-14 text-center">
           <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-secondary text-primary"><NotebookPen size={24} /></span>
           <p className="font-display text-lg font-bold text-primary">لا توجد مهام دفتر حالياً</p>

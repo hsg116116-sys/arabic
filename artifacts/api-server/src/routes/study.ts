@@ -2,10 +2,29 @@ import { Router, type IRouter } from "express";
 import { supabaseQuery } from "../lib/supabase";
 import { uploadFile } from "../lib/imagekit";
 import { getStudentProfile, getSplitMap, itemVisible, deadlineState } from "./curriculum";
-import { requireAuth, requireAdmin } from "../middlewares/auth";
+import { requireAuth, requireAdmin, resolveAuth, isStaffRole } from "../middlewares/auth";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
+
+/**
+ * معرّف الطالب: مما ترسله الواجهة، وإلا من جلسة المتصفح — مع تجديد صامت
+ * عند تقادم توكن الوصول.
+ * الاعتماد على معرّف الواجهة وحده يُفرغ القوائم في حالتين متكررتين على الهاتف:
+ * أن يسبق التحميلُ جاهزيةَ لوحة الطالب (فلا معرّف بعد)، وأن يجمّد كروم أندرويد
+ * التبويب في الخلفية فتنتهي توكن الساعة قبل أن تنعشها الواجهة — فتبقى الوحدات
+ * ظاهرة لأنها لا تحتاج الجلسة، بينما تختفي الواجبات والدفاتر والمهام.
+ */
+export async function resolveStudentIdFromRequest(
+  req: any,
+  res: any,
+  requested?: string,
+): Promise<string | undefined> {
+  const fromClient = String(requested || "").trim();
+  if (fromClient) return fromClient;
+  const auth = await resolveAuth(req, res);
+  return auth?.userId || undefined;
+}
 
 // ============================================================================
 // الملخصات + تكملة الدفتر (صور الدفاتر)
@@ -92,18 +111,21 @@ router.get("/curriculum/summaries", async (req, res) => {
     const { data, error } = await supabaseQuery<any[]>(endpoint);
     if (error) throw new Error(String(error));
     let list = (data || []).filter((s) => s.published !== false).map(summaryToJson);
-    // بلا طالب محدّد لا نكشف بنود صف/مدرسة أخرى — القائمة تُفرَّغ.
-    if (!student_id) {
+    // بلا جلسة طالب لا نكشف بنود صف/مدرسة أخرى — القائمة تُفرَّغ.
+    const sid = await resolveStudentIdFromRequest(req, res, student_id);
+    if (!sid) {
       res.json([]);
       return;
     }
     {
-      const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
+      const [profile, splitMap] = await Promise.all([getStudentProfile(sid), getSplitMap()]);
       if (!profile) {
         res.json([]);
         return;
       }
-      list = list.filter((s) => itemVisible(s.grade, s.section, profile.grade, profile.gender, splitMap, s.school, profile.school));
+      if (!isStaffRole(profile.role)) {
+        list = list.filter((s) => itemVisible(s.grade, s.section, profile.grade, profile.gender, splitMap, s.school, profile.school));
+      }
     }
     res.json(list);
   } catch (err: any) {
@@ -249,32 +271,36 @@ function taskToJson(t: any, mySubmission?: any, lessonTitles: Record<string, str
 router.get("/curriculum/notebooks", async (req, res) => {
   try {
     const { grade, term, student_id } = req.query as { grade?: string; term?: string; student_id?: string };
+    const sid = await resolveStudentIdFromRequest(req, res, student_id);
     let endpoint = "notebook_tasks?order=created_at.desc&limit=200";
     if (grade) endpoint += `&grade=eq.${enc(grade)}`;
     if (term) endpoint += `&term=eq.${enc(term)}`;
     const { data, error } = await supabaseQuery<any[]>(endpoint);
     if (error) throw new Error(String(error));
     let subs: Record<string, any> = {};
-    let profile: { grade: string; gender: string | null; school: string } | null = null;
+    let profile: { grade: string; gender: string | null; school: string; role: string } | null = null;
     let splitMap: Record<string, boolean> = {};
-    if (student_id) {
+    if (sid) {
       const ids = (data || []).map((t) => t.id);
       if (ids.length) {
         const { data: sdata } = await supabaseQuery<any[]>(
-          `notebook_submissions?user_id=eq.${enc(student_id)}&select=task_id,status,score,feedback&limit=200`,
+          `notebook_submissions?user_id=eq.${enc(sid)}&select=task_id,status,score,feedback&limit=200`,
         );
         for (const s of sdata || []) subs[s.task_id] = s;
       }
-      [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
+      [profile, splitMap] = await Promise.all([getStudentProfile(sid), getSplitMap()]);
     }
     const lessonTitles = await lessonTitlesFor((data || []).map((t) => t.lesson_id));
     let list = (data || []).filter((t) => t.published !== false).map((t) => taskToJson(t, subs[t.id], lessonTitles));
-    // بلا ملف طالب لا نكشف دفاتر صف/مدرسة أخرى — القائمة تُفرَّغ.
+    // بلا جلسة طالب لا نكشف دفاتر صف/مدرسة أخرى — القائمة تُفرَّغ.
     if (!profile) {
       res.json([]);
       return;
     }
-    list = list.filter((t) => itemVisible(t.grade, t.section, profile!.grade, profile!.gender, splitMap, t.school, profile!.school));
+    // الإدارة تراعي كل الصفوف: لا صفّ لها يفلَر به، وإلا فرغت قائمة الطالب/المعلم.
+    if (!isStaffRole(profile.role)) {
+      list = list.filter((t) => itemVisible(t.grade, t.section, profile!.grade, profile!.gender, splitMap, t.school, profile!.school));
+    }
     res.json(list);
   } catch (err: any) {
     logger.error({ err }, "GET /curriculum/notebooks failed");

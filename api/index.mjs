@@ -28924,35 +28924,50 @@ function isStaffRole(role) {
 function isObserverRole(role) {
   return role === OBSERVER_ROLE;
 }
+async function performRefresh(refreshToken) {
+  const base = (process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co").replace(/\/+$/, "");
+  const key = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SECRET_KEY || "sb_publishable_kPG7zfG0FFZpRTkNnHhO1Q_oXoOq8fg";
+  const response = await fetch(`${base}/auth/v1/token?grant_type=refresh_token`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: key,
+      Authorization: `Bearer ${key}`
+    },
+    body: JSON.stringify({ refresh_token: refreshToken })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || typeof data.access_token !== "string") return null;
+  return {
+    accessToken: data.access_token,
+    refreshToken: typeof data.refresh_token === "string" ? data.refresh_token : void 0
+  };
+}
+function refreshOnce(refreshToken) {
+  const running = refreshInFlight.get(refreshToken);
+  if (running) return running;
+  const p = performRefresh(refreshToken).finally(() => {
+    refreshInFlight.delete(refreshToken);
+  });
+  refreshInFlight.set(refreshToken, p);
+  return p;
+}
 async function trySilentRefresh(req, res) {
   try {
     const refreshToken = req?.cookies?.supabase_refresh_token;
     if (typeof refreshToken !== "string" || !refreshToken) return null;
-    const base = (process.env.SUPABASE_URL || "https://zjxotgcsbsfwrfqtximw.supabase.co").replace(/\/+$/, "");
-    const key = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SECRET_KEY || "sb_publishable_kPG7zfG0FFZpRTkNnHhO1Q_oXoOq8fg";
-    const response = await fetch(`${base}/auth/v1/token?grant_type=refresh_token`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: key,
-        Authorization: `Bearer ${key}`
-      },
-      body: JSON.stringify({ refresh_token: refreshToken })
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || typeof data.access_token !== "string") return null;
+    const session = await refreshOnce(refreshToken);
+    if (!session) return null;
     const secure = process.env.NODE_ENV === "production";
-    if (typeof data.access_token === "string") {
-      res.cookie("supabase_access_token", data.access_token, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure,
-        path: "/",
-        maxAge: 60 * 60 * 1e3
-      });
-    }
-    if (typeof data.refresh_token === "string") {
-      res.cookie("supabase_refresh_token", data.refresh_token, {
+    res.cookie("supabase_access_token", session.accessToken, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure,
+      path: "/",
+      maxAge: 60 * 60 * 1e3
+    });
+    if (session.refreshToken) {
+      res.cookie("supabase_refresh_token", session.refreshToken, {
         httpOnly: true,
         sameSite: "lax",
         secure,
@@ -28960,7 +28975,7 @@ async function trySilentRefresh(req, res) {
         maxAge: 30 * 24 * 60 * 60 * 1e3
       });
     }
-    return data.access_token;
+    return session.accessToken;
   } catch (err) {
     logger.warn({ err }, "Middleware silent refresh failed");
     return null;
@@ -29008,13 +29023,14 @@ async function resolveAuth(req, res) {
     return null;
   }
 }
-var OBSERVER_ROLE, requireAuth, requireAdmin, OBSERVER_HIDDEN_PREFIXES, blockObserverWrites, blockObserverHiddenSections;
+var OBSERVER_ROLE, refreshInFlight, requireAuth, requireAdmin, OBSERVER_HIDDEN_PREFIXES, blockObserverWrites, blockObserverHiddenSections;
 var init_auth = __esm({
   "src/middlewares/auth.ts"() {
     "use strict";
     init_supabase();
     init_logger();
     OBSERVER_ROLE = "observer";
+    refreshInFlight = /* @__PURE__ */ new Map();
     requireAuth = async (req, res, next) => {
       const auth = await resolveAuth(req, res);
       if (!auth) {
@@ -29625,14 +29641,15 @@ async function getStudentProfile(userId) {
   if (!userId) return null;
   try {
     const { data } = await supabaseQuery(
-      `profiles?id=eq.${enc(userId)}&select=grade,gender,school&limit=1`
+      `profiles?id=eq.${enc(userId)}&select=grade,gender,school,role&limit=1`
     );
     const p = data?.[0];
     if (!p) return null;
     return {
       grade: p.grade || "",
       gender: p.gender === "\u0637\u0627\u0644\u0628" || p.gender === "\u0637\u0627\u0644\u0628\u0629" ? p.gender : null,
-      school: p.school || ""
+      school: p.school || "",
+      role: p.role || "student"
     };
   } catch {
     return null;
@@ -29889,9 +29906,12 @@ var init_curriculum = __esm({
         logger.warn({ err }, "grade_levels missing, using defaults");
       }
       res.json([
+        { id: "grade-7", name: "\u0627\u0644\u0635\u0641 \u0627\u0644\u0633\u0627\u0628\u0639", sortOrder: 0 },
         { id: "grade-8", name: "\u0627\u0644\u0635\u0641 \u0627\u0644\u062B\u0627\u0645\u0646", sortOrder: 1 },
         { id: "grade-9", name: "\u0627\u0644\u0635\u0641 \u0627\u0644\u062A\u0627\u0633\u0639", sortOrder: 2 },
-        { id: "grade-10", name: "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631", sortOrder: 3 }
+        { id: "grade-10", name: "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631", sortOrder: 3 },
+        { id: "grade-11-lit", name: "\u0627\u0644\u0635\u0641 \u0627\u0644\u062D\u0627\u062F\u064A \u0639\u0634\u0631 \u0627\u0644\u0623\u062F\u0628\u064A", sortOrder: 4 },
+        { id: "grade-11-sci", name: "\u0627\u0644\u0635\u0641 \u0627\u0644\u062D\u0627\u062F\u064A \u0639\u0634\u0631 \u0627\u0644\u0639\u0644\u0645\u064A", sortOrder: 5 }
       ]);
     });
     router2.get("/curriculum/gates", async (_req, res) => {
@@ -30173,20 +30193,23 @@ var init_curriculum = __esm({
           school: String(a.school || "").trim()
         }));
         if (student === "1") list = list.filter((a) => a.published && a.isVisible);
+        const sid = await resolveStudentIdFromRequest(req, res, student_id);
         if (student === "1") {
-          if (!student_id) {
+          if (!sid) {
             res.json([]);
             return;
           }
-          const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
+          const [profile, splitMap] = await Promise.all([getStudentProfile(sid), getSplitMap()]);
           if (!profile) {
             res.json([]);
             return;
           }
-          list = list.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school));
-        } else if (student_id) {
-          const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
-          if (profile) list = list.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school));
+          if (!isStaffRole(profile.role)) {
+            list = list.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school));
+          }
+        } else if (sid) {
+          const [profile, splitMap] = await Promise.all([getStudentProfile(sid), getSplitMap()]);
+          if (profile && !isStaffRole(profile.role)) list = list.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school));
         }
         res.json(list);
       } catch (err) {
@@ -30825,6 +30848,12 @@ var init_curriculum = __esm({
 });
 
 // src/routes/study.ts
+async function resolveStudentIdFromRequest(req, res, requested) {
+  const fromClient = String(requested || "").trim();
+  if (fromClient) return fromClient;
+  const auth = await resolveAuth(req, res);
+  return auth?.userId || void 0;
+}
 function dateOrNull(v, fallback = null) {
   const s = String(v ?? "").trim();
   if (!s) return fallback;
@@ -30936,17 +30965,20 @@ var init_study = __esm({
         const { data, error } = await supabaseQuery(endpoint);
         if (error) throw new Error(String(error));
         let list = (data || []).filter((s) => s.published !== false).map(summaryToJson);
-        if (!student_id) {
+        const sid = await resolveStudentIdFromRequest(req, res, student_id);
+        if (!sid) {
           res.json([]);
           return;
         }
         {
-          const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
+          const [profile, splitMap] = await Promise.all([getStudentProfile(sid), getSplitMap()]);
           if (!profile) {
             res.json([]);
             return;
           }
-          list = list.filter((s) => itemVisible(s.grade, s.section, profile.grade, profile.gender, splitMap, s.school, profile.school));
+          if (!isStaffRole(profile.role)) {
+            list = list.filter((s) => itemVisible(s.grade, s.section, profile.grade, profile.gender, splitMap, s.school, profile.school));
+          }
         }
         res.json(list);
       } catch (err) {
@@ -31039,6 +31071,7 @@ var init_study = __esm({
     router3.get("/curriculum/notebooks", async (req, res) => {
       try {
         const { grade, term, student_id } = req.query;
+        const sid = await resolveStudentIdFromRequest(req, res, student_id);
         let endpoint = "notebook_tasks?order=created_at.desc&limit=200";
         if (grade) endpoint += `&grade=eq.${enc2(grade)}`;
         if (term) endpoint += `&term=eq.${enc2(term)}`;
@@ -31047,15 +31080,15 @@ var init_study = __esm({
         let subs = {};
         let profile = null;
         let splitMap = {};
-        if (student_id) {
+        if (sid) {
           const ids = (data || []).map((t) => t.id);
           if (ids.length) {
             const { data: sdata } = await supabaseQuery(
-              `notebook_submissions?user_id=eq.${enc2(student_id)}&select=task_id,status,score,feedback&limit=200`
+              `notebook_submissions?user_id=eq.${enc2(sid)}&select=task_id,status,score,feedback&limit=200`
             );
             for (const s of sdata || []) subs[s.task_id] = s;
           }
-          [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
+          [profile, splitMap] = await Promise.all([getStudentProfile(sid), getSplitMap()]);
         }
         const lessonTitles = await lessonTitlesFor((data || []).map((t) => t.lesson_id));
         let list = (data || []).filter((t) => t.published !== false).map((t) => taskToJson(t, subs[t.id], lessonTitles));
@@ -31063,7 +31096,9 @@ var init_study = __esm({
           res.json([]);
           return;
         }
-        list = list.filter((t) => itemVisible(t.grade, t.section, profile.grade, profile.gender, splitMap, t.school, profile.school));
+        if (!isStaffRole(profile.role)) {
+          list = list.filter((t) => itemVisible(t.grade, t.section, profile.grade, profile.gender, splitMap, t.school, profile.school));
+        }
         res.json(list);
       } catch (err) {
         logger.error({ err }, "GET /curriculum/notebooks failed");
@@ -35607,7 +35642,7 @@ async function resolveProfileFromSession(accessToken) {
     return null;
   }
 }
-async function getActiveStudent(req) {
+async function getActiveStudent(req, res) {
   const authUserId = req?.auth?.userId;
   if (authUserId) {
     try {
@@ -35621,7 +35656,12 @@ async function getActiveStudent(req) {
   const sessionProfile = await resolveProfileFromSession(
     req?.cookies?.supabase_access_token
   );
-  return sessionProfile || null;
+  if (sessionProfile) return sessionProfile;
+  if (!res) return null;
+  const refreshed = await trySilentRefresh(req, res);
+  if (!refreshed) return null;
+  if (req) req.cookies = { ...req.cookies || {}, supabase_access_token: refreshed };
+  return await resolveProfileFromSession(refreshed) || null;
 }
 var DEFAULT_SCHOOL = "\u0645\u062F\u0631\u0633\u0629 \u0648\u0627\u064A\u0644\u062F";
 function toStudentShape(profile, progress) {
@@ -35812,7 +35852,7 @@ router4.get("/platform/identity", async (_req, res) => {
 });
 router4.get("/student/dashboard", requireAuth, async (req, res) => {
   try {
-    const activeStudent = await getActiveStudent(req);
+    const activeStudent = await getActiveStudent(req, res);
     if (!activeStudent) {
       res.status(404).json({ error: "\u0644\u0627 \u064A\u0648\u062C\u062F \u0637\u0644\u0627\u0628 \u0645\u0633\u062C\u0644\u0648\u0646 \u0628\u0639\u062F" });
       return;
@@ -35936,7 +35976,7 @@ router4.get("/teacher/dashboard", requireAdmin, async (_req, res) => {
 router4.get("/courses", async (req, res) => {
   try {
     const [activeStudent, { data }] = await Promise.all([
-      getActiveStudent(req),
+      getActiveStudent(req, res),
       supabaseQuery("courses?published=eq.true&order=sort_order.asc")
     ]);
     const courseProgressMap = activeStudent ? await getCourseProgressMap(activeStudent.id) : {};
@@ -35988,7 +36028,7 @@ router4.post("/lessons/:id/complete", requireAuth, async (req, res) => {
 router4.get("/assignments", async (req, res) => {
   try {
     const [activeStudent, { data }] = await Promise.all([
-      getActiveStudent(req),
+      getActiveStudent(req, res),
       supabaseQuery("assignments?published=eq.true&order=due_date.asc")
     ]);
     let submissions = [];
@@ -36038,7 +36078,9 @@ router4.get("/assignments", async (req, res) => {
         res.json(ListAssignmentsResponse.parse([]));
         return;
       }
-      parsed = parsed.filter((a) => itemVisible2(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school));
+      if (!isStaffRole(activeStudent.role)) {
+        parsed = parsed.filter((a) => itemVisible2(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school));
+      }
     }
     res.json(ListAssignmentsResponse.parse(parsed));
   } catch (err) {
@@ -36155,7 +36197,7 @@ router4.get("/assignments/:id/mine", requireAuth, async (req, res) => {
 router4.get("/assessments", async (req, res) => {
   try {
     const [activeStudent, { data }] = await Promise.all([
-      getActiveStudent(req),
+      getActiveStudent(req, res),
       supabaseQuery("assessments?published=eq.true&order=available_date.asc")
     ]);
     let attempts = [];
@@ -36195,9 +36237,11 @@ router4.get("/assessments", async (req, res) => {
         res.json(ListAssessmentsResponse.parse([]));
         return;
       }
-      visible = parsed.filter(
-        (a) => itemVisible2(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school)
-      );
+      if (!isStaffRole(activeStudent.role)) {
+        visible = parsed.filter(
+          (a) => itemVisible2(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school)
+        );
+      }
     }
     res.json(ListAssessmentsResponse.parse(visible));
   } catch (err) {
@@ -39036,9 +39080,12 @@ var router8 = (0, import_express8.Router)();
 var enc4 = (v) => encodeURIComponent(Array.isArray(v) ? v[0] ?? "" : v ?? "");
 var V8_HINT = "\u0646\u0641\u0651\u0630 \u0627\u0644\u0645\u0644\u0641 sql_grades_schools_v8.sql \u0641\u064A Supabase \u2190 SQL Editor \u0623\u0648\u0644\u0627\u064B.";
 var DEFAULT_GRADES = [
+  { id: "grade-7", name: "\u0627\u0644\u0635\u0641 \u0627\u0644\u0633\u0627\u0628\u0639", sortOrder: 0, color: "#b7791f" },
   { id: "grade-8", name: "\u0627\u0644\u0635\u0641 \u0627\u0644\u062B\u0627\u0645\u0646", sortOrder: 1, color: "#2f7772" },
   { id: "grade-9", name: "\u0627\u0644\u0635\u0641 \u0627\u0644\u062A\u0627\u0633\u0639", sortOrder: 2, color: "#b7791f" },
-  { id: "grade-10", name: "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631", sortOrder: 3, color: "#17413f" }
+  { id: "grade-10", name: "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631", sortOrder: 3, color: "#17413f" },
+  { id: "grade-11-lit", name: "\u0627\u0644\u0635\u0641 \u0627\u0644\u062D\u0627\u062F\u064A \u0639\u0634\u0631 \u0627\u0644\u0623\u062F\u0628\u064A", sortOrder: 4, color: "#6a1b9a" },
+  { id: "grade-11-sci", name: "\u0627\u0644\u0635\u0641 \u0627\u0644\u062D\u0627\u062F\u064A \u0639\u0634\u0631 \u0627\u0644\u0639\u0644\u0645\u064A", sortOrder: 5, color: "#0d47a1" }
 ];
 var DEFAULT_SCHOOLS = [
   { id: "school-wild", name: "\u0645\u062F\u0631\u0633\u0629 \u0648\u0627\u064A\u0644\u062F", sortOrder: 1, color: "#17413f" },

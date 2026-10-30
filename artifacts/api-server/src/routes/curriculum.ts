@@ -1,8 +1,8 @@
 import { Router, type IRouter } from "express";
 import { supabaseQuery } from "../lib/supabase";
-import { requireAuth, requireAdmin } from "../middlewares/auth";
+import { requireAuth, requireAdmin, isStaffRole } from "../middlewares/auth";
 import { logger } from "../lib/logger";
-import { saveError, dateOrNull, firstUuid } from "./study";
+import { saveError, dateOrNull, firstUuid, resolveStudentIdFromRequest } from "./study";
 
 const router: IRouter = Router();
 
@@ -58,14 +58,14 @@ export async function getSplitMap(): Promise<Record<string, boolean>> {
   }
 }
 
-/** بروفايل الطالب المختصر (الصف + الجنس + المدرسة) */
+/** بروفايل الطالب المختصر (الصف + الجنس + المدرسة + الدور) */
 export async function getStudentProfile(
   userId?: string,
-): Promise<{ grade: string; gender: string | null; school: string } | null> {
+): Promise<{ grade: string; gender: string | null; school: string; role: string } | null> {
   if (!userId) return null;
   try {
     const { data } = await supabaseQuery<any[]>(
-      `profiles?id=eq.${enc(userId)}&select=grade,gender,school&limit=1`,
+      `profiles?id=eq.${enc(userId)}&select=grade,gender,school,role&limit=1`,
     );
     const p = data?.[0];
     if (!p) return null;
@@ -73,6 +73,7 @@ export async function getStudentProfile(
       grade: p.grade || "",
       gender: p.gender === "طالب" || p.gender === "طالبة" ? p.gender : null,
       school: p.school || "",
+      role: p.role || "student",
     };
   } catch {
     return null;
@@ -664,20 +665,25 @@ router.get("/curriculum/assessments", async (req, res) => {
     }));
     if (student === "1") list = list.filter((a) => a.published && a.isVisible);
     // طالب بلا ملف تعريف لا يرى إلا بنود صفه ومدرسته — بلا ملف، لا شيء يُكشف.
+    // المعرّف من الجلسة عند غياب ما ترسله الواجهة: التحميل قد يسبق جاهزية اللوحة،
+    // وقد تُجمّد كروم أندرويد التبويب فتنتهي الجلسة — فلا تختفي الاختبارات.
+    const sid = await resolveStudentIdFromRequest(req, res, student_id);
     if (student === "1") {
-      if (!student_id) {
+      if (!sid) {
         res.json([]);
         return;
       }
-      const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
+      const [profile, splitMap] = await Promise.all([getStudentProfile(sid), getSplitMap()]);
       if (!profile) {
         res.json([]);
         return;
       }
-      list = list.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school));
-    } else if (student_id) {
-      const [profile, splitMap] = await Promise.all([getStudentProfile(student_id), getSplitMap()]);
-      if (profile) list = list.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school));
+      if (!isStaffRole(profile.role)) {
+        list = list.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school));
+      }
+    } else if (sid) {
+      const [profile, splitMap] = await Promise.all([getStudentProfile(sid), getSplitMap()]);
+      if (profile && !isStaffRole(profile.role)) list = list.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school));
     }
     res.json(list);
   } catch (err: any) {

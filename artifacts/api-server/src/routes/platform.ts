@@ -13,7 +13,7 @@ import {
   UpdateTeacherSettingsResponse,
 } from "@workspace/api-zod";
 import { supabaseQuery, getSupabaseUser } from "../lib/supabase";
-import { requireAuth, requireAdmin, type AuthedRequest } from "../middlewares/auth";
+import { requireAuth, requireAdmin, trySilentRefresh, isStaffRole, type AuthedRequest } from "../middlewares/auth";
 import { logger } from "../lib/logger";
 import { saveError, dateOrNull, firstUuid } from "./study";
 
@@ -85,8 +85,12 @@ async function resolveProfileFromSession(accessToken?: string): Promise<any | nu
   }
 }
 
-/** الطالب النشط الحالي: صاحب الجلسة فقط — بلا أي بديل تجريبي (وضع الإنتاج) */
-async function getActiveStudent(req?: any): Promise<any | null> {
+/** الطالب النشط الحالي: صاحب الجلسة فقط — بلا أي بديل تجريبي (وضع الإنتاج)
+ *  توكن الوصول يعيش ساعة واحدة، وكروم أندرويد يجمّد التبويب في الخلفية فيتقادم
+ *  قبل أن تنعشه الواجهة. إن جاء الطلب بتوكن منتهٍ نجدّد صامتاً من كوكي التحديث
+ *  (ونُخرج كوكيز جديدة) ونعيد المحاولة — وإلا انفرغت قوائم الواجبات والدفاتر
+ *  بينما تبقى الوحدات ظاهرة، لأنّها لا تحتاج الجلسة أصلاً. */
+async function getActiveStudent(req?: any, res?: any): Promise<any | null> {
   // مسار الجلسة عبر الوسيط (إن وُجد)
   const authUserId = (req as AuthedRequest)?.auth?.userId;
   if (authUserId) {
@@ -100,7 +104,12 @@ async function getActiveStudent(req?: any): Promise<any | null> {
   const sessionProfile = await resolveProfileFromSession(
     req?.cookies?.supabase_access_token,
   );
-  return sessionProfile || null;
+  if (sessionProfile) return sessionProfile;
+  if (!res) return null;
+  const refreshed = await trySilentRefresh(req as any, res);
+  if (!refreshed) return null;
+  if (req) req.cookies = { ...(req.cookies || {}), supabase_access_token: refreshed };
+  return (await resolveProfileFromSession(refreshed)) || null;
 }
 
 /** المدرسة الافتراضية — تُستخدم فقط عند إضافة طالب بلا مدرسة */
@@ -343,7 +352,7 @@ router.get("/platform/identity", async (_req, res) => {
 
 router.get("/student/dashboard", requireAuth, async (req, res) => {
   try {
-    const activeStudent = await getActiveStudent(req);
+    const activeStudent = await getActiveStudent(req, res);
     if (!activeStudent) {
       res.status(404).json({ error: "لا يوجد طلاب مسجلون بعد" });
       return;
@@ -497,7 +506,7 @@ router.get("/teacher/dashboard", requireAdmin, async (_req, res) => {
 router.get("/courses", async (req, res) => {
   try {
     const [activeStudent, { data }] = await Promise.all([
-      getActiveStudent(req),
+      getActiveStudent(req, res),
       supabaseQuery<any[]>("courses?published=eq.true&order=sort_order.asc"),
     ]);
 
@@ -560,7 +569,7 @@ router.post("/lessons/:id/complete", requireAuth, async (req, res) => {
 router.get("/assignments", async (req, res) => {
   try {
     const [activeStudent, { data }] = await Promise.all([
-      getActiveStudent(req),
+      getActiveStudent(req, res),
       supabaseQuery<any[]>("assignments?published=eq.true&order=due_date.asc"),
     ]);
 
@@ -613,7 +622,11 @@ router.get("/assignments", async (req, res) => {
         res.json(ListAssignmentsResponse.parse([]));
         return;
       }
-      parsed = parsed.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school));
+      // الإدارة (معلم/رقابة) تراعي كل الصفوف: صفّها هي غير محدد، ففلترته بصفّه
+      // تُفرغ قائمة «الواجبات والتكليفات» عنده وتظهر له كأنها بلا واجبات.
+      if (!isStaffRole(activeStudent.role)) {
+        parsed = parsed.filter((a) => itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school));
+      }
     }
 
     res.json(ListAssignmentsResponse.parse(parsed));
@@ -744,7 +757,7 @@ router.get("/assignments/:id/mine", requireAuth, async (req, res) => {
 router.get("/assessments", async (req, res) => {
   try {
     const [activeStudent, { data }] = await Promise.all([
-      getActiveStudent(req),
+      getActiveStudent(req, res),
       supabaseQuery<any[]>("assessments?published=eq.true&order=available_date.asc"),
     ]);
 
@@ -789,9 +802,11 @@ router.get("/assessments", async (req, res) => {
         res.json(ListAssessmentsResponse.parse([]));
         return;
       }
-      visible = parsed.filter((a) =>
-        itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school),
-      );
+      if (!isStaffRole(activeStudent.role)) {
+        visible = parsed.filter((a) =>
+          itemVisible(a.grade, a.section, profile.grade, profile.gender, splitMap, a.school, profile.school),
+        );
+      }
     }
 
     res.json(ListAssessmentsResponse.parse(visible));
