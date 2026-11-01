@@ -1421,6 +1421,58 @@ router.post("/teacher/curriculum/:kind/:id/deduct", requireAdmin, async (req, re
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════════
+   العلامة الموحّدة — منح كل من سلّم الواجب علامة واحدة دفعة واحدة،
+   بلا الحاجة لتقييم كل طالب على حدة. تُطبَّق على المسلِّمين فعلاً
+   (من لديهم إجابة أو صورة) فقط، ما لم يُحدَّد طلاب بعينهم.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+router.post("/teacher/curriculum/assignments/:id/bulk-score", requireAdmin, async (req, res) => {
+  try {
+    const assignmentId = enc(String(req.params.id || ""));
+    const { score, feedback, studentIds } = req.body || {};
+    if (score === null || score === undefined || score === "") {
+      res.status(400).json({ error: "حدد العلامة" });
+      return;
+    }
+    const pts = Number(score);
+    if (!Number.isFinite(pts)) {
+      res.status(400).json({ error: "العلامة يجب أن تكون رقماً" });
+      return;
+    }
+    const { data: subs, error } = await supabaseQuery<any[]>(
+      `assignment_submissions?assignment_id=eq.${assignmentId}&select=id,user_id,answer&limit=2000`,
+    );
+    if (error) throw new Error(String(error));
+    const wanted = Array.isArray(studentIds) && studentIds.length
+      ? new Set(studentIds.map((x: unknown) => String(x || "").trim().toLowerCase()))
+      : null;
+    const hasSolution = (s: any) =>
+      !!s && ((s.answer && String(s.answer).trim()) || (Array.isArray(s.photos) && s.photos.filter(Boolean).length));
+    const targets = (subs || []).filter((s) => {
+      const uid = String(s.user_id || "").trim().toLowerCase();
+      if (wanted && !wanted.has(uid)) return false;
+      return hasSolution(s);
+    });
+    if (!targets.length) {
+      res.json({ success: true, updated: 0, message: "لا تسليمات مطابقة لمنحها العلامة" });
+      return;
+    }
+    const fb = typeof feedback === "string" && feedback.trim() ? feedback : null;
+    const nowIso = new Date().toISOString();
+    let ok = 0;
+    for (const t of targets) {
+      const body: Record<string, any> = { score: pts, status: "تم التقييم", reviewed_at: nowIso };
+      if (fb !== null) body.feedback = fb;
+      const { error: e2 } = await supabaseQuery(`assignment_submissions?id=eq.${enc(t.id)}`, { method: "PATCH", body });
+      if (!e2) ok++;
+    }
+    res.json({ success: true, updated: ok, message: `تم منح ${ok} طالباً العلامة ${pts} ✓` });
+  } catch (err: any) {
+    logger.error({ err }, "POST hw bulk-score failed");
+    res.status(500).json({ error: "تعذر تطبيق العلامة الموحدة" });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════════
    تسجيل يدوي لاختبار — من لم يجرّبه: يُنشأ له سجل بنتيجة يضعها الأستاذ.
    ═══════════════════════════════════════════════════════════════════════════════ */
 router.post("/teacher/curriculum/assessments/:id/record", requireAdmin, async (req, res) => {

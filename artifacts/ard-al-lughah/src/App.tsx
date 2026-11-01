@@ -12229,11 +12229,25 @@ function HwReviewModal({ hw, subs, grading, setGrading, saveGrade, onClose, onRe
   const [recordingId, setRecordingId] = useState('');
   const [search, setSearch] = useState('');
 
+  const normId = (x: any) => String(x ?? '').trim().toLowerCase();
+  // طالب «حلّ» الواجب فعلاً = له إجابة مكتوبة أو صورة مرفوعة — لا مجرد سطر تسليم.
+  const hasSolution = (s: any) =>
+    !!(s && ((s.answer && String(s.answer).trim()) || (Array.isArray(s.photos) && s.photos.filter(Boolean).length)));
+
   const { students: roster, loading: rosterLoading } = useGradeRoster(hw?.grade, hw?.school);
-  const submittedIds = useMemo(() => new Set(subs.map((s) => s.student?.id).filter(Boolean)), [subs]);
+  // المسلّمون الحقيقيون فقط (من رفعوا حلاً) — هؤلاء يظهرون في تبويب «المسلّمون».
+  const doneSubs = useMemo(() => subs.filter(hasSolution), [subs]);
+  // معرّفات من حلّوا — مُطبَّعة، لاستبعادهم نهائياً من قائمة «لم يسلّم».
+  const submittedIds = useMemo(() => new Set(doneSubs.map((s) => normId(s.student?.id)).filter(Boolean)), [doneSubs]);
+  // علامة أي طالب سبق تسجيلها يدوياً (تسليم بلا حل) — لإظهارها في صف غير المسلِّم.
+  const recordedByUserId = useMemo(() => {
+    const map: Record<string, any> = {};
+    for (const s of subs) { const id = normId(s.student?.id); if (id && !hasSolution(s)) map[id] = s; }
+    return map;
+  }, [subs]);
   const missing = useMemo(() => {
     const needle = String(search || '').trim();
-    return roster.filter((s) => !submittedIds.has(s.id) && (!needle || (s.name || '').includes(needle)));
+    return roster.filter((st) => !submittedIds.has(normId(st.id)) && (!needle || (st.name || '').includes(needle)));
   }, [roster, submittedIds, search]);
 
   const recordManual = async (userId: string, score: string) => {
@@ -12251,11 +12265,11 @@ function HwReviewModal({ hw, subs, grading, setGrading, saveGrade, onClose, onRe
   };
 
   return (
-    <Modal title={hw?.title || 'مراجعة الواجب'} eyebrow={`حل ${subs.length} · لم يحل ${missing.length}`} onClose={onClose} maxWidth="max-w-5xl">
+    <Modal title={hw?.title || 'مراجعة الواجب'} eyebrow={`حل ${doneSubs.length} · لم يحل ${missing.length}`} onClose={onClose} maxWidth="max-w-5xl">
       {/* العدّادات */}
       <div className="mb-4 grid grid-cols-2 gap-2.5">
         <div className="flex items-center gap-3 rounded-2xl bg-green-600/10 px-4 py-3">
-          <span className="font-display text-2xl font-extrabold tabular-nums text-green-800">{subs.length}</span>
+          <span className="font-display text-2xl font-extrabold tabular-nums text-green-800">{doneSubs.length}</span>
           <span className="text-xs font-extrabold text-green-800">حلّوا<br />الواجب</span>
         </div>
         <div className="flex items-center gap-3 rounded-2xl bg-destructive/10 px-4 py-3">
@@ -12264,13 +12278,6 @@ function HwReviewModal({ hw, subs, grading, setGrading, saveGrade, onClose, onRe
         </div>
       </div>
 
-      <BulkDeductBar
-        kind="assignments"
-        itemId={hw?.id || ''}
-        gradedCount={subs.length}
-        onDone={onReload}
-      />
-
       <div className="mb-4 flex gap-2 rounded-2xl border border-border bg-card p-1.5" data-testid="hw-review-tabs">
         <button
           type="button"
@@ -12278,7 +12285,7 @@ function HwReviewModal({ hw, subs, grading, setGrading, saveGrade, onClose, onRe
           data-testid="button-hw-tab-done"
           className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-extrabold transition-colors ${rosterTab === 'done' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-primary'}`}
         >
-          المسلّمون ({subs.length})
+          المسلّمون ({doneSubs.length})
         </button>
         <button
           type="button"
@@ -12294,7 +12301,7 @@ function HwReviewModal({ hw, subs, grading, setGrading, saveGrade, onClose, onRe
         rosterLoading ? <StateNotice type="loading" /> : !missing.length ? (
           <div className="rounded-3xl border border-green-500/30 bg-green-500/8 px-6 py-12 text-center">
             <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-green-600/15 text-green-800"><CheckCircle2 size={30} /></span>
-            <p className="font-display text-xl font-bold text-green-800">الكل سلّم — لا متأخرين</p>
+            <p className="font-display text-xl font-bold text-green-800">الكل حلّ — لا متأخرين</p>
           </div>
         ) : (
           <div className="space-y-2.5">
@@ -12307,25 +12314,33 @@ function HwReviewModal({ hw, subs, grading, setGrading, saveGrade, onClose, onRe
                 className="w-full rounded-xl border border-input bg-card py-2.5 pl-3 pr-9 text-sm outline-none placeholder:text-muted-foreground/60 focus:border-primary"
               />
             </div>
-            <p className="rounded-2xl bg-destructive/8 px-4 py-3 text-sm font-extrabold text-destructive">
-              {missing.length} طالب لم يسلّموا — ضع العلامة لمن يستحق فيُنشأ تسليمه ويُقيَّم فوراً
+            <p className="flex items-center gap-2 rounded-2xl bg-destructive/8 px-4 py-3 text-sm font-extrabold text-destructive">
+              <MinusCircle size={16} />
+              {missing.length} طالب لم يسلّموا — تسجيل علامة لهم يُحتسب خصماً من درجتهم ويبقون في قائمة «لم يسلّم»
             </p>
             {missing.map((st) => (
               <MissingStudentRow
                 key={st.id}
                 student={st}
                 points={Number(hw?.points) || 20}
+                initialScore={recordedByUserId[normId(st.id)]?.score ?? null}
                 onRecord={recordManual}
                 saving={recordingId === st.id}
               />
             ))}
           </div>
         )
-      ) : !subs.length ? (
+      ) : !doneSubs.length ? (
         <p className="rounded-2xl bg-secondary/50 px-4 py-8 text-center text-sm text-muted-foreground">لا تسليمات على هذا الواجب بعد — ستظهر أسماء الطلاب هنا فور تسليمهم.</p>
       ) : (
         <div className="space-y-4">
-          {subs.map((sub) => (
+          <BulkGradeBar
+            itemId={hw?.id || ''}
+            points={Number(hw?.points) || 20}
+            studentIds={doneSubs.map((s) => s.student?.id).filter(Boolean)}
+            onDone={onReload}
+          />
+          {doneSubs.map((sub) => (
             <div key={sub.id} className="rounded-2xl border border-border bg-background p-4">
               <div className="flex items-center gap-3">
                 <Avatar name={sub.student?.name} src={sub.student?.avatarUrl} size="sm" />
@@ -12357,6 +12372,82 @@ function HwReviewModal({ hw, subs, grading, setGrading, saveGrade, onClose, onRe
         </div>
       )}
     </Modal>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   العلامة الموحّدة — منح كل المسلّمين علامة واحدة دفعة واحدة،
+   بدل تقييم كل طالب على حدة.
+   ═══════════════════════════════════════════════════════════════════════ */
+function BulkGradeBar({ itemId, points, studentIds, onDone }: {
+  itemId: string;
+  points: number;
+  studentIds: string[];
+  onDone?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [score, setScore] = useState('');
+  const [feedback, setFeedback] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const run = async () => {
+    const n = Number(score);
+    if (score === '' || !Number.isFinite(n) || n < 0) { setMsg('اكتب علامة بين 0 و' + points); return; }
+    if (points && n > points) { setMsg(`العلامة لا تتجاوز ${points} نقطة`); return; }
+    setBusy(true); setMsg('');
+    try {
+      const r = await jsonFetch(`/api/teacher/curriculum/assignments/${itemId}/bulk-score`, {
+        method: 'POST',
+        body: { score: n, feedback, studentIds },
+      });
+      setMsg(r?.message || 'تم منح العلامة');
+      onDone?.();
+      window.setTimeout(() => setMsg(''), 3500);
+    } catch (e: any) {
+      setMsg(e?.message || 'تعذر تطبيق العلامة');
+    } finally { setBusy(false); }
+  };
+
+  if (!itemId || !studentIds.length) return null;
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-border bg-card" data-testid="bulk-grade-bar">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-3 px-4 py-3 text-sm font-extrabold text-primary transition-colors hover:bg-secondary/40"
+      >
+        <span className="grid h-9 w-9 place-items-center rounded-xl bg-green-600/12 text-green-800"><CheckCircle2 size={17} /></span>
+        <span className="flex-1 text-right">علامة موحّدة لكل المسلّمين</span>
+        <span className="rounded-full bg-secondary px-2.5 py-0.5 text-[11px] font-bold text-muted-foreground">{studentIds.length} مُسلِّم</span>
+        <ChevronLeft size={16} className={`text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`} />
+      </button>
+      {open && (
+        <div className="animate-rise border-t border-border bg-background/60 p-4">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <input
+              type="number" min={0} max={points || undefined}
+              value={score} onChange={(e) => setScore(e.target.value)}
+              placeholder={`العلامة / ${points || '؟'}`}
+              className="h-12 w-32 rounded-xl border border-input bg-card px-3 text-center font-display text-base font-extrabold tabular-nums outline-none focus:border-primary"
+              data-testid="input-bulk-score"
+            />
+            <input
+              value={feedback} onChange={(e) => setFeedback(e.target.value)}
+              placeholder="ملاحظة موحّدة (اختياري)..."
+              className="h-12 min-w-[180px] flex-1 rounded-xl border border-input bg-card px-3 text-sm outline-none placeholder:text-muted-foreground/60 focus:border-primary"
+              data-testid="input-bulk-feedback"
+            />
+            <Button onClick={run} disabled={busy || score === ''} variant="primary" className="px-5 py-2.5 text-xs" data-testid="button-run-bulk-score">
+              {busy ? <><RefreshCw size={14} className="animate-spin" /> جارٍ التطبيق...</> : <><CheckCircle2 size={14} /> منح الجميع العلامة</>}
+            </Button>
+          </div>
+          <p className="mt-2.5 text-[11px] font-bold text-muted-foreground">تُطبَّق على كل من رفع حلاً فقط — لا تلمس من لم يسلّموا.</p>
+          {msg && <p className="mt-2 rounded-lg bg-green-600/15 px-3 py-2 text-xs font-extrabold text-green-800">{msg}</p>}
+        </div>
+      )}
+    </div>
   );
 }
 /* ═══════════════════════════════════════════════════════════════════════
@@ -12522,20 +12613,34 @@ function ExamReviewModal({ exam, attempts, onClose, onReload }: {
 }
 
 /* صف طالب لم يسلّم + تسجيل سريع لعلامته (ينشئ التسليم ويقيّمه دفعة واحدة) */
-function MissingStudentRow({ student, points, onRecord, saving }: {
+function MissingStudentRow({ student, points, initialScore, onRecord, saving }: {
   student: any;
   points: number;
+  initialScore?: number | null;
   onRecord: (userId: string, score: string) => void;
   saving: boolean;
 }) {
-  const [score, setScore] = useState('');
+  const [score, setScore] = useState(initialScore === null || initialScore === undefined ? '' : String(initialScore));
+  const recorded = initialScore !== null && initialScore !== undefined;
   return (
     <div className="flex flex-wrap items-center gap-2.5 rounded-2xl border border-border bg-card p-3" data-testid={`missing-row-${student.id}`}>
       <Avatar name={student.name} src={student.avatarUrl} size="sm" />
       <div className="min-w-[140px] flex-1">
         <p className="truncate text-sm font-extrabold text-primary">{student.name}</p>
-        <p className="mt-0.5 text-[11px] font-bold text-destructive">لم يسلّم بعد</p>
+        <p className={`mt-0.5 inline-flex items-center gap-1 text-[11px] font-bold ${recorded ? 'text-amber-700' : 'text-destructive'}`}>
+          {recorded ? <><MinusCircle size={11} /> لم يسلّم — عُلّمت {initialScore}</> : 'لم يسلّم بعد'}
+        </p>
       </div>
+      <button
+        type="button"
+        onClick={() => { setScore('0'); onRecord(student.id, '0'); }}
+        disabled={saving}
+        className="inline-flex min-h-[48px] items-center gap-1 rounded-xl border border-destructive/30 bg-destructive/10 px-3 text-xs font-extrabold text-destructive transition-all active:scale-[.97] disabled:opacity-50"
+        data-testid={`button-zero-${student.id}`}
+        title="تسجيل صفر — خصم كامل من درجته"
+      >
+        <MinusCircle size={13} /> صفر
+      </button>
       <input
         type="number" min={0} max={points || undefined}
         value={score}
