@@ -12,6 +12,9 @@ export type AuthInfo = {
   role: string;
   grade: string;
   gender: string | null;
+  /** دور الحساب داخل قسم التحضير — من profiles.prep_role، وقد يكون فارغاً */
+  prepRole?: string | null;
+  fullName?: string;
 };
 
 export type AuthedRequest = Request & { auth?: AuthInfo };
@@ -31,6 +34,9 @@ export function isStaffRole(role: unknown): boolean {
 export function isObserverRole(role: unknown): boolean {
   return role === OBSERVER_ROLE;
 }
+
+/** حتى متى نعرف أن عمود prep_role غير موجود (لم يُنفَّذ SQL بعد) — 0 = مجهول/موجود */
+let prepRoleMissingUntil = 0;
 
 /** استدعاء Supabase للتجديد — بلا كوكيز: النتيجة تُشارك بين الطلبات المتوازية */
 async function performRefresh(
@@ -135,11 +141,30 @@ export async function resolveAuth(req: Request, res?: Parameters<RequestHandler>
     }
     const userId = String((user as any)?.id || "");
     if (!userId) return null;
-    const { data } = await supabaseQuery<any[]>(
-      `profiles?id=eq.${encodeURIComponent(userId)}&select=id,email,role,grade,gender&limit=1`,
-    );
-    const profile = data?.[0];
-    if (!profile) return null;
+    // prep_role يختفي إن لم يُنفَّذ sql_preparation_v1.sql بعد — والعمود الناقص
+    // لا يرفض به طلب: نعيد جلب البروفايل بدونه فيبقى الموقع يعمل كما كان.
+    let profile: any = null;
+    let failure: unknown = null;
+    const columnSets = prepRoleMissingUntil
+      ? ["id,email,role,grade,gender"]
+      : ["id,email,role,grade,gender,prep_role,full_name", "id,email,role,grade,gender"];
+    for (const cols of columnSets) {
+      const { data, error } = await supabaseQuery<any[]>(
+        `profiles?id=eq.${encodeURIComponent(userId)}&select=${cols}&limit=1`,
+      );
+      if (error) {
+        failure = error;
+        // العمود غير موجود؟ نتوقف عن طلبه خمس دقائق ثم نحاول مجدداً
+        if (/prep_role/.test(String(error))) prepRoleMissingUntil = Date.now() + 5 * 60 * 1000;
+        continue;
+      }
+      profile = data?.[0];
+      break;
+    }
+    if (!profile) {
+      logger.warn({ failure }, "resolveAuth: لم يُعثر على بروفايل للحساب");
+      return null;
+    }
     const gender = profile.gender === "طالب" || profile.gender === "طالبة" ? profile.gender : null;
     return {
       userId: profile.id,
@@ -147,6 +172,8 @@ export async function resolveAuth(req: Request, res?: Parameters<RequestHandler>
       role: profile.role || "student",
       grade: profile.grade || "",
       gender,
+      prepRole: typeof profile.prep_role === "string" ? profile.prep_role : null,
+      fullName: typeof profile.full_name === "string" ? profile.full_name : "",
     };
   } catch (err) {
     logger.warn({ err }, "resolveAuth failed");
@@ -191,6 +218,10 @@ export const requireAdmin: RequestHandler = async (req, res, next) => {
    ============================================================================ */
 const OBSERVER_HIDDEN_PREFIXES = ["/teacher/foundation", "/teacher/settings"];
 
+/* حساب الرقابة يقرأ التحضير ويوقّع عليه — هذه كتابته الوحيدة المسموحة،
+   ومسارها محصور حرفياً: لا رفع ملف ولا حذف ولا تعديل بيانات أحد. */
+const OBSERVER_ALLOWED_WRITES = ["/teacher/prep/sign"];
+
 export const blockObserverWrites: RequestHandler = async (req, res, next) => {
   if (req.path.startsWith("/auth/")) {
     next();
@@ -206,7 +237,7 @@ export const blockObserverWrites: RequestHandler = async (req, res, next) => {
     next();
     return;
   }
-  if (isObserverRole(auth.role)) {
+  if (isObserverRole(auth.role) && !(req.method === "POST" && OBSERVER_ALLOWED_WRITES.includes(req.path))) {
     res.status(403).json({
       error: "حساب الرقابة للاطلاع فقط — لا صلاحية له بالتعديل أو الإضافة أو الحذف.",
     });

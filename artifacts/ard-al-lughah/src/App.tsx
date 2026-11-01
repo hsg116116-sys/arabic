@@ -34,8 +34,10 @@ import {
   CalendarDays,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   CircleAlert,
   BookCopy,
   Camera,
@@ -47,6 +49,7 @@ import {
   Eye,
   EyeOff,
   FileCode2,
+  FileSignature,
   FileText,
   Globe,
   GraduationCap,
@@ -87,6 +90,7 @@ import {
   Plus,
   Quote,
   RefreshCw,
+  RotateCcw,
   Save,
   Search,
   Settings,
@@ -510,6 +514,7 @@ const navTeacher = [
   { href: '/teacher/students', label: 'الطلاب', icon: UsersRound },
   { href: '/teacher/foundation', label: 'إعداد التأسيس', icon: Sprout },
   { href: '/teacher/content', label: 'المنهاج والوحدات', icon: Library },
+  { href: '/teacher/prep', label: 'التحضير', icon: FileSignature },
   { href: '/teacher/summaries', label: 'الملخصات وأوراق العمل', icon: FileText },
   { href: '/teacher/books', label: 'الكتب المدرسية', icon: BookOpen },
   { href: '/teacher/exams', label: 'الاختبارات', icon: Target },
@@ -2733,6 +2738,8 @@ function useReadOnlyDom(active: boolean) {
       });
       root.querySelectorAll('input, textarea, select').forEach((raw) => {
         const node = raw as HTMLInputElement;
+        // الحركات المشروعة في وضع الرقابة (توقيع المشرفة وملاحظتها) تبقى قابلة للكتابة
+        if (node.closest('[data-ro="keep"]')) return;
         if (node.type === 'file') return;
         if (node.tagName === 'SELECT' || node.type === 'checkbox' || node.type === 'radio') node.disabled = true;
         else node.readOnly = true;
@@ -11206,6 +11213,7 @@ function TeacherDashboardNew() {
 
           <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <QuickTile icon={Library} title="المنهاج والوحدات" body="الوحدات والدروس والتحكم بظهورها للطلاب" href="/teacher/content" badge={`${d.stats.units} وحدات`} color="#17413f" />
+            <QuickTile icon={FileSignature} title="قَسَم التحضير" body="تحضير الوحدات والدروس — رفع الأستاذ، توقيع المشرفة، اعتماد المديرة" href="/teacher/prep" badge="للإدارة والمشرفين" color="#1d5c57" />
             <QuickTile icon={Target} title="الاختبارات" body="بنك الاختبارات وباني الأسئلة" href="/teacher/exams" badge={`${d.stats.assessments} اختبارات`} color="#0d47a1" />
             <QuickTile icon={ClipboardCheck} title="الواجبات" body="تكليفات الصفوف ومواعيدها" href="/teacher/assignments" badge={`${d.stats.assignments} واجبات`} color="#2f7772" />
             <QuickTile icon={Bell} title="الإعلانات" body="رسائلك وتوجيهاتك للطلاب" href="/teacher/announcements" badge="نشر" color="#b7791f" />
@@ -13247,6 +13255,992 @@ function TeacherNotebooksPage() {
 /* =========================================================================
    الكتب المدرسية — الإداري يحدد كل شيء: الصف/الفصل/الغلاف/ملف PDF
 ========================================================================= */
+/* ══════════════════════════════════════════════════════════════════════════
+   قَسَمُ التحضير — للإدارة والمشرفين
+   ──────────────────────────────────────────────────────────────────────────
+   الأستاذ يرفع تحضير الوحدة أو الدرس (PDF/وورد) لفترة: يوم أو أسبوع أو شهر.
+   المشرفة تطلع على الملف وتوقّع، ثم المديرة تعتمِد — فلا اعتماد قبل توقيع.
+   الخادم وحده يقرّر الأدوار (teacher/supervisor/director)؛ هنا نتبعه بصمت:
+   ما لا يملكه الحساب لا يُرسم له أصلاً، وما يُرسم له يُقبل منه حتى في وضع الرقابة.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const PREP_STATE_META: Record<string, { label: string; cls: string; dot: string }> = {
+  none: { label: 'بلا تحضير', cls: 'bg-secondary text-muted-foreground', dot: 'bg-muted-foreground/40' },
+  awaiting_supervisor: { label: 'بانتظار توقيع المشرفة', cls: 'bg-amber-500/15 text-amber-900', dot: 'bg-amber-500' },
+  returned: { label: 'مُعاد إلى الأستاذ', cls: 'bg-orange-500/15 text-orange-900', dot: 'bg-orange-500' },
+  awaiting_director: { label: 'بانتظار اعتماد المديرة', cls: 'bg-sky-500/15 text-sky-900', dot: 'bg-sky-500' },
+  approved: { label: 'معتمَد ✓', cls: 'bg-green-500/15 text-green-900', dot: 'bg-green-600' },
+};
+
+const PREP_PERIOD_LABEL: Record<string, string> = {
+  unit: 'تحضير الوحدة',
+  daily: 'يومي',
+  weekly: 'أسبوعي',
+  monthly: 'شهري',
+};
+
+const prepDate = (v: unknown) => {
+  if (!v) return '';
+  const d = new Date(String(v));
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' });
+};
+
+const prepDateTime = (v: unknown) => {
+  if (!v) return '';
+  const d = new Date(String(v));
+  return Number.isNaN(d.getTime())
+    ? ''
+    : `${d.toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' })} · ${d.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}`;
+};
+
+const prepSize = (bytes: number) => (!bytes ? '' : bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)}MB` : `${Math.max(1, Math.round(bytes / 1024))}KB`);
+
+function PrepStatePill({ state, className = '' }: { state: string; className?: string }) {
+  const meta = PREP_STATE_META[state] || PREP_STATE_META.none;
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-extrabold ${meta.cls} ${className}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+      {meta.label}
+    </span>
+  );
+}
+
+/** ختم التوقيع — اسم الموقّع ومقامه وتاريخه، ثابتٌ في البطاقة لا يختفي */
+function PrepStamp({ sig, stage }: { sig: any; stage: 'supervisor' | 'director' }) {
+  const director = stage === 'director';
+  const Icon = director ? ShieldCheck : ClipboardCheck;
+  return (
+    <div
+      className={`relative overflow-hidden rounded-2xl border-2 border-dashed px-3.5 py-2.5 ${director ? 'border-green-600/45 bg-green-500/[0.07]' : 'border-sky-600/45 bg-sky-500/[0.07]'}`}
+      data-testid={`prep-stamp-${stage}`}
+    >
+      <p className={`flex items-center gap-1 text-[10px] font-extrabold tracking-wide ${director ? 'text-green-800' : 'text-sky-800'}`}>
+        <Icon size={12} /> {director ? 'اعتماد المديرة' : 'توقيع المشرفة'}
+      </p>
+      <p className="mt-1 truncate font-display text-sm font-extrabold text-primary">{sig.name || sig.email}</p>
+      <p className="mt-0.5 text-[11px] font-semibold text-muted-foreground">{prepDateTime(sig.signed_at)}</p>
+      {sig.note ? <p className="mt-1.5 border-t border-border/60 pt-1.5 text-[11px] leading-5 text-foreground/80">{sig.note}</p> : null}
+    </div>
+  );
+}
+
+/** شريط الملف المرفوع: نوعه وحجمه ومن رفعه — و PDF والوورد يظهران معاً */
+function PrepFileRow({ item, onOpen }: { item: any; onOpen: () => void }) {
+  const meta = DOC_TYPE_META[detectDocType(item.fileUrl, item.fileType)] || DOC_TYPE_META.unknown;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex w-full items-center gap-3 rounded-2xl border border-border bg-card px-3 py-2.5 text-right transition-all hover:border-primary/40 hover:bg-secondary/40"
+      data-testid={`prep-file-${item.id}`}
+    >
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-base text-white shadow-sm" style={{ background: meta.color }}>
+        {meta.icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] font-bold text-primary">{item.fileName || 'ملف التحضير'}</span>
+        <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] font-bold text-muted-foreground">
+          <span className="rounded px-1.5 py-0.5 text-white" style={{ background: meta.color }}>{meta.label}</span>
+          {item.fileSize ? <span>{prepSize(item.fileSize)}</span> : null}
+          <span>·</span>
+          <span className="truncate">{item.uploadedByName || 'الأستاذ'}</span>
+        </span>
+      </span>
+      <Eye size={16} className="shrink-0 text-primary/70" />
+    </button>
+  );
+}
+
+/** نافذة التحضير: ملف + تواقيع + أختام + سجل — والحركة المسموحة حسب الدور */
+function PrepDetailModal({
+  record,
+  capability,
+  myEmail,
+  onClose,
+  onChanged,
+  onCompose,
+}: {
+  record: any;
+  capability: string;
+  myEmail: string;
+  onClose: () => void;
+  onChanged: () => void;
+  onCompose: (target: any) => void;
+}) {
+  const [tab, setTab] = useState<'doc' | 'log'>('doc');
+  const [events, setEvents] = useState<any[] | null>(null);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState('');
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    let live = true;
+    jsonFetch(`/api/teacher/prep/events?preparationId=${record.id}`)
+      .then((d) => { if (live) setEvents(Array.isArray(d?.events) ? d.events : []); })
+      .catch(() => { if (live) setEvents([]); });
+    return () => { live = false; };
+  }, [record.id]);
+
+  const act = async (decision: string, withNote = false) => {
+    const stage = capability === 'director' ? 'director' : 'supervisor';
+    if (decision === 'return' && !note.trim()) {
+      setMsg('اكتب ملاحظة الإرجاع أولاً — هي التي تصل الأستاذ.');
+      return;
+    }
+    setBusy(decision);
+    setMsg('');
+    try {
+      const d = await jsonFetch('/api/teacher/prep/sign', {
+        method: 'POST',
+        body: { preparationId: record.id, stage, decision, note: withNote ? note.trim() : '' },
+      });
+      setMsg(d?.message || 'تم ✓');
+      onChanged();
+      setTimeout(onClose, 700);
+    } catch (e: any) {
+      setMsg(e?.message || 'تعذّر تنفيذ الحركة.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const removeFile = async () => {
+    if (!window.confirm('حذف ملف هذا التحضير نهائياً؟ يبقى السجل شاهداً.')) return;
+    setBusy('delete');
+    try {
+      await jsonFetch('/api/teacher/prep/document/delete', { method: 'POST', body: { preparationId: record.id } });
+      onChanged();
+      onClose();
+    } catch (e: any) {
+      setMsg(e?.message || 'تعذّر حذف الملف.');
+      setBusy('');
+    }
+  };
+
+  const awaitingPeer = capability === 'director' && !record.supervisorSignatures?.length;
+  const stage = capability === 'director' ? 'المديرة' : capability === 'supervisor' ? 'المشرفة' : 'الأستاذ';
+
+  return (
+    <Modal
+      title={record.targetTitle || 'تحضير'}
+      eyebrow={`${record.targetType === 'lesson' ? 'درس' : 'وحدة'} · ${arNum(record.periodLabel || '')}`}
+      onClose={onClose}
+      maxWidth="max-w-5xl"
+    >
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <PrepStatePill state={record.state} />
+        <span className="rounded-full bg-secondary px-2.5 py-1 text-[11px] font-bold text-muted-foreground">{record.grade}</span>
+        <span className="rounded-full bg-secondary px-2.5 py-1 text-[11px] font-bold text-muted-foreground">{record.term}</span>
+        {record.unitTitle ? <span className="truncate rounded-full bg-accent/20 px-2.5 py-1 text-[11px] font-bold text-accent-foreground">{record.unitTitle}</span> : null}
+        <span className="mr-auto flex items-center gap-1.5">
+          {(['doc', 'log'] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              className={`rounded-xl px-3.5 py-1.5 text-xs font-extrabold transition-colors ${tab === t ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:text-primary'}`}
+            >
+              {t === 'doc' ? 'المستند والتواقيع' : 'سجل الحركة'}
+            </button>
+          ))}
+        </span>
+      </div>
+
+      {msg ? <p className="mb-4 rounded-xl bg-accent/20 px-4 py-2.5 text-sm font-bold text-accent-foreground">{msg}</p> : null}
+
+      {tab === 'doc' ? (
+        <div className="space-y-5">
+          {record.fileUrl ? (
+            <DocumentViewer url={record.fileUrl} name={record.fileName} docType={record.fileType} />
+          ) : (
+            <div className="rounded-2xl border border-dashed border-border bg-card px-6 py-10 text-center">
+              <p className="font-display text-base font-bold text-primary">لا ملف لهذا التحضير</p>
+              <p className="mt-1 text-sm text-muted-foreground">يرفع الأستاذ الملف (PDF أو وورد) ثم تبدأ دورة التوقيع.</p>
+            </div>
+          )}
+
+          {record.teacherNote ? (
+            <div className="rounded-2xl border border-border bg-secondary/30 px-4 py-3">
+              <p className="text-[11px] font-extrabold text-muted-foreground">ملاحظة الأستاذ</p>
+              <p className="mt-1 text-sm leading-6 text-foreground/90">{record.teacherNote}</p>
+            </div>
+          ) : null}
+
+          {record.returnNote ? (
+            <div className="rounded-2xl border border-orange-300/70 bg-orange-500/10 px-4 py-3">
+              <p className="flex items-center gap-1.5 text-[11px] font-extrabold text-orange-800">
+                <CircleAlert size={13} /> أُعيد هذا التحضير — {record.returnedByName}
+              </p>
+              <p className="mt-1 text-sm leading-6 text-orange-950">{record.returnNote}</p>
+            </div>
+          ) : null}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <p className="mb-2 text-xs font-extrabold text-muted-foreground">تواقيع الإشراف</p>
+              {record.supervisorSignatures?.length ? (
+                <div className="space-y-2">
+                  {record.supervisorSignatures.map((s: any, i: number) => <PrepStamp key={i} sig={s} stage="supervisor" />)}
+                </div>
+              ) : (
+                <p className="rounded-2xl border border-dashed border-border px-3.5 py-3 text-[12px] text-muted-foreground">لم توقّع المشرفة بعد</p>
+              )}
+            </div>
+            <div>
+              <p className="mb-2 text-xs font-extrabold text-muted-foreground">اعتماد الإدارة</p>
+              {record.directorSignatures?.length ? (
+                <div className="space-y-2">
+                  {record.directorSignatures.map((s: any, i: number) => <PrepStamp key={i} sig={s} stage="director" />)}
+                </div>
+              ) : (
+                <p className="rounded-2xl border border-dashed border-border px-3.5 py-3 text-[12px] text-muted-foreground">
+                  {record.supervisorSignatures?.length ? 'بانتظار اعتماد المديرة' : 'لا اعتماد قبل توقيع المشرفة'}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {capability !== 'teacher' && record.fileUrl ? (
+            <div className="space-y-3 rounded-2xl border border-border bg-secondary/20 p-4" data-ro="keep">
+              <p className="flex items-center gap-1.5 text-xs font-extrabold text-primary">
+                <FileSignature size={14} /> دورك هنا: {stage}
+              </p>
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                rows={2}
+                placeholder={capability === 'director' ? 'ملاحظة للاعتماد أو للإرجاع (اختيارية)' : 'ملاحظة مع التوقيع أو الإرجاع (اختيارية)'}
+                className={inputCls}
+                data-testid="prep-sign-note"
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                {awaitingPeer ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500/15 px-3.5 py-2 text-xs font-extrabold text-amber-900">
+                    <Clock3 size={13} /> توقّع المشرفة أولاً
+                  </span>
+                ) : (
+                  <Button
+                    onClick={() => act('sign', true)}
+                    disabled={!!busy}
+                    className="bg-green-700 px-5 text-white hover:bg-green-800"
+                    data-testid="button-prep-sign"
+                  >
+                    {busy === 'sign' ? <RefreshCw size={15} className="animate-spin" /> : <Check size={15} />}
+                    {capability === 'director' ? 'اعتماد نهائي ✓' : 'توقيع على التحضير ✓'}
+                  </Button>
+                )}
+                <Button onClick={() => act('return', true)} disabled={!!busy} variant="outline" className="border-orange-300 text-orange-800 hover:bg-orange-500/10">
+                  {busy === 'return' ? <RefreshCw size={15} className="animate-spin" /> : <RotateCcw size={15} />} إرجاع للأستاذ
+                </Button>
+                {(capability === 'supervisor' ? record.supervisorSignatures?.some((s: any) => samePrepEmail(s.email, myEmail)) : record.directorSignatures?.some((s: any) => samePrepEmail(s.email, myEmail))) ? (
+                  <Button onClick={() => act('unsign')} disabled={!!busy} variant="ghost" className="text-destructive">
+                    سحب توقيعي
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
+          {capability === 'teacher' ? (
+            <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
+              <Button onClick={() => onCompose({ targetType: record.targetType, targetId: record.targetId, courseId: record.courseId, title: record.targetTitle, periodType: record.periodType === 'unit' ? 'weekly' : record.periodType, date: record.periodStart || todayIso() })} variant="soft">
+                <Upload size={15} /> {record.fileUrl ? 'استبدال الملف' : 'رفع ملف لهذا التحضير'}
+              </Button>
+              {record.fileUrl ? (
+                <Button onClick={removeFile} disabled={busy === 'delete'} variant="ghost" className="text-destructive">
+                  {busy === 'delete' ? <RefreshCw size={15} className="animate-spin" /> : <Trash2 size={15} />} إزالة الملف
+                </Button>
+              ) : null}
+              <span className="text-[11px] text-muted-foreground">الرفع للأستاذ وحده — والتوقيع للمشرفة، والاعتماد للمديرة.</span>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {!events ? (
+            <StateNotice type="loading" />
+          ) : !events.length ? (
+            <p className="rounded-2xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">لا حركة مسجّلة بعد.</p>
+          ) : (
+            events.map((e, i) => <PrepEventRow key={i} event={e} />)
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+const samePrepEmail = (a: unknown, b: unknown) =>
+  String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+
+const PREP_ACTION_META: Record<string, { label: string; cls: string }> = {
+  uploaded: { label: 'رفع التحضير', cls: 'bg-green-500/15 text-green-800' },
+  replaced: { label: 'استبدال الملف', cls: 'bg-teal-500/15 text-teal-800' },
+  removed: { label: 'إزالة الملف', cls: 'bg-destructive/15 text-destructive' },
+  signed_supervisor: { label: 'توقيع مشرفة', cls: 'bg-sky-500/15 text-sky-800' },
+  unsigned_supervisor: { label: 'سحب توقيع', cls: 'bg-slate-500/15 text-slate-700' },
+  signed_director: { label: 'اعتماد مديرة', cls: 'bg-accent/30 text-accent-foreground' },
+  unsigned_director: { label: 'سحب اعتماد', cls: 'bg-slate-500/15 text-slate-700' },
+  returned: { label: 'إرجاع للأستاذ', cls: 'bg-orange-500/15 text-orange-800' },
+  role_changed: { label: 'تغيير دور', cls: 'bg-purple-500/15 text-purple-800' },
+};
+
+function PrepEventRow({ event }: { event: any }) {
+  const meta = PREP_ACTION_META[event.action] || { label: event.action, cls: 'bg-secondary text-muted-foreground' };
+  return (
+    <div className="flex items-start gap-3 rounded-2xl border border-border bg-card px-4 py-3">
+      <span className={`mt-0.5 shrink-0 rounded-full px-2.5 py-1 text-[11px] font-extrabold ${meta.cls}`}>{meta.label}</span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[13px] font-bold text-primary">
+          {event.actorName || 'غير مسمٍّ'} <span className="font-semibold text-muted-foreground">· {event.actorRole || ''}</span>
+        </p>
+        <p className="mt-0.5 text-[11px] font-semibold text-muted-foreground">{prepDateTime(event.at)}</p>
+        {event.note ? <p className="mt-1 text-[12px] leading-6 text-foreground/85">{event.note}</p> : null}
+      </div>
+    </div>
+  );
+}
+
+const todayIso = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+/** نافذة الرفع: الأستاذ يختار الفترة والتاريخ ثم الملف — PDF أو وورد */
+function PrepComposerModal({ target, account, onClose, onSaved }: {
+  target: { targetType: string; targetId: string; courseId: string; title: string; periodType?: string; date?: string; context?: string };
+  account: any;
+  onClose: () => void;
+  onSaved: (msg: string) => void;
+}) {
+  const [periodType, setPeriodType] = useState(target.periodType || 'weekly');
+  const [date, setDate] = useState(target.date || todayIso());
+  const [file, setFile] = useState<File | null>(null);
+  const [note, setNote] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState('');
+
+  const preview = arNum(prepPeriodLabel(periodType, date));
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    if (!file) {
+      setError('اختر ملف التحضير أولاً (PDF أو وورد).');
+      return;
+    }
+    if (file.size > 30 * 1024 * 1024) {
+      setError('الملف يتجاوز ٣٠ ميجابايت — اضغطه أو ارفع نسخة أخف.');
+      return;
+    }
+    setUploading(true);
+    setProgress(0);
+    try {
+      const up = await uploadBundleDirect(file, '/ard-al-lughah/prep', (p) => setProgress(p), (f) => uploadFileToCloud(f, '/ard-al-lughah/prep'));
+      if (!up?.url) throw new Error('لم يرجع التخزين رابط الملف');
+      await jsonFetch('/api/teacher/prep/document', {
+        method: 'POST',
+        body: {
+          targetType: target.targetType,
+          targetId: target.targetId,
+          courseId: target.courseId,
+          periodType,
+          date,
+          fileUrl: up.url,
+          fileName: file.name,
+          fileType: (file.name.split('.').pop() || '').toLowerCase(),
+          fileSize: file.size,
+          note,
+        },
+      });
+      onSaved(`تم رفع تحضير ${preview} ✓ — ينتظر توقيع المشرفة`);
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || 'تعذّر رفع الملف');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <Modal title="تحضير جديد" eyebrow={`${target.targetType === 'lesson' ? 'درس' : 'وحدة'} · ${target.title}`} onClose={onClose} maxWidth="max-w-2xl">
+      <form onSubmit={submit} className="space-y-4">
+        {target.context ? <p className="rounded-xl bg-secondary/40 px-3.5 py-2 text-xs font-bold text-muted-foreground">{target.context}</p> : null}
+        <Field2 label="نوع الفترة التحضيرية">
+          <div className="flex flex-wrap gap-2">
+            {[['daily', 'يومي'], ['weekly', 'أسبوعي'], ['monthly', 'شهري']].map(([k, label]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setPeriodType(k)}
+                className={`rounded-xl px-4 py-2.5 text-sm font-extrabold transition-all ${periodType === k ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-secondary text-muted-foreground hover:text-primary'}`}
+                data-testid={`prep-period-${k}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </Field2>
+        <Field2 label={periodType === 'monthly' ? 'اختَر يوماً من الشهر' : periodType === 'weekly' ? 'اختَر يوماً من الأسبوع' : 'التاريخ'} hint={preview ? `الفترة المحفوظة: ${preview}` : 'ادخل تاريخاً صحيحاً'}>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} data-testid="prep-date" />
+        </Field2>
+        <Field2 label="ملف التحضير">
+          <label className={`flex min-h-[86px] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-border bg-card px-4 py-5 text-center transition-colors hover:border-primary/50 hover:bg-secondary/30 ${uploading ? 'opacity-70' : ''}`}>
+            {uploading ? (
+              <>
+                <RefreshCw size={20} className="animate-spin text-primary" />
+                <span className="text-sm font-extrabold text-primary">جارٍ الرفع السحابي… {progress}%</span>
+              </>
+            ) : file ? (
+              <>
+                <span className="text-sm font-extrabold text-primary">{file.name}</span>
+                <span className="text-xs font-bold text-muted-foreground">{prepSize(file.size)} — اضغط لاختيار ملف آخر</span>
+              </>
+            ) : (
+              <>
+                <Upload size={20} className="text-primary" />
+                <span className="text-sm font-extrabold text-primary">اسم أو وورد — PDF أو DOCX</span>
+                <span className="text-xs font-bold text-muted-foreground">حتى ٣٠ ميجابايت</span>
+              </>
+            )}
+            <input
+              type="file"
+              accept=".pdf,.docx,.doc,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              className="hidden"
+              disabled={uploading}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                const ext = (f.name.split('.').pop() || '').toLowerCase();
+                if (!['pdf', 'docx', 'doc'].includes(ext)) {
+                  setError('صيغة غير مدعومة — اختر PDF أو وورد.');
+                  return;
+                }
+                setError('');
+                setFile(f);
+                e.target.value = '';
+              }}
+              data-testid="input-prep-file"
+            />
+          </label>
+        </Field2>
+        <Field2 label="ملاحظة للأشراف (اختيارية)">
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="مثال: تحضير الأسبوع الأول — نصوص ومهارات" className={inputCls} />
+        </Field2>
+        {error ? <p className="rounded-xl bg-destructive/10 px-4 py-2.5 text-sm font-bold text-destructive">{error}</p> : null}
+        <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+          <p className="text-[11px] text-muted-foreground">يرفع باسم: {account?.name || account?.email || 'الأستاذ'}</p>
+          <div className="flex gap-2">
+            <Button onClick={onClose} variant="ghost">إلغاء</Button>
+            <Button type="submit" disabled={uploading} className="px-7" data-testid="button-prep-save">
+              {uploading ? 'جارٍ الرفع…' : 'حفظ التحضير ✓'}
+            </Button>
+          </div>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/** عنوان الفترة كما سيُحفظ — يُعرض للأستاذ قبل أن يرفع */
+function prepPeriodLabel(periodType: string, iso: string): string {
+  const d = new Date(String(iso || ''));
+  if (Number.isNaN(d.getTime())) return '';
+  const day = (x: Date) => `${String(x.getDate()).padStart(2, '0')}/${String(x.getMonth() + 1).padStart(2, '0')}/${x.getFullYear()}`;
+  const AR_DAY_NAMES = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+  const AR_MONTH_NAMES = ['كانون الثاني', 'شباط', 'آذار', 'نيسان', 'أيار', 'حزيران', 'تموز', 'آب', 'أيلول', 'تشرين الأول', 'تشرين الثاني', 'تشرين الثالث'];
+  if (periodType === 'daily') return `${AR_DAY_NAMES[d.getDay()]} ${day(d)}`;
+  if (periodType === 'weekly') {
+    const start = new Date(d.getTime());
+    start.setDate(start.getDate() - ((d.getDay() + 1) % 7));
+    const end = new Date(start.getTime());
+    end.setDate(end.getDate() + 5);
+    return `أسبوع ${day(start)} – ${day(end)}`;
+  }
+  return `شهر ${AR_MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function TeacherPreparationPage() {
+  useCatalog();
+  const [grade, setGrade] = useState('الصف الثامن');
+  const [term, setTerm] = useState('الفصل الأول');
+  const [data, setData] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [needsSql, setNeedsSql] = useState(false);
+  const [filter, setFilter] = useState('all');
+  const [query, setQuery] = useState('');
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<any | null>(null);
+  const [composer, setComposer] = useState<any | null>(null);
+  const [ledger, setLedger] = useState<any[] | null>(null);
+  const [cell, setCell] = useState<any | null>(null);
+  const [msg, setMsg] = useState('');
+
+  const capability = data?.capability || '';
+  const flash = (t: string) => { setMsg(t); window.setTimeout(() => setMsg(''), 4500); };
+
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const d = await jsonFetch(`/api/teacher/prep/units?grade=${encodeURIComponent(grade)}&term=${encodeURIComponent(term)}`);
+      setData(d);
+      setError('');
+      setNeedsSql(false);
+    } catch (e: any) {
+      setError(e?.message || 'تعذّر جلب التحضير');
+      setNeedsSql(!!(e as any)?.needsSql || /sql_preparation_v1/.test(String(e?.message || '')));
+    } finally {
+      setLoading(false);
+    }
+  }, [grade, term]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // التوقيع حركة مشروعة لحساب الرقابة — تُسمَّى في الخادم وتُمَرَّر هنا أيضاً
+  const myEmail = data?.account?.email || '';
+
+  const units: any[] = useMemo(() => {
+    const list = Array.isArray(data?.units) ? data.units : [];
+    const q = normalizeText(query);
+    return list.filter((u: any) => {
+      if (q && !normalizeText(u.title).includes(q)) return false;
+      const s = u.summary || {};
+      if (filter === 'none') return !s.total;
+      if (filter === 'awaiting') return !!s.awaiting;
+      if (filter === 'director') return !!s.awaitingDirector;
+      if (filter === 'approved') return !!s.approved;
+      return true;
+    });
+  }, [data?.units, query, filter]);
+
+  const openLedger = async () => {
+    try {
+      const d = await jsonFetch('/api/teacher/prep/ledger');
+      setLedger(Array.isArray(d?.items) ? d.items : []);
+    } catch (e: any) {
+      flash(e?.message || 'تعذّر جلب السجل');
+      setLedger([]);
+    }
+  };
+
+  const openCell = async () => {
+    try {
+      const d = await jsonFetch('/api/teacher/prep/cell');
+      setCell(d);
+    } catch (e: any) {
+      flash(e?.message || 'تعذّر جلب خلية التحضير');
+    }
+  };
+
+  const stats = data?.stats || {};
+  const isTeacher = capability === 'teacher';
+
+  return (
+    <Shell mode="teacher">
+      <SectionHero
+        eyebrow="الإدارة والمشرفون"
+        title="قَسَم التحضير"
+        body="كل وحدة وكل درس في الصفوف الثامن والتاسع والعاشر: يرفع الأستاذ تحضيره ليوم أو أسبوع أو شهر، فتطلّع المشرفة وتوقّع، ثم تعتمِده المديرة — والكل يرى من فعل ومتى."
+        stats={[
+          { value: stats.units != null ? arNum(stats.units) : '—', label: 'الوحدات' },
+          { value: stats.preparedUnits != null ? arNum(stats.preparedUnits) : '—', label: 'وحدات محضّرة' },
+          { value: stats.preparedLessons != null ? arNum(stats.preparedLessons) : '—', label: `دروس من ${arNum(stats.lessons ?? 0)}` },
+          { value: stats.approved != null ? arNum(stats.approved) : '—', label: 'معتمَدة ✓' },
+        ]}
+        action={
+          <>
+            <Button onClick={openLedger} variant="soft" data-testid="button-prep-ledger"><ScrollText size={16} /> سجل التحضير</Button>
+            {isTeacher ? <Button onClick={openCell} variant="outline" className="border-white/30 bg-white/10 text-white hover:bg-white/20" data-testid="button-prep-cell"><UsersRound size={16} /> خلية التحضير</Button> : null}
+          </>
+        }
+      />
+
+      {msg ? <p className="mb-4 rounded-xl bg-accent/20 px-4 py-3 text-sm font-bold text-accent-foreground">{msg}</p> : null}
+
+      {needsSql ? (
+        <div className="mb-6 rounded-3xl border-2 border-dashed border-accent/60 bg-accent/10 px-5 py-5">
+          <p className="flex items-center gap-2 font-display text-base font-extrabold text-primary"><ShieldCheck size={18} /> خطوة واحدة تفصل القسم عن العمل</p>
+          <p className="mt-2 text-sm leading-7 text-foreground/85">
+            نفّذ ملف <b dir="ltr">sql_preparation_v1.sql</b> مرة واحدة في Supabase SQL Editor — ينشئ جداول التحضير والسجل وأدوار الخلية، ولا يمسح أي بيانات قائمة.
+          </p>
+          <Button onClick={() => load()} variant="soft" className="mt-3"><RefreshCw size={15} /> أعد المحاولة</Button>
+        </div>
+      ) : null}
+
+      {/* مصفوفة الصف والفصل */}
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        {['الصف الثامن', 'الصف التاسع', 'الصف العاشر'].map((g) => (
+          <button
+            key={g}
+            type="button"
+            onClick={() => setGrade(g)}
+            className={`rounded-2xl px-4 py-2.5 text-sm font-extrabold transition-all ${grade === g ? 'bg-primary text-primary-foreground shadow-md' : 'bg-card text-muted-foreground ring-1 ring-border hover:text-primary'}`}
+            data-testid={`prep-grade-${g}`}
+          >
+            {g}
+          </button>
+        ))}
+        <span className="mx-1 h-6 w-px bg-border" />
+        {['الفصل الأول', 'الفصل الثاني'].map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setTerm(t)}
+            className={`rounded-full px-3.5 py-1.5 text-xs font-extrabold transition-all ${term === t ? 'bg-accent text-[#3a2c07] shadow-sm' : 'bg-secondary text-muted-foreground hover:text-primary'}`}
+            data-testid={`prep-term-${t}`}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {/* حالة الدورة + تصفية + بحث */}
+      <div className="mb-6 flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card px-3.5 py-3 shadow-sm">
+        {[
+          ['all', 'الكل'],
+          ['awaiting', `بانتظار المشرفة (${stats.awaitingSupervisor ?? 0})`],
+          ['director', `بانتظار المديرة (${stats.awaitingDirector ?? 0})`],
+          ['approved', `معتمَدة (${stats.approved ?? 0})`],
+          ['none', 'بلا تحضير'],
+        ].map(([k, label]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setFilter(k)}
+            className={`rounded-full px-3 py-1.5 text-[11px] font-extrabold transition-all ${filter === k ? 'bg-primary text-primary-foreground' : 'bg-secondary/60 text-muted-foreground hover:text-primary'}`}
+          >
+            {label}
+          </button>
+        ))}
+        <span className="relative mr-auto">
+          <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="ابحث باسم الوحدة" className={`${inputCls} w-48 py-2 pr-9 text-xs`} data-testid="input-prep-search" />
+        </span>
+      </div>
+
+      {loading ? (
+        <StateNotice type="loading" />
+      ) : error && !data ? (
+        <div className="rounded-2xl border border-dashed border-border bg-card px-6 py-10 text-center">
+          <p className="font-semibold text-primary">{error}</p>
+          <Button onClick={() => load()} variant="soft" className="mt-4">إعادة المحاولة</Button>
+        </div>
+      ) : !units.length ? (
+        <div className="rounded-2xl border border-dashed border-border bg-card px-6 py-12 text-center">
+          <p className="font-semibold">لا وحدة تطابق التصفية</p>
+          <p className="mt-1 text-sm text-muted-foreground">غيّر الفصل أو التصفية، أو ارفع البحث.</p>
+        </div>
+      ) : (
+        <div className="grid gap-5 xl:grid-cols-2">
+          {units.map((u: any) => (
+            <PrepUnitCard
+              key={u.courseId}
+              unit={u}
+              capability={capability}
+              open={openId === u.courseId}
+              onToggle={() => setOpenId(openId === u.courseId ? null : u.courseId)}
+              onOpenRecord={setDetail}
+              onCompose={setComposer}
+            />
+          ))}
+        </div>
+      )}
+
+      {detail ? (
+        <PrepDetailModal
+          record={detail}
+          capability={capability}
+          myEmail={myEmail}
+          onClose={() => setDetail(null)}
+          onChanged={() => load(true)}
+          onCompose={(t) => { setDetail(null); setComposer(t); }}
+        />
+      ) : null}
+
+      {composer ? (
+        <PrepComposerModal target={composer} account={data?.account} onClose={() => setComposer(null)} onSaved={(m) => { flash(m); load(true); }} />
+      ) : null}
+
+      {ledger ? (
+        <PrepLedgerModal
+          items={ledger}
+          capability={capability}
+          onClose={() => setLedger(null)}
+          onOpen={(r) => { setLedger(null); setDetail(r); }}
+        />
+      ) : null}
+
+      {cell ? <PrepCellModal data={cell} onClose={() => setCell(null)} onSaved={(m) => { flash(m); openCell(); }} /> : null}
+    </Shell>
+  );
+}
+
+/** بطاقة وحدة: تحضيراتها + دروسها — تنبسط لتكشف الدروس */
+function PrepUnitCard({ unit, capability, open, onToggle, onOpenRecord, onCompose }: {
+  unit: any;
+  capability: string;
+  open: boolean;
+  onToggle: () => void;
+  onOpenRecord: (r: any) => void;
+  onCompose: (t: any) => void;
+}) {
+  const s = unit.summary || {};
+  const newest = (unit.preparations || [])[0];
+  const lessonReady = unit.lessons?.filter((l: any) => l.preparations?.length).length || 0;
+  const add = (targetType: string, targetId: string, title: string, context?: string) =>
+    onCompose({ targetType, targetId, courseId: unit.courseId, title, periodType: 'weekly', date: todayIso(), context });
+
+  return (
+    <div className={`overflow-hidden rounded-3xl border bg-card shadow-sm transition-all ${open ? 'border-primary/40 ring-2 ring-accent/25' : 'border-border hover:shadow-md'}`} data-testid={`prep-unit-${unit.courseId}`}>
+      <div className="flex items-start gap-3.5 p-4 sm:p-5">
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-primary to-[#2a7a72] font-display text-lg font-extrabold text-white shadow-md">
+          {arNum(unit.unitNo)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-display text-[15px] font-extrabold text-primary sm:text-base">{unit.title}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <PrepStatePill state={newest?.state || (s.total ? 'awaiting_supervisor' : 'none')} />
+            <span className="rounded-full bg-secondary px-2.5 py-0.5 text-[11px] font-bold text-muted-foreground">{arNum(unit.lessonsCount)} دروس</span>
+            {s.total ? <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-bold text-primary">{arNum(s.total)} تحضير</span> : null}
+            {s.awaiting ? <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-[11px] font-bold text-amber-900">{arNum(s.awaiting)} بانتظار المشرفة</span> : null}
+            {s.awaitingDirector ? <span className="rounded-full bg-sky-500/15 px-2.5 py-0.5 text-[11px] font-bold text-sky-900">{arNum(s.awaitingDirector)} بانتظار المديرة</span> : null}
+          </div>
+        </div>
+        <button type="button" onClick={onToggle} className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-border bg-card text-primary transition-all hover:bg-secondary" aria-label={open ? 'طيّ' : 'توسيع'} data-testid={`button-prep-toggle-${unit.courseId}`}>
+          {open ? <ChevronUp size={17} /> : <ChevronDown size={17} />}
+        </button>
+      </div>
+
+      {newest ? (
+        <div className="px-4 pb-4 sm:px-5">
+          <PrepFileRow item={newest} onOpen={() => onOpenRecord(newest)} />
+        </div>
+      ) : null}
+
+      {open ? (
+        <div className="space-y-4 border-t border-border bg-secondary/20 px-4 py-4 sm:px-5">
+          {capability === 'teacher' ? (
+            <Button onClick={() => add('unit', unit.courseId, unit.title, `${unit.grade} · ${unit.term}`)} variant="primary" className="w-full sm:w-auto">
+              <Plus size={15} /> تحضير جديد للوحدة
+            </Button>
+          ) : null}
+
+          {(unit.preparations || []).length ? (
+            <div className="space-y-2.5">
+              <p className="text-[11px] font-extrabold text-muted-foreground">تحضيرات الوحدة</p>
+              {(unit.preparations || []).map((r: any) => <PrepRecordRow key={r.id} record={r} onOpen={onOpenRecord} />)}
+            </div>
+          ) : null}
+
+          <div className="space-y-2">
+            <p className="flex items-center justify-between text-[11px] font-extrabold text-muted-foreground">
+              <span>دروس الوحدة</span>
+              <span>{arNum(lessonReady)} / {arNum(unit.lessonsCount)} محضّرة</span>
+            </p>
+            {!unit.lessons?.length ? (
+              <p className="rounded-2xl border border-dashed border-border px-3.5 py-3 text-xs text-muted-foreground">لا دروس مسجّلة لهذه الوحدة بعد.</p>
+            ) : (
+              <div className="space-y-2">
+                {unit.lessons.map((l: any, i: number) => (
+                  <div key={l.id} className="rounded-2xl border border-border bg-card px-3.5 py-3">
+                    <div className="flex items-center gap-2.5">
+                      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-secondary text-[11px] font-extrabold text-primary">{arNum(l.position || i + 1)}</span>
+                      <p className="min-w-0 flex-1 truncate text-[13px] font-bold text-primary">{l.title}</p>
+                      {capability === 'teacher' ? (
+                        <button
+                          type="button"
+                          onClick={() => add('lesson', l.id, l.title, `${unit.title} · ${unit.grade}`)}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1 text-[11px] font-extrabold text-primary hover:bg-primary hover:text-white"
+                          data-testid={`button-prep-add-lesson-${l.id}`}
+                        >
+                          <Plus size={12} /> تحضير
+                        </button>
+                      ) : null}
+                    </div>
+                    {l.preparations?.length ? (
+                      <div className="mt-2.5 space-y-2">
+                        {l.preparations.map((r: any) => <PrepRecordRow key={r.id} record={r} onOpen={onOpenRecord} />)}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** سطر تحضير واحد داخل البطاقة: الفترة، الملف، الحالة، الأختام */
+function PrepRecordRow({ record, onOpen }: { record: any; onOpen: (r: any) => void }) {
+  const meta = DOC_TYPE_META[detectDocType(record.fileUrl, record.fileType)] || DOC_TYPE_META.unknown;
+  const stamps = [...(record.supervisorSignatures || []), ...(record.directorSignatures || [])];
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(record)}
+      className="flex w-full items-center gap-3 rounded-2xl border border-border bg-card px-3.5 py-2.5 text-right transition-all hover:border-primary/40 hover:bg-secondary/40"
+      data-testid={`prep-record-${record.id}`}
+    >
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-white shadow-sm" style={{ background: meta.color }}>
+        {record.periodType === 'daily' ? <CalendarDays size={16} /> : record.periodType === 'monthly' ? <Layers size={16} /> : <Clock3 size={16} />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="truncate text-[13px] font-extrabold text-primary">{arNum(record.periodLabel)}</span>
+          <PrepStatePill state={record.state} />
+        </span>
+        <span className="mt-1 block truncate text-[11px] font-bold text-muted-foreground">
+          {PREP_PERIOD_LABEL[record.periodType] || ''} · {record.fileName || 'بلا ملف'}
+          {stamps.length ? ` · ${stamps.map((s: any) => s.name).join(' + ')}` : ''}
+        </span>
+      </span>
+      <ChevronLeft size={16} className="shrink-0 text-primary/60" />
+    </button>
+  );
+}
+
+/** سجل التحضير — كل تحضيرات الصفوف الثلاثة، قابلة للتصفية والنقر */
+function PrepLedgerModal({ items, capability, onClose, onOpen }: {
+  items: any[];
+  capability: string;
+  onClose: () => void;
+  onOpen: (r: any) => void;
+}) {
+  const [f, setF] = useState({ grade: '', term: '', state: '', type: '' });
+  const rows = useMemo(() => items.filter((r: any) => (
+    (!f.grade || r.grade === f.grade) &&
+    (!f.term || r.term === f.term) &&
+    (!f.state || r.state === f.state) &&
+    (!f.type || r.targetType === f.type)
+  )), [items, f]);
+
+  return (
+    <Modal title="سجل التحضير" eyebrow="كل التحضيرات — وحدة ودرساً" onClose={onClose} maxWidth="max-w-5xl">
+      <div className="mb-4 flex flex-wrap gap-2">
+        {[
+          ['grade', ['', 'الصف الثامن', 'الصف التاسع', 'الصف العاشر']],
+          ['term', ['', 'الفصل الأول', 'الفصل الثاني']],
+          ['type', ['', 'unit', 'lesson']],
+          ['state', ['', 'awaiting_supervisor', 'awaiting_director', 'approved', 'returned']],
+        ].map(([key, options]: any) => (
+          <select
+            key={key}
+            value={(f as any)[key]}
+            onChange={(e) => setF({ ...f, [key]: e.target.value })}
+            className="rounded-xl border border-input bg-background px-3 py-2 text-xs font-bold"
+            data-testid={`ledger-filter-${key}`}
+          >
+            {options.map((o: string) => (
+              <option key={o} value={o}>
+                {o === ''
+                  ? key === 'grade' ? 'كل الصفوف' : key === 'term' ? 'الفصلان' : key === 'type' ? 'وحدة ودرس' : 'كل الحالات'
+                  : key === 'type' ? (o === 'unit' ? 'الوحدات' : 'الدروس') : key === 'state' ? (PREP_STATE_META[o]?.label || o) : o}
+              </option>
+            ))}
+          </select>
+        ))}
+        <span className="mr-auto self-center text-xs font-bold text-muted-foreground">{arNum(rows.length)} سجلاً</span>
+      </div>
+      {!rows.length ? (
+        <p className="rounded-2xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">لا شيء يطابق هذه التصفية.</p>
+      ) : (
+        <div className="space-y-2.5">
+          {rows.map((r: any) => (
+            <div key={r.id} className="rounded-2xl border border-border bg-card px-3.5 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${r.targetType === 'lesson' ? 'bg-purple-500/15 text-purple-800' : 'bg-primary/10 text-primary'}`}>
+                  {r.targetType === 'lesson' ? 'درس' : 'وحدة'}
+                </span>
+                <p className="min-w-0 flex-1 truncate text-[13px] font-extrabold text-primary">{r.targetTitle}</p>
+                <PrepStatePill state={r.state} />
+              </div>
+              <p className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] font-bold text-muted-foreground">
+                <span className="rounded-full bg-secondary px-2 py-0.5">{arNum(r.periodLabel)}</span>
+                <span>{r.grade} · {r.term}</span>
+                <span>· {r.uploadedByName || '—'}</span>
+                <span>· {prepDateTime(r.uploadedAt)}</span>
+                <span className="mr-auto flex items-center gap-1.5">
+                  {(r.supervisorSignatures || []).length ? <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-sky-800">مشرفة ✓</span> : null}
+                  {(r.directorSignatures || []).length ? <span className="rounded-full bg-green-500/15 px-2 py-0.5 text-green-800">مديرة ✓</span> : null}
+                  <Button onClick={() => onOpen(r)} variant="soft" className="px-3 py-1.5 text-[11px]">
+                    {capability === 'teacher' ? 'ملف وتحديث' : 'مطالعة وتوقيع'}
+                  </Button>
+                </span>
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+/** خلية التحضير — من يرفع ومن يوقّع ومن يعتمِد */
+function PrepCellModal({ data, onClose, onSaved }: { data: any; onClose: () => void; onSaved: (m: string) => void }) {
+  const [busy, setBusy] = useState('');
+  const setRole = async (email: string, prepRole: string) => {
+    setBusy(email);
+    try {
+      const d = await jsonFetch('/api/teacher/prep/cell', { method: 'PATCH', body: { email, prepRole } });
+      onSaved(d?.message || 'تم تحديث الدور ✓');
+      onClose();
+    } catch (e: any) {
+      onSaved(e?.message || 'تعذّر تحديث الدور');
+    } finally {
+      setBusy('');
+    }
+  };
+  const CAP_LABEL: Record<string, string> = { teacher: 'يرفع التحضير', supervisor: 'توقّع', director: 'تعتمِد' };
+  const CAP_CLS: Record<string, string> = {
+    teacher: 'bg-green-500/15 text-green-800',
+    supervisor: 'bg-sky-500/15 text-sky-800',
+    director: 'bg-accent/30 text-accent-foreground',
+  };
+  return (
+    <Modal title="خلية التحضير" eyebrow="صلاحيات رفع وتوقيع واعتماد" onClose={onClose} maxWidth="max-w-3xl">
+      {data?.needsSql ? (
+        <p className="mb-4 rounded-xl bg-amber-500/15 px-4 py-3 text-sm font-bold text-amber-900">
+          نفّذ sql_preparation_v1.sql أولاً — الأدوار تُحفظ في عمود prep_role.
+        </p>
+      ) : null}
+      <div className="space-y-2.5">
+        {(data?.members || []).map((m: any) => (
+          <div key={m.email} className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3">
+            <Avatar name={m.name || m.email} src={m.avatarUrl || undefined} size="sm" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[13px] font-extrabold text-primary">{m.name}</p>
+              <p className="truncate text-[11px] font-bold text-muted-foreground">{m.email}</p>
+            </div>
+            <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${CAP_CLS[m.capability] || 'bg-secondary text-muted-foreground'}`}>
+              {CAP_LABEL[m.capability] || 'بلا وصول'}
+            </span>
+            <select
+              value={m.prepRole || ''}
+              disabled={busy === m.email}
+              onChange={(e) => setRole(m.email, e.target.value)}
+              className="rounded-xl border border-input bg-background px-3 py-2 text-xs font-bold"
+              data-testid={`cell-role-${m.email}`}
+            >
+              <option value="">تلقائي من الدور</option>
+              <option value="teacher">أستاذ — يرفع</option>
+              <option value="supervisor">مشرفة — توقّع</option>
+              <option value="director">مديرة — تعتمِد</option>
+            </select>
+          </div>
+        ))}
+      </div>
+      <p className="mt-4 rounded-xl bg-secondary/40 px-4 py-3 text-[11px] leading-6 text-muted-foreground">
+        حسابات الإشراف ( observer ) توقّع على التحضير ولا ترفع ملفات. والأستاذ الذي يرفع لا يوقّع على تحضيره — كذلك حدّدتها القاعدة، فلا اعتماد قبل توقيع المشرفة.
+      </p>
+    </Modal>
+  );
+}
+
 function TeacherBooksPage() {
   // الصفوف والمدارس تأتي من قاعدة البيانات — يشترك هنا ليعيد الرسم فور تغيّرها
   useCatalog();
@@ -16551,6 +17545,7 @@ function Router() {
         <Route path="/teacher/notebooks" component={TeacherNotebooksPage} />
         <Route path="/teacher/report" component={TeacherReportPage} />
         <Route path="/teacher/books" component={TeacherBooksPage} />
+        <Route path="/teacher/prep" component={TeacherPreparationPage} />
         <Route path="/teacher/settings" component={SettingsPage} />
         <Route path="/view/lesson/:lessonId" component={StandaloneLessonViewerPage} />
         <Route path="/view/content" component={StandaloneContentViewerPage} />

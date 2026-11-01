@@ -20,6 +20,7 @@ const ALLOWED_FOLDERS = [
   "/ard-al-lughah/books",
   "/ard-al-lughah/documents",
   "/ard-al-lughah/summaries",
+  "/ard-al-lughah/prep",
 ];
 
 function sanitizeFolder(folder: unknown): string {

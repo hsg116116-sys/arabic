@@ -8,6 +8,7 @@ import studyRouter from "./study";
 import authRouter from "./auth";
 import foundationRouter from "./foundation";
 import organizationRouter from "./organization";
+import preparationRouter from "./preparation";
 import reportRouter from "./report";
 import cloudinaryRouter from "./cloudinary";
 
@@ -15,6 +16,7 @@ const router: IRouter = Router();
 
 // أول سطر في كل /api: حساب الرقابة يقرأ ولا يكتب أبداً، وقسماه المحجوبان
 // («إعداد التأسيس» و«إدارة المنصة») لا يفتحان له لا قراءة ولا كتابة
+// — باستثناء توقيعه على التحضير: فهو وظيفته الوحيدة التي يكتب فيها.
 router.use(blockObserverWrites);
 router.use(blockObserverHiddenSections);
 
@@ -26,6 +28,7 @@ router.use(studyRouter);
 router.use(authRouter);
 router.use(foundationRouter);
 router.use(organizationRouter);
+router.use(preparationRouter);
 router.use(reportRouter);
 router.use(cloudinaryRouter);
 
