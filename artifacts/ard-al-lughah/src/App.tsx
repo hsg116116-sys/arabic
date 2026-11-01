@@ -13358,6 +13358,7 @@ function PrepDetailModal({
   onClose,
   onChanged,
   onCompose,
+  onNotice,
 }: {
   record: any;
   capability: string;
@@ -13365,12 +13366,14 @@ function PrepDetailModal({
   onClose: () => void;
   onChanged: () => void;
   onCompose: (target: any) => void;
+  onNotice: (message: string) => void;
 }) {
   const [tab, setTab] = useState<'doc' | 'log'>('doc');
   const [events, setEvents] = useState<any[] | null>(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -13403,15 +13406,17 @@ function PrepDetailModal({
     }
   };
 
-  const removeFile = async () => {
-    if (!window.confirm('حذف ملف هذا التحضير نهائياً؟ يبقى السجل شاهداً.')) return;
+  const deletePrep = async () => {
     setBusy('delete');
+    setMsg('');
     try {
-      await jsonFetch('/api/teacher/prep/document/delete', { method: 'POST', body: { preparationId: record.id } });
+      const d = await jsonFetch('/api/teacher/prep/document/delete', { method: 'POST', body: { preparationId: record.id } });
       onChanged();
       onClose();
+      onNotice(d?.message || 'تم حذف التحضير ✓');
     } catch (e: any) {
-      setMsg(e?.message || 'تعذّر حذف الملف.');
+      setMsg(e?.message || 'تعذّر حذف التحضير.');
+      setConfirmDelete(false);
       setBusy('');
     }
   };
@@ -13540,16 +13545,48 @@ function PrepDetailModal({
           ) : null}
 
           {capability === 'teacher' ? (
-            <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
-              <Button onClick={() => onCompose({ courseId: record.courseId, title: record.unitTitle || record.targetTitle, periodType: record.periodType, date: record.periodStart || todayIso() })} variant="soft">
-                <Upload size={15} /> {record.fileUrl ? 'استبدال ملف التحضير' : 'رفع ملف للوحدة'}
-              </Button>
-              {record.fileUrl ? (
-                <Button onClick={removeFile} disabled={busy === 'delete'} variant="ghost" className="text-destructive">
-                  {busy === 'delete' ? <RefreshCw size={15} className="animate-spin" /> : <Trash2 size={15} />} إزالة الملف
+            <div className="space-y-3 border-t border-border pt-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  onClick={() => onCompose({ courseId: record.courseId, title: record.unitTitle || record.targetTitle, periodType: record.periodType, date: record.periodStart || todayIso() })}
+                  variant="soft"
+                  data-testid="button-prep-replace"
+                >
+                  <Upload size={15} /> {record.fileUrl ? 'استبدال ملف التحضير' : 'رفع ملف للوحدة'}
                 </Button>
+                <Button onClick={() => setConfirmDelete(true)} disabled={!!busy} variant="ghost" className="text-destructive" data-testid="button-prep-delete">
+                  <Trash2 size={15} /> حذف التحضير
+                </Button>
+                <span className="text-[11px] text-muted-foreground">الرفع والاستبدال والحذف للأستاذ — والتوقيع للمشرفة، والاعتماد للمديرة.</span>
+              </div>
+
+              {confirmDelete ? (
+                <div className="rounded-2xl border-2 border-destructive/40 bg-destructive/5 px-4 py-3" data-testid="prep-delete-confirm">
+                  <p className="text-[12px] font-extrabold text-destructive">
+                    سيُحذف التحضير كلّه: {record.fileName || 'بلا ملف'} · {arNum(record.periodLabel || '')}
+                  </p>
+                  <p className="mt-1.5 text-[11px] leading-6 text-muted-foreground">
+                    {record.supervisorSignatures?.length || record.directorSignatures?.length
+                      ? 'وتُسحب معه التواقيع والاعتماد — لا يوقَّع على ملف محذوف. '
+                      : ''}
+                    يبقى الحذف مسجَّلاً باسمك في سجل الحركة: من حذف، ومتى، وأي ملف كان.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button
+                      onClick={deletePrep}
+                      disabled={busy === 'delete'}
+                      className="bg-destructive px-5 text-white hover:bg-destructive/90"
+                      data-testid="button-prep-delete-confirm"
+                    >
+                      {busy === 'delete' ? <RefreshCw size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                      {busy === 'delete' ? 'جارٍ الحذف…' : 'تأكيد الحذف'}
+                    </Button>
+                    <Button onClick={() => setConfirmDelete(false)} disabled={busy === 'delete'} variant="ghost">
+                      إلغاء
+                    </Button>
+                  </div>
+                </div>
               ) : null}
-              <span className="text-[11px] text-muted-foreground">الرفع للأستاذ وحده — والتوقيع للمشرفة، والاعتماد للمديرة.</span>
             </div>
           ) : null}
         </div>
@@ -13951,6 +13988,7 @@ function TeacherPreparationPage() {
           myEmail={myEmail}
           onClose={() => setDetail(null)}
           onChanged={() => load(true)}
+          onNotice={flash}
           onCompose={(t) => { setDetail(null); setComposer(t); }}
         />
       ) : null}

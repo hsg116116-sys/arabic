@@ -429,14 +429,16 @@ router.post("/teacher/prep/document", requireAuth, requirePrep(["teacher"]), asy
     let recordId = prev?.id || "";
     const action = prev?.file_url ? "replaced" : "uploaded";
     if (prev) {
-      const { error } = await supabaseQuery(`preparations?id=eq.${enc(prev.id)}`, {
+      const { data: patched, error } = await supabaseQuery(`preparations?id=eq.${enc(prev.id)}`, {
         method: "PATCH",
         body: withState(
           { file_url: prev.file_url, uploaded_at: null, returned_at: null, supervisor_signatures: [], director_signatures: [] },
           fields,
         ),
+        headers: { Prefer: "return=representation" },
       });
       if (error) throw new Error(String(error));
+      recordId = patched?.[0]?.id || prev.id;
     } else {
       const row = {
         target_id: unit.id,
@@ -453,7 +455,12 @@ router.post("/teacher/prep/document", requireAuth, requirePrep(["teacher"]), asy
         ...fields,
         state: "awaiting_supervisor",
       };
-      const { data: created, error } = await supabaseQuery("preparations", { method: "POST", body: [row] });
+      // return=representation: بلا هذه الترويسة لا يرجع المعرّف، فيضيع حدث «من رفع» في السجل
+      const { data: created, error } = await supabaseQuery("preparations", {
+        method: "POST",
+        body: [row],
+        headers: { Prefer: "return=representation" },
+      });
       if (error) throw new Error(String(error));
       recordId = created?.[0]?.id || "";
     }
@@ -490,22 +497,30 @@ router.post("/teacher/prep/document/delete", requireAuth, requirePrep(["teacher"
       deny(res, 404, "هذا التحضير غير موجود.");
       return;
     }
-    if (readSignatures(prep.director_signatures).length) {
-      deny(res, 400, "تحضير معتمَد من المديرة — لا يُمسح. راجعها لسحب الاعتماد.");
-      return;
-    }
-    await logEvent({ id: prep.id, course_id: prep.course_id }, auth, "removed", {
-      note: `${prep.file_name || ""} — ${prep.target_title || ""} · ${prep.period_label || ""}`,
-      meta: { file_url: prep.file_url },
+    const signed = [...readSignatures(prep.supervisor_signatures), ...readSignatures(prep.director_signatures)];
+    // الحذف يمسح السطر فتُcascade أحداثه — يُسجَّل الحذف بلا ربط بالسطر، ونسخة من محتواه، ليبقى الدليل
+    await logEvent({ id: null, course_id: prep.course_id }, auth, "removed", {
+      note: `حذف تحضير «${prep.unit_title || prep.target_title || ""}» — ${prep.file_name || "بلا ملف"} · ${prep.period_label || ""}`,
+      meta: {
+        preparation_id: prep.id,
+        file_url: prep.file_url || "",
+        file_name: prep.file_name || "",
+        file_type: prep.file_type || "",
+        period_label: prep.period_label || "",
+        period_key: prep.period_key || "",
+        state_before: prep.state || "",
+        uploaded_by: prep.uploaded_by_name || prep.uploaded_by_email || "",
+        signatures: signed.map((s: any) => s.name || s.email),
+      },
       capability: "teacher",
     });
     const { error } = await supabaseQuery(`preparations?id=eq.${enc(id)}`, { method: "DELETE" });
     if (error) throw new Error(String(error));
-    res.json({ success: true, message: "أُزيل ملف التحضير" });
+    res.json({ success: true, message: "تم حذف التحضير ✓" });
   } catch (err: any) {
     if (sqlGuard(err, res, "document/delete")) return;
     logger.error({ err }, "POST /teacher/prep/document/delete failed");
-    deny(res, 500, "تعذّر إزالة الملف.");
+    deny(res, 500, "تعذّر حذف التحضير.");
   }
 });
 

@@ -39856,14 +39856,16 @@ router9.post("/teacher/prep/document", requireAuth, requirePrep(["teacher"]), as
     let recordId = prev?.id || "";
     const action = prev?.file_url ? "replaced" : "uploaded";
     if (prev) {
-      const { error } = await supabaseQuery(`preparations?id=eq.${enc5(prev.id)}`, {
+      const { data: patched, error } = await supabaseQuery(`preparations?id=eq.${enc5(prev.id)}`, {
         method: "PATCH",
         body: withState(
           { file_url: prev.file_url, uploaded_at: null, returned_at: null, supervisor_signatures: [], director_signatures: [] },
           fields
-        )
+        ),
+        headers: { Prefer: "return=representation" }
       });
       if (error) throw new Error(String(error));
+      recordId = patched?.[0]?.id || prev.id;
     } else {
       const row = {
         target_id: unit.id,
@@ -39880,7 +39882,11 @@ router9.post("/teacher/prep/document", requireAuth, requirePrep(["teacher"]), as
         ...fields,
         state: "awaiting_supervisor"
       };
-      const { data: created, error } = await supabaseQuery("preparations", { method: "POST", body: [row] });
+      const { data: created, error } = await supabaseQuery("preparations", {
+        method: "POST",
+        body: [row],
+        headers: { Prefer: "return=representation" }
+      });
       if (error) throw new Error(String(error));
       recordId = created?.[0]?.id || "";
     }
@@ -39916,22 +39922,29 @@ router9.post("/teacher/prep/document/delete", requireAuth, requirePrep(["teacher
       deny(res, 404, "\u0647\u0630\u0627 \u0627\u0644\u062A\u062D\u0636\u064A\u0631 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F.");
       return;
     }
-    if (readSignatures(prep.director_signatures).length) {
-      deny(res, 400, "\u062A\u062D\u0636\u064A\u0631 \u0645\u0639\u062A\u0645\u064E\u062F \u0645\u0646 \u0627\u0644\u0645\u062F\u064A\u0631\u0629 \u2014 \u0644\u0627 \u064A\u064F\u0645\u0633\u062D. \u0631\u0627\u062C\u0639\u0647\u0627 \u0644\u0633\u062D\u0628 \u0627\u0644\u0627\u0639\u062A\u0645\u0627\u062F.");
-      return;
-    }
-    await logEvent({ id: prep.id, course_id: prep.course_id }, auth, "removed", {
-      note: `${prep.file_name || ""} \u2014 ${prep.target_title || ""} \xB7 ${prep.period_label || ""}`,
-      meta: { file_url: prep.file_url },
+    const signed = [...readSignatures(prep.supervisor_signatures), ...readSignatures(prep.director_signatures)];
+    await logEvent({ id: null, course_id: prep.course_id }, auth, "removed", {
+      note: `\u062D\u0630\u0641 \u062A\u062D\u0636\u064A\u0631 \xAB${prep.unit_title || prep.target_title || ""}\xBB \u2014 ${prep.file_name || "\u0628\u0644\u0627 \u0645\u0644\u0641"} \xB7 ${prep.period_label || ""}`,
+      meta: {
+        preparation_id: prep.id,
+        file_url: prep.file_url || "",
+        file_name: prep.file_name || "",
+        file_type: prep.file_type || "",
+        period_label: prep.period_label || "",
+        period_key: prep.period_key || "",
+        state_before: prep.state || "",
+        uploaded_by: prep.uploaded_by_name || prep.uploaded_by_email || "",
+        signatures: signed.map((s) => s.name || s.email)
+      },
       capability: "teacher"
     });
     const { error } = await supabaseQuery(`preparations?id=eq.${enc5(id)}`, { method: "DELETE" });
     if (error) throw new Error(String(error));
-    res.json({ success: true, message: "\u0623\u064F\u0632\u064A\u0644 \u0645\u0644\u0641 \u0627\u0644\u062A\u062D\u0636\u064A\u0631" });
+    res.json({ success: true, message: "\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u062A\u062D\u0636\u064A\u0631 \u2713" });
   } catch (err) {
     if (sqlGuard(err, res, "document/delete")) return;
     logger.error({ err }, "POST /teacher/prep/document/delete failed");
-    deny(res, 500, "\u062A\u0639\u0630\u0651\u0631 \u0625\u0632\u0627\u0644\u0629 \u0627\u0644\u0645\u0644\u0641.");
+    deny(res, 500, "\u062A\u0639\u0630\u0651\u0631 \u062D\u0630\u0641 \u0627\u0644\u062A\u062D\u0636\u064A\u0631.");
   }
 });
 router9.post("/teacher/prep/sign", requireAuth, requirePrep(["supervisor", "director"]), async (req, res) => {
