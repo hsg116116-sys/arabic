@@ -5240,9 +5240,9 @@ var require_lib = __commonJS({
       var trail = decoder.end();
       return trail ? res + trail : res;
     };
-    module.exports.encodingExists = function encodingExists(enc6) {
+    module.exports.encodingExists = function encodingExists(enc7) {
       try {
-        module.exports.getCodec(enc6);
+        module.exports.getCodec(enc7);
         return true;
       } catch (e) {
         return false;
@@ -5257,36 +5257,36 @@ var require_lib = __commonJS({
         module.exports.encodings = { __proto__: null };
         mergeModules(module.exports.encodings, raw);
       }
-      var enc6 = module.exports._canonicalizeEncoding(encoding);
+      var enc7 = module.exports._canonicalizeEncoding(encoding);
       var codecOptions = {};
       while (true) {
-        var codec = module.exports._codecDataCache[enc6];
+        var codec = module.exports._codecDataCache[enc7];
         if (codec) {
           return codec;
         }
-        var codecDef = module.exports.encodings[enc6];
+        var codecDef = module.exports.encodings[enc7];
         switch (typeof codecDef) {
           case "string":
-            enc6 = codecDef;
+            enc7 = codecDef;
             break;
           case "object":
             for (var key in codecDef) {
               codecOptions[key] = codecDef[key];
             }
             if (!codecOptions.encodingName) {
-              codecOptions.encodingName = enc6;
+              codecOptions.encodingName = enc7;
             }
-            enc6 = codecDef.type;
+            enc7 = codecDef.type;
             break;
           case "function":
             if (!codecOptions.encodingName) {
-              codecOptions.encodingName = enc6;
+              codecOptions.encodingName = enc7;
             }
             codec = new codecDef(codecOptions, module.exports);
             module.exports._codecDataCache[codecOptions.encodingName] = codec;
             return codec;
           default:
-            throw new Error("Encoding not recognized: '" + encoding + "' (searched as: '" + enc6 + "')");
+            throw new Error("Encoding not recognized: '" + encoding + "' (searched as: '" + enc7 + "')");
         }
       }
     };
@@ -20804,27 +20804,27 @@ var require_router = __commonJS({
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router12;
+    module.exports = Router13;
     module.exports.Route = Route;
-    function Router12(options) {
-      if (!(this instanceof Router12)) {
-        return new Router12(options);
+    function Router13(options) {
+      if (!(this instanceof Router13)) {
+        return new Router13(options);
       }
       const opts = options || {};
-      function router12(req, res, next) {
-        router12.handle(req, res, next);
+      function router13(req, res, next) {
+        router13.handle(req, res, next);
       }
-      Object.setPrototypeOf(router12, this);
-      router12.caseSensitive = opts.caseSensitive;
-      router12.mergeParams = opts.mergeParams;
-      router12.params = {};
-      router12.strict = opts.strict;
-      router12.stack = [];
-      return router12;
+      Object.setPrototypeOf(router13, this);
+      router13.caseSensitive = opts.caseSensitive;
+      router13.mergeParams = opts.mergeParams;
+      router13.params = {};
+      router13.strict = opts.strict;
+      router13.stack = [];
+      return router13;
     }
-    Router12.prototype = function() {
+    Router13.prototype = function() {
     };
-    Router12.prototype.param = function param(name, fn) {
+    Router13.prototype.param = function param(name, fn) {
       if (!name) {
         throw new TypeError("argument name is required");
       }
@@ -20844,7 +20844,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router12.prototype.handle = function handle(req, res, callback) {
+    Router13.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20971,7 +20971,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router12.prototype.use = function use(handler) {
+    Router13.prototype.use = function use(handler) {
       let offset = 0;
       let path = "/";
       if (typeof handler !== "function") {
@@ -21004,7 +21004,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router12.prototype.route = function route(path) {
+    Router13.prototype.route = function route(path) {
       const route2 = new Route(path);
       const layer = new Layer(path, {
         sensitive: this.caseSensitive,
@@ -21019,7 +21019,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router12.prototype[method] = function(path) {
+      Router13.prototype[method] = function(path) {
         const route = this.route(path);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
@@ -21202,13 +21202,13 @@ var require_application = __commonJS({
     var compileTrust = require_utils3().compileTrust;
     var resolve2 = __require("node:path").resolve;
     var once = require_once();
-    var Router12 = require_router();
+    var Router13 = require_router();
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
     var trustProxyDefaultSymbol = "@@symbol:trust_proxy_default";
     app2.init = function init() {
-      var router12 = null;
+      var router13 = null;
       this.cache = /* @__PURE__ */ Object.create(null);
       this.engines = /* @__PURE__ */ Object.create(null);
       this.settings = /* @__PURE__ */ Object.create(null);
@@ -21217,13 +21217,13 @@ var require_application = __commonJS({
         configurable: true,
         enumerable: true,
         get: function getrouter() {
-          if (router12 === null) {
-            router12 = new Router12({
+          if (router13 === null) {
+            router13 = new Router13({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
           }
-          return router12;
+          return router13;
         }
       });
     };
@@ -21294,15 +21294,15 @@ var require_application = __commonJS({
       if (fns.length === 0) {
         throw new TypeError("app.use() requires a middleware function");
       }
-      var router12 = this.router;
+      var router13 = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router12.use(path, fn2);
+          return router13.use(path, fn2);
         }
         debug(".use app under %s", path);
         fn2.mountpath = path;
         fn2.parent = this;
-        router12.use(path, function mounted_app(req, res, next) {
+        router13.use(path, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -22572,14 +22572,14 @@ var require_cookie = __commonJS({
       return min;
     }
     function serialize(name, val, opt) {
-      var enc6 = opt && opt.encode || encodeURIComponent;
-      if (typeof enc6 !== "function") {
+      var enc7 = opt && opt.encode || encodeURIComponent;
+      if (typeof enc7 !== "function") {
         throw new TypeError("option encode is invalid");
       }
       if (!cookieNameRegExp.test(name)) {
         throw new TypeError("argument name is invalid");
       }
-      var value = enc6(val);
+      var value = enc7(val);
       if (!cookieValueRegExp.test(value)) {
         throw new TypeError("argument val is invalid");
       }
@@ -23811,7 +23811,7 @@ var require_express = __commonJS({
     var EventEmitter = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router12 = require_router();
+    var Router13 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23833,8 +23833,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router12.Route;
-    exports.Router = Router12;
+    exports.Route = Router13.Route;
+    exports.Router = Router13;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -29005,31 +29005,48 @@ async function resolveAuth(req, res) {
     }
     const userId = String(user?.id || "");
     if (!userId) return null;
-    const { data } = await supabaseQuery(
-      `profiles?id=eq.${encodeURIComponent(userId)}&select=id,email,role,grade,gender&limit=1`
-    );
-    const profile = data?.[0];
-    if (!profile) return null;
+    let profile = null;
+    let failure = null;
+    const columnSets = prepRoleMissingUntil ? ["id,email,role,grade,gender"] : ["id,email,role,grade,gender,prep_role,full_name", "id,email,role,grade,gender"];
+    for (const cols of columnSets) {
+      const { data, error } = await supabaseQuery(
+        `profiles?id=eq.${encodeURIComponent(userId)}&select=${cols}&limit=1`
+      );
+      if (error) {
+        failure = error;
+        if (/prep_role/.test(String(error))) prepRoleMissingUntil = Date.now() + 5 * 60 * 1e3;
+        continue;
+      }
+      profile = data?.[0];
+      break;
+    }
+    if (!profile) {
+      logger.warn({ failure }, "resolveAuth: \u0644\u0645 \u064A\u064F\u0639\u062B\u0631 \u0639\u0644\u0649 \u0628\u0631\u0648\u0641\u0627\u064A\u0644 \u0644\u0644\u062D\u0633\u0627\u0628");
+      return null;
+    }
     const gender = profile.gender === "\u0637\u0627\u0644\u0628" || profile.gender === "\u0637\u0627\u0644\u0628\u0629" ? profile.gender : null;
     return {
       userId: profile.id,
       email: profile.email || "",
       role: profile.role || "student",
       grade: profile.grade || "",
-      gender
+      gender,
+      prepRole: typeof profile.prep_role === "string" ? profile.prep_role : null,
+      fullName: typeof profile.full_name === "string" ? profile.full_name : ""
     };
   } catch (err) {
     logger.warn({ err }, "resolveAuth failed");
     return null;
   }
 }
-var OBSERVER_ROLE, refreshInFlight, requireAuth, requireAdmin, OBSERVER_HIDDEN_PREFIXES, blockObserverWrites, blockObserverHiddenSections;
+var OBSERVER_ROLE, prepRoleMissingUntil, refreshInFlight, requireAuth, requireAdmin, OBSERVER_HIDDEN_PREFIXES, OBSERVER_ALLOWED_WRITES, blockObserverWrites, blockObserverHiddenSections;
 var init_auth = __esm({
   "src/middlewares/auth.ts"() {
     "use strict";
     init_supabase();
     init_logger();
     OBSERVER_ROLE = "observer";
+    prepRoleMissingUntil = 0;
     refreshInFlight = /* @__PURE__ */ new Map();
     requireAuth = async (req, res, next) => {
       const auth = await resolveAuth(req, res);
@@ -29054,6 +29071,7 @@ var init_auth = __esm({
       next();
     };
     OBSERVER_HIDDEN_PREFIXES = ["/teacher/foundation", "/teacher/settings"];
+    OBSERVER_ALLOWED_WRITES = ["/teacher/prep/sign"];
     blockObserverWrites = async (req, res, next) => {
       if (req.path.startsWith("/auth/")) {
         next();
@@ -29069,7 +29087,7 @@ var init_auth = __esm({
         next();
         return;
       }
-      if (isObserverRole(auth.role)) {
+      if (isObserverRole(auth.role) && !(req.method === "POST" && OBSERVER_ALLOWED_WRITES.includes(req.path))) {
         res.status(403).json({
           error: "\u062D\u0633\u0627\u0628 \u0627\u0644\u0631\u0642\u0627\u0628\u0629 \u0644\u0644\u0627\u0637\u0644\u0627\u0639 \u0641\u0642\u0637 \u2014 \u0644\u0627 \u0635\u0644\u0627\u062D\u064A\u0629 \u0644\u0647 \u0628\u0627\u0644\u062A\u0639\u062F\u064A\u0644 \u0623\u0648 \u0627\u0644\u0625\u0636\u0627\u0641\u0629 \u0623\u0648 \u0627\u0644\u062D\u0630\u0641."
         });
@@ -31438,13 +31456,13 @@ init_env();
 
 // src/app.ts
 init_env();
-var import_express12 = __toESM(require_express2(), 1);
+var import_express13 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_cookie_parser = __toESM(require_cookie_parser(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
 
 // src/routes/index.ts
-var import_express11 = __toESM(require_express2(), 1);
+var import_express12 = __toESM(require_express2(), 1);
 init_auth();
 
 // src/routes/health.ts
@@ -37117,7 +37135,8 @@ var ALLOWED_FOLDERS = [
   "/ard-al-lughah/teacher",
   "/ard-al-lughah/books",
   "/ard-al-lughah/documents",
-  "/ard-al-lughah/summaries"
+  "/ard-al-lughah/summaries",
+  "/ard-al-lughah/prep"
 ];
 function sanitizeFolder(folder) {
   const f = String(folder || "/ard-al-lughah/lessons");
@@ -39471,14 +39490,698 @@ router8.put("/teacher/org/grades/:gradeId/schools", requireAdmin, async (req, re
 });
 var organization_default = router8;
 
-// src/routes/report.ts
+// src/routes/preparation.ts
 var import_express9 = __toESM(require_express2(), 1);
 init_supabase();
 init_auth();
 init_logger();
-init_curriculum();
 var router9 = (0, import_express9.Router)();
-var enc5 = (v) => encodeURIComponent(Array.isArray(v) ? v[0] ?? "" : v ?? "");
+var enc5 = (v) => encodeURIComponent(String(v ?? ""));
+var PREP_GRADES = ["\u0627\u0644\u0635\u0641 \u0627\u0644\u062B\u0627\u0645\u0646", "\u0627\u0644\u0635\u0641 \u0627\u0644\u062A\u0627\u0633\u0639", "\u0627\u0644\u0635\u0641 \u0627\u0644\u0639\u0627\u0634\u0631"];
+var PREP_TERMS = ["\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u0623\u0648\u0644", "\u0627\u0644\u0641\u0635\u0644 \u0627\u0644\u062B\u0627\u0646\u064A"];
+var PERIOD_TYPES = ["daily", "weekly", "monthly"];
+var DOC_TYPES = ["pdf", "docx", "doc"];
+var MAX_FILE_BYTES = 30 * 1024 * 1024;
+var SQL_HINT = "\u0646\u0641\u0651\u0630 \u0645\u0644\u0641 sql_preparation_v1.sql \u0641\u064A Supabase SQL Editor \u0623\u0648\u0644\u0627\u064B";
+var AR_DAYS = ["\u0627\u0644\u0623\u062D\u062F", "\u0627\u0644\u0627\u062B\u0646\u064A\u0646", "\u0627\u0644\u062B\u0644\u0627\u062B\u0627\u0621", "\u0627\u0644\u0623\u0631\u0628\u0639\u0627\u0621", "\u0627\u0644\u062E\u0645\u064A\u0633", "\u0627\u0644\u062C\u0645\u0639\u0629", "\u0627\u0644\u0633\u0628\u062A"];
+var AR_MONTHS = [
+  "\u0643\u0627\u0646\u0648\u0646 \u0627\u0644\u062B\u0627\u0646\u064A",
+  "\u0634\u0628\u0627\u0637",
+  "\u0622\u0630\u0627\u0631",
+  "\u0646\u064A\u0633\u0627\u0646",
+  "\u0623\u064A\u0627\u0631",
+  "\u062D\u0632\u064A\u0631\u0627\u0646",
+  "\u062A\u0645\u0648\u0632",
+  "\u0622\u0628",
+  "\u0623\u064A\u0644\u0648\u0644",
+  "\u062A\u0634\u0631\u064A\u0646 \u0627\u0644\u0623\u0648\u0644",
+  "\u062A\u0634\u0631\u064A\u0646 \u0627\u0644\u062B\u0627\u0646\u064A",
+  "\u062A\u0634\u0631\u064A\u0646 \u0627\u0644\u062B\u0627\u0644\u062B"
+];
+function prepCapability(auth) {
+  if (!auth) return null;
+  const explicit = String(auth.prepRole || "").trim();
+  if (explicit === "director") return "director";
+  if (explicit === "supervisor") return "supervisor";
+  if (explicit === "teacher") return auth.role === "admin" ? "teacher" : null;
+  if (auth.role === "observer") return "supervisor";
+  if (auth.role === "admin") return "teacher";
+  return null;
+}
+var deny = (res, status, error, extra = {}) => {
+  res.status(status).json({ error, ...extra });
+};
+var requirePrep = (allowed) => async (req, res, next) => {
+  const auth = req.auth;
+  if (!auth) {
+    deny(res, 401, "\u0633\u062C\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0623\u0648\u0644\u0627\u064B \u0644\u0644\u0645\u062A\u0627\u0628\u0639\u0629.");
+    return;
+  }
+  const cap = prepCapability(auth);
+  if (!cap) {
+    deny(res, 403, "\u0642\u0633\u0645 \u0627\u0644\u062A\u062D\u0636\u064A\u0631 \u0644\u0644\u0625\u062F\u0627\u0631\u0629 \u0648\u0627\u0644\u0645\u0634\u0631\u0641\u064A\u0646 \u0641\u0642\u0637.");
+    return;
+  }
+  if (!allowed.includes(cap)) {
+    deny(res, 403, "\u0647\u0630\u0647 \u0627\u0644\u062D\u0631\u0643\u0629 \u0644\u0627 \u062A\u062F\u062E\u0644 \u0641\u064A \u0635\u0644\u0627\u062D\u064A\u062A\u0643 \u062F\u0627\u062E\u0644 \u0627\u0644\u062A\u062D\u0636\u064A\u0631.");
+    return;
+  }
+  req.prepCapability = cap;
+  next();
+};
+var isUuid = (v) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v || "").trim());
+function safeFileUrl(v) {
+  const raw = String(v || "").trim();
+  if (!raw) return "";
+  if (raw.startsWith("/") && !raw.startsWith("//")) return raw.slice(0, 500);
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== "https:") return "";
+    if (!/(^|\.)imagekit\.io$/i.test(u.hostname)) return "";
+    return u.href.slice(0, 500);
+  } catch {
+    return "";
+  }
+}
+function readSignatures(value) {
+  const arr = typeof value === "string" ? (() => {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return [];
+    }
+  })() : value;
+  return Array.isArray(arr) ? arr.filter((s) => s && typeof s === "object" && s.email) : [];
+}
+var sameEmail = (a, b) => String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+function computeState(p) {
+  if (!p.file_url) return "none";
+  if (p.returned_at && (!p.uploaded_at || new Date(p.returned_at).getTime() > new Date(p.uploaded_at).getTime())) {
+    return "returned";
+  }
+  if (readSignatures(p.director_signatures).length) return "approved";
+  if (readSignatures(p.supervisor_signatures).length) return "awaiting_director";
+  return "awaiting_supervisor";
+}
+function withState(prep, body) {
+  return { ...body, state: computeState({ ...prep, ...body }) };
+}
+var pad2 = (n) => String(n).padStart(2, "0");
+var isoDay = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+var prettyDay = (d) => `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
+var addDays = (d, n) => {
+  const next = new Date(d.getTime());
+  next.setDate(next.getDate() + n);
+  return next;
+};
+function buildPeriod(periodType, rawDate) {
+  const d = new Date(String(rawDate || ""));
+  if (Number.isNaN(d.getTime())) return null;
+  if (periodType === "daily") {
+    return {
+      period_type: "daily",
+      period_key: isoDay(d),
+      period_label: `${AR_DAYS[d.getDay()]} ${prettyDay(d)}`,
+      period_start: isoDay(d),
+      period_end: isoDay(d)
+    };
+  }
+  if (periodType === "weekly") {
+    const start = addDays(d, -((d.getDay() + 1) % 7));
+    const end = addDays(start, 5);
+    return {
+      period_type: "weekly",
+      period_key: `week-${isoDay(start)}`,
+      period_label: `\u0623\u0633\u0628\u0648\u0639 ${prettyDay(start)} \u2013 ${prettyDay(end)}`,
+      period_start: isoDay(start),
+      period_end: isoDay(end)
+    };
+  }
+  if (periodType === "monthly") {
+    const key = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+    const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    return {
+      period_type: "monthly",
+      period_key: key,
+      period_label: `\u0634\u0647\u0631 ${AR_MONTHS[d.getMonth()]} ${d.getFullYear()}`,
+      period_start: `${key}-01`,
+      period_end: isoDay(last)
+    };
+  }
+  return null;
+}
+var PREP_COLUMNS = "id,target_id,target_type,target_title,course_id,lesson_id,grade,term,unit_title,unit_no,lesson_no,period_type,period_key,period_label,period_start,period_end,file_url,file_name,file_type,file_size,teacher_note,uploaded_by_name,uploaded_by_email,uploaded_at,supervisor_signatures,director_signatures,return_note,returned_by_name,returned_by_email,returned_at,state,updated_at";
+function prepToJson(p) {
+  return {
+    id: p.id,
+    targetId: p.target_id || p.course_id,
+    targetType: p.target_type === "lesson" ? "lesson" : "unit",
+    targetTitle: p.target_title || p.unit_title || "",
+    courseId: p.course_id,
+    lessonId: p.lesson_id || null,
+    grade: p.grade || "",
+    term: p.term || "",
+    unitTitle: p.unit_title || "",
+    unitNo: Number(p.unit_no) || 1,
+    lessonNo: Number(p.lesson_no) || null,
+    periodType: p.period_type || "unit",
+    periodKey: p.period_key || "",
+    periodLabel: p.period_label || "\u062A\u062D\u0636\u064A\u0631 \u0627\u0644\u0648\u062D\u062F\u0629",
+    periodStart: p.period_start || null,
+    periodEnd: p.period_end || null,
+    fileUrl: p.file_url || "",
+    fileName: p.file_name || "",
+    fileType: p.file_type || "",
+    fileSize: Number(p.file_size) || 0,
+    teacherNote: p.teacher_note || "",
+    uploadedByName: p.uploaded_by_name || "",
+    uploadedByEmail: p.uploaded_by_email || "",
+    uploadedAt: p.uploaded_at || null,
+    supervisorSignatures: readSignatures(p.supervisor_signatures),
+    directorSignatures: readSignatures(p.director_signatures),
+    returnNote: p.return_note || "",
+    returnedByName: p.returned_by_name || "",
+    returnedByEmail: p.returned_by_email || "",
+    returnedAt: p.returned_at || null,
+    state: p.state && p.state !== "none" ? String(p.state) : computeState(p),
+    updatedAt: p.updated_at || null
+  };
+}
+function isMissingTables(error) {
+  const t = String(error || "");
+  return /(preparations?|preparation_events)/.test(t) && /(does not exist|relation|Could not find|schema cache)/i.test(t);
+}
+function sqlGuard(err, res, route) {
+  if (!isMissingTables(err?.message)) return false;
+  deny(res, 503, `\u062C\u062F\u0627\u0648\u0644 \u0627\u0644\u062A\u062D\u0636\u064A\u0631 \u063A\u064A\u0631 \u0628\u0639\u062F\u064F \u2014 ${SQL_HINT}.`, { needsSql: true });
+  logger.warn({ route }, "\u0642\u0633\u0645 \u0627\u0644\u062A\u062D\u0636\u064A\u0631 \u064A\u062D\u062A\u0627\u062C \u062A\u0646\u0641\u064A\u0630 SQL");
+  return true;
+}
+async function logEvent(prep, auth, action, opts = {}) {
+  const { error } = await supabaseQuery("preparation_events", {
+    method: "POST",
+    body: [
+      {
+        preparation_id: prep.id || null,
+        course_id: prep.course_id || null,
+        action,
+        actor_name: auth.fullName || auth.email,
+        actor_email: auth.email,
+        actor_role: opts.capability || auth.role,
+        note: String(opts.note || "").slice(0, 500),
+        meta: opts.meta || {}
+      }
+    ]
+  });
+  if (error) logger.error({ error, action }, "\u062A\u0639\u0630\u0651\u0631 \u062A\u0633\u062C\u064A\u0644 \u062D\u062F\u062B \u062A\u062D\u0636\u064A\u0631\u064A");
+}
+async function loadPreparation(id) {
+  const { data, error } = await supabaseQuery(
+    `preparations?id=eq.${enc5(id)}&select=${PREP_COLUMNS}&limit=1`
+  );
+  if (error) throw new Error(String(error));
+  return data?.[0] || null;
+}
+async function loadUnits(grade, term) {
+  const { data: courses, error } = await supabaseQuery(
+    `courses?select=id,title,grade,term,sort_order,lessons_count&grade=eq.${enc5(grade)}&term=eq.${enc5(term)}&order=sort_order.asc&limit=100`
+  );
+  if (error) throw new Error(String(error));
+  const list = (courses || []).filter((c) => PREP_GRADES.includes(c.grade));
+  const ids = list.map((c) => `"${c.id}"`).join(",");
+  const [lessonsRes, prepsRes] = await Promise.all([
+    ids ? supabaseQuery(`lessons?select=id,course_id,title,position&course_id=in.(${ids})&order=course_id.asc,position.asc&limit=1200`) : Promise.resolve({ data: [], error: null }),
+    ids ? supabaseQuery(
+      `preparations?select=${PREP_COLUMNS}&course_id=in.(${ids})&order=period_start.desc,unit_no.asc&limit=1500`
+    ) : Promise.resolve({ data: [], error: null })
+  ]);
+  if (lessonsRes.error) throw new Error(String(lessonsRes.error));
+  if (prepsRes.error) throw new Error(String(prepsRes.error));
+  const lessonsByUnit = /* @__PURE__ */ new Map();
+  (lessonsRes.data || []).forEach((l) => {
+    const key = String(l.course_id);
+    lessonsByUnit.set(key, [...lessonsByUnit.get(key) || [], { id: l.id, title: l.title || "", position: Number(l.position) || 0 }]);
+  });
+  const prepsByTarget = /* @__PURE__ */ new Map();
+  const records = (prepsRes.data || []).map(prepToJson);
+  records.forEach((r) => {
+    const key = String(r.targetId);
+    prepsByTarget.set(key, [...prepsByTarget.get(key) || [], r]);
+  });
+  const units = list.map((c) => {
+    const lessons = lessonsByUnit.get(String(c.id)) || [];
+    const unitPreps = prepsByTarget.get(String(c.id)) || [];
+    const lessonPreps = lessons.flatMap((l) => prepsByTarget.get(String(l.id)) || []);
+    return {
+      courseId: c.id,
+      title: c.title || "",
+      grade: c.grade || "",
+      term: c.term || "",
+      unitNo: Number(c.sort_order) || 1,
+      lessonsCount: lessons.length || Number(c.lessons_count) || 0,
+      lessons: lessons.map((l) => ({ ...l, preparations: prepsByTarget.get(String(l.id)) || [] })),
+      preparations: unitPreps,
+      summary: {
+        unitPrepared: unitPreps.some((p) => p.state !== "none"),
+        lessonsPrepared: lessons.filter((l) => (prepsByTarget.get(String(l.id)) || []).length > 0).length,
+        lessonsTotal: lessons.length,
+        awaiting: [...unitPreps, ...lessonPreps].filter((p) => p.state === "awaiting_supervisor" || p.state === "returned").length,
+        awaitingDirector: [...unitPreps, ...lessonPreps].filter((p) => p.state === "awaiting_director").length,
+        approved: [...unitPreps, ...lessonPreps].filter((p) => p.state === "approved").length,
+        total: [...unitPreps, ...lessonPreps].filter((p) => p.state !== "none").length
+      }
+    };
+  });
+  const count = (s) => records.filter((p) => p.state === s).length;
+  const lessonTotals = units.reduce(
+    (acc, u) => ({ lessons: acc.lessons + u.lessonsCount, prepared: acc.prepared + u.summary.lessonsPrepared }),
+    { lessons: 0, prepared: 0 }
+  );
+  return {
+    units,
+    stats: {
+      units: units.length,
+      preparedUnits: units.filter((u) => u.summary.unitPrepared).length,
+      lessons: lessonTotals.lessons,
+      preparedLessons: lessonTotals.prepared,
+      records: records.length,
+      awaitingSupervisor: count("awaiting_supervisor") + count("returned"),
+      awaitingDirector: count("awaiting_director"),
+      approved: count("approved")
+    }
+  };
+}
+router9.get("/teacher/prep/units", requireAuth, requirePrep(["teacher", "supervisor", "director"]), async (req, res) => {
+  try {
+    const auth = req.auth;
+    const grade = PREP_GRADES.includes(String(req.query.grade)) ? String(req.query.grade) : PREP_GRADES[0];
+    const term = PREP_TERMS.includes(String(req.query.term)) ? String(req.query.term) : PREP_TERMS[0];
+    const { units, stats } = await loadUnits(grade, term);
+    res.json({
+      capability: req.prepCapability,
+      account: { name: auth.fullName || auth.email, email: auth.email, role: auth.role },
+      grades: PREP_GRADES,
+      terms: PREP_TERMS,
+      grade,
+      term,
+      units,
+      stats
+    });
+  } catch (err) {
+    if (sqlGuard(err, res, "units")) return;
+    logger.error({ err }, "GET /teacher/prep/units failed");
+    deny(res, 500, "\u062A\u0639\u0630\u0651\u0631 \u062C\u0644\u0628 \u0648\u062D\u062F\u0627\u062A \u0627\u0644\u062A\u062D\u0636\u064A\u0631.");
+  }
+});
+router9.get("/teacher/prep/ledger", requireAuth, requirePrep(["teacher", "supervisor", "director"]), async (req, res) => {
+  try {
+    const grades = String(req.query.grade || "").split("|").filter((g) => PREP_GRADES.includes(g));
+    const gradeIn = (grades.length ? grades : PREP_GRADES).map((g) => `"${g}"`).join(",");
+    let endpoint = `preparations?select=${PREP_COLUMNS}&grade=in.(${gradeIn})&order=period_start.desc,unit_no.asc&limit=800`;
+    if (PREP_TERMS.includes(String(req.query.term))) endpoint += `&term=eq.${enc5(String(req.query.term))}`;
+    if (PERIOD_TYPES.includes(String(req.query.periodType))) endpoint += `&period_type=eq.${enc5(String(req.query.periodType))}`;
+    if (["unit", "lesson"].includes(String(req.query.targetType))) endpoint += `&target_type=eq.${enc5(String(req.query.targetType))}`;
+    const { data, error } = await supabaseQuery(endpoint);
+    if (error) throw new Error(String(error));
+    const items = (data || []).map(prepToJson);
+    res.json({ items, total: items.length, periodTypes: PERIOD_TYPES });
+  } catch (err) {
+    if (sqlGuard(err, res, "ledger")) return;
+    logger.error({ err }, "GET /teacher/prep/ledger failed");
+    deny(res, 500, "\u062A\u0639\u0630\u0651\u0631 \u062C\u0644\u0628 \u0633\u062C\u0644 \u0627\u0644\u062A\u062D\u0636\u064A\u0631.");
+  }
+});
+router9.post("/teacher/prep/document", requireAuth, requirePrep(["teacher"]), async (req, res) => {
+  try {
+    const auth = req.auth;
+    const b = req.body || {};
+    const targetId = String(b.targetId || b.courseId || "").trim();
+    const targetType = b.targetType === "lesson" ? "lesson" : "unit";
+    const period = buildPeriod(String(b.periodType || ""), b.date);
+    if (!isUuid(targetId) || !period) {
+      deny(res, 400, "\u062D\u062F\u062F \u0627\u0644\u0648\u062D\u062F\u0629 \u0623\u0648 \u0627\u0644\u062F\u0631\u0633\u060C \u0648\u0627\u0644\u062A\u0627\u0631\u064A\u062E \u0627\u0644\u0635\u062D\u064A\u062D \u0644\u0644\u0641\u062A\u0631\u0629 (\u064A\u0648\u0645 \u0623\u0648 \u0623\u0633\u0628\u0648\u0639 \u0623\u0648 \u0634\u0647\u0631).");
+      return;
+    }
+    const fileUrl = safeFileUrl(b.fileUrl);
+    const ext = String(b.fileType || String(b.fileName || "").split(".").pop() || "").toLowerCase();
+    if (!fileUrl || !DOC_TYPES.includes(ext)) {
+      deny(res, 400, "\u0627\u0644\u0645\u0644\u0641 \u0645\u0631\u0641\u0648\u0636 \u2014 \u0627\u0644\u0645\u0642\u0628\u0648\u0644 PDF \u0623\u0648 \u0648\u0648\u0631\u062F (docx/doc) \u0645\u0646 \u062A\u062E\u0632\u064A\u0646 \u0627\u0644\u0645\u0646\u0635\u0629.");
+      return;
+    }
+    const size = Number(b.fileSize) || 0;
+    if (size > MAX_FILE_BYTES) {
+      deny(res, 400, "\u062D\u062C\u0645 \u0627\u0644\u0645\u0644\u0641 \u064A\u062A\u062C\u0627\u0648\u0632 \u0663\u0660 \u0645\u064A\u062C\u0627\u0628\u0627\u064A\u062A.");
+      return;
+    }
+    let unit = null;
+    let lesson = null;
+    if (targetType === "unit") {
+      const { data, error } = await supabaseQuery(
+        `courses?select=id,title,grade,term,sort_order&id=eq.${enc5(targetId)}&limit=1`
+      );
+      if (error) throw new Error(String(error));
+      unit = data?.[0] || null;
+    } else {
+      const { data, error } = await supabaseQuery(
+        `lessons?select=id,title,position,course_id&id=eq.${enc5(targetId)}&limit=1`
+      );
+      if (error) throw new Error(String(error));
+      lesson = data?.[0] || null;
+      if (lesson) {
+        const { data: c, error: cErr } = await supabaseQuery(
+          `courses?select=id,title,grade,term,sort_order&id=eq.${enc5(lesson.course_id)}&limit=1`
+        );
+        if (cErr) throw new Error(String(cErr));
+        unit = c?.[0] || null;
+      }
+    }
+    if (!unit || !PREP_GRADES.includes(unit.grade)) {
+      deny(res, 400, "\u0647\u0630\u0627 \u0627\u0644\u063A\u0631\u0636 \u0644\u064A\u0633 \u0636\u0645\u0646 \u0635\u0641\u0648\u0641 \u0627\u0644\u062A\u062D\u0636\u064A\u0631 (\u0627\u0644\u062B\u0627\u0645\u0646 \u0648\u0627\u0644\u062A\u0627\u0633\u0639 \u0648\u0627\u0644\u0639\u0627\u0634\u0631).");
+      return;
+    }
+    if (targetType === "lesson" && lesson && String(lesson.course_id) !== String(unit.id)) {
+      deny(res, 400, "\u0627\u0644\u062F\u0631\u0633 \u0644\u0627 \u064A\u0637\u0627\u0628\u0642 \u0648\u062D\u062F\u062A\u0647 \u2014 \u0623\u0639\u062F \u0641\u062A\u062D \u0627\u0644\u0635\u0641\u062D\u0629.");
+      return;
+    }
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const targetTitle = String((targetType === "lesson" ? lesson?.title : unit?.title) || unit?.title || "").slice(0, 220);
+    const fields = {
+      file_url: fileUrl,
+      file_name: String(b.fileName || "").slice(0, 220),
+      file_type: ext,
+      file_size: size,
+      teacher_note: String(b.note || "").slice(0, 1e3),
+      uploaded_by_name: auth.fullName || auth.email,
+      uploaded_by_email: auth.email,
+      uploaded_at: now,
+      // رفع جديد يبدأ دورة التوقيع من أولها — لا يُوقَّع على ملف لم يعد موجوداً
+      supervisor_signatures: [],
+      director_signatures: [],
+      return_note: "",
+      returned_by_name: "",
+      returned_by_email: "",
+      returned_at: null,
+      updated_at: now
+    };
+    const { data: existing } = await supabaseQuery(
+      `preparations?target_id=eq.${enc5(targetId)}&period_key=eq.${enc5(period.period_key)}&select=id,file_url&limit=1`
+    );
+    const prev = existing?.[0] || null;
+    let recordId = prev?.id || "";
+    const action = prev?.file_url ? "replaced" : "uploaded";
+    if (prev) {
+      const { error } = await supabaseQuery(`preparations?id=eq.${enc5(prev.id)}`, {
+        method: "PATCH",
+        body: withState(
+          { file_url: prev.file_url, uploaded_at: null, returned_at: null, supervisor_signatures: [], director_signatures: [] },
+          fields
+        )
+      });
+      if (error) throw new Error(String(error));
+    } else {
+      const row = {
+        target_id: targetId,
+        target_type: targetType,
+        target_title: targetTitle,
+        course_id: unit.id,
+        lesson_id: targetType === "lesson" ? lesson?.id || null : null,
+        grade: unit.grade || "",
+        term: unit.term || "",
+        unit_title: unit.title || "",
+        unit_no: Number(unit.sort_order) || 1,
+        lesson_no: targetType === "lesson" ? Number(lesson?.position) || null : null,
+        ...period,
+        ...fields,
+        state: "awaiting_supervisor"
+      };
+      const { data: created, error } = await supabaseQuery("preparations", { method: "POST", body: [row] });
+      if (error) throw new Error(String(error));
+      recordId = created?.[0]?.id || "";
+    }
+    if (recordId) {
+      await logEvent({ id: recordId, course_id: unit.id }, auth, action, {
+        note: `${fields.file_name} \u2014 ${targetType === "lesson" ? "\u062F\u0631\u0633" : "\u0648\u062D\u062F\u0629"}: ${targetTitle} \xB7 ${period.period_label}`,
+        meta: { file_url: fileUrl, file_type: ext, file_size: size, period, target_type: targetType },
+        capability: "teacher"
+      });
+    }
+    const fresh = recordId ? await loadPreparation(recordId) : null;
+    res.json({
+      success: true,
+      message: action === "replaced" ? "\u062A\u0645 \u0627\u0633\u062A\u0628\u062F\u0627\u0644 \u0645\u0644\u0641 \u0627\u0644\u062A\u062D\u0636\u064A\u0631 \u2713" : "\u062A\u0645 \u0631\u0641\u0639 \u0645\u0644\u0641 \u0627\u0644\u062A\u062D\u0636\u064A\u0631 \u2713",
+      unit: fresh ? prepToJson(fresh) : null
+    });
+  } catch (err) {
+    if (sqlGuard(err, res, "document")) return;
+    logger.error({ err }, "POST /teacher/prep/document failed");
+    deny(res, 500, "\u062A\u0639\u0630\u0651\u0631 \u062D\u0641\u0638 \u0645\u0644\u0641 \u0627\u0644\u062A\u062D\u0636\u064A\u0631.");
+  }
+});
+router9.post("/teacher/prep/document/delete", requireAuth, requirePrep(["teacher"]), async (req, res) => {
+  try {
+    const auth = req.auth;
+    const id = String((req.body || {}).preparationId || "").trim();
+    if (!isUuid(id)) {
+      deny(res, 400, "\u0645\u0639\u0631\u0651\u0641 \u062A\u062D\u0636\u064A\u0631 \u063A\u064A\u0631 \u0635\u0627\u0644\u062D.");
+      return;
+    }
+    const prep = await loadPreparation(id);
+    if (!prep) {
+      deny(res, 404, "\u0647\u0630\u0627 \u0627\u0644\u062A\u062D\u0636\u064A\u0631 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F.");
+      return;
+    }
+    if (readSignatures(prep.director_signatures).length) {
+      deny(res, 400, "\u062A\u062D\u0636\u064A\u0631 \u0645\u0639\u062A\u0645\u064E\u062F \u0645\u0646 \u0627\u0644\u0645\u062F\u064A\u0631\u0629 \u2014 \u0644\u0627 \u064A\u064F\u0645\u0633\u062D. \u0631\u0627\u062C\u0639\u0647\u0627 \u0644\u0633\u062D\u0628 \u0627\u0644\u0627\u0639\u062A\u0645\u0627\u062F.");
+      return;
+    }
+    await logEvent({ id: prep.id, course_id: prep.course_id }, auth, "removed", {
+      note: `${prep.file_name || ""} \u2014 ${prep.target_title || ""} \xB7 ${prep.period_label || ""}`,
+      meta: { file_url: prep.file_url },
+      capability: "teacher"
+    });
+    const { error } = await supabaseQuery(`preparations?id=eq.${enc5(id)}`, { method: "DELETE" });
+    if (error) throw new Error(String(error));
+    res.json({ success: true, message: "\u0623\u064F\u0632\u064A\u0644 \u0645\u0644\u0641 \u0627\u0644\u062A\u062D\u0636\u064A\u0631" });
+  } catch (err) {
+    if (sqlGuard(err, res, "document/delete")) return;
+    logger.error({ err }, "POST /teacher/prep/document/delete failed");
+    deny(res, 500, "\u062A\u0639\u0630\u0651\u0631 \u0625\u0632\u0627\u0644\u0629 \u0627\u0644\u0645\u0644\u0641.");
+  }
+});
+router9.post("/teacher/prep/sign", requireAuth, requirePrep(["supervisor", "director"]), async (req, res) => {
+  try {
+    const auth = req.auth;
+    const cap = req.prepCapability;
+    const b = req.body || {};
+    const id = String(b.preparationId || "").trim();
+    const stage = b.stage === "director" ? "director" : "supervisor";
+    const decision = ["sign", "unsign", "return"].includes(String(b.decision)) ? String(b.decision) : "";
+    if (!isUuid(id) || !decision) {
+      deny(res, 400, "\u0637\u0644\u0628 \u062A\u0648\u0642\u064A\u0639 \u063A\u064A\u0631 \u0645\u0643\u062A\u0645\u0644.");
+      return;
+    }
+    if (cap !== stage) {
+      deny(res, 403, cap === "supervisor" ? "\u0627\u0644\u0645\u0634\u0631\u0641\u0629 \u062A\u0648\u0642\u0651\u0639 \u0645\u0631\u062D\u0644\u0629 \u0627\u0644\u0625\u0634\u0631\u0627\u0641 \u0641\u0642\u0637." : "\u0627\u0644\u0645\u062F\u064A\u0631\u0629 \u062A\u0639\u062A\u0645\u062F \u0627\u0644\u0645\u0631\u062D\u0644\u0629 \u0627\u0644\u0646\u0647\u0627\u0626\u064A\u0629 \u0641\u0642\u0637.");
+      return;
+    }
+    const prep = await loadPreparation(id);
+    if (!prep) {
+      deny(res, 404, "\u0647\u0630\u0627 \u0627\u0644\u062A\u062D\u0636\u064A\u0631 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F.");
+      return;
+    }
+    if (!prep.file_url) {
+      deny(res, 400, "\u0644\u0627 \u064A\u0648\u062C\u062F \u0645\u0644\u0641 \u062A\u062D\u0636\u064A\u0631 \u0628\u0639\u062F \u2014 \u0644\u0627 \u062A\u0648\u0642\u064A\u0639 \u0639\u0644\u0649 \u0641\u0631\u0627\u063A.");
+      return;
+    }
+    const note = String(b.note || "").slice(0, 1e3);
+    const column = stage === "director" ? "director_signatures" : "supervisor_signatures";
+    const all = readSignatures(prep[column]);
+    const others = all.filter((s) => !sameEmail(s.email, auth.email));
+    const mine = all.find((s) => sameEmail(s.email, auth.email));
+    if (stage === "director" && decision !== "return" && !readSignatures(prep.supervisor_signatures).length) {
+      deny(res, 400, "\u0628\u0627\u0646\u062A\u0638\u0627\u0631 \u062A\u0648\u0642\u064A\u0639 \u0627\u0644\u0645\u0634\u0631\u0641\u0629 \u0623\u0648\u0644\u0627\u064B.");
+      return;
+    }
+    if (decision === "unsign" && stage === "supervisor" && readSignatures(prep.director_signatures).length) {
+      deny(res, 400, "\u0627\u0644\u062A\u062D\u0636\u064A\u0631 \u0645\u0639\u062A\u0645\u064E\u062F \u0645\u0646 \u0627\u0644\u0645\u062F\u064A\u0631\u0629 \u2014 \u064A\u064F\u0633\u062D\u0628 \u0627\u0639\u062A\u0645\u0627\u062F\u0647\u0627 \u0623\u0648\u0644\u0627\u064B.");
+      return;
+    }
+    if (decision === "sign" && mine) {
+      res.json({ success: true, message: "\u062A\u0648\u0642\u064A\u0639\u0643 \u0645\u0633\u062C\u0651\u0644 \u0633\u0627\u0628\u0642\u0627\u064B \u2713", unit: prepToJson(prep) });
+      return;
+    }
+    if (decision === "unsign" && !mine) {
+      res.json({ success: true, message: "\u0644\u0627 \u062A\u0648\u0642\u064A\u0639 \u0644\u0643 \u0644\u0645\u0633\u062D\u0647", unit: prepToJson(prep) });
+      return;
+    }
+    if (decision === "return" && !note) {
+      deny(res, 400, "\u0627\u0644\u0625\u0631\u062C\u0627\u0639 \u064A\u062D\u062A\u0627\u062C \u0645\u0644\u0627\u062D\u0638\u0629 \u062A\u0635\u0644 \u0625\u0644\u0649 \u0627\u0644\u0623\u0633\u062A\u0627\u0630.");
+      return;
+    }
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const body = { updated_at: now };
+    let action = "";
+    if (decision === "sign") {
+      body[column] = [...others, { name: auth.fullName || auth.email, email: auth.email, signed_at: now, note }];
+      action = `signed_${stage}`;
+      if (prep.returned_at) {
+        body.return_note = "";
+        body.returned_by_name = "";
+        body.returned_by_email = "";
+        body.returned_at = null;
+      }
+    } else if (decision === "unsign") {
+      body[column] = others;
+      action = `unsigned_${stage}`;
+    } else {
+      body.director_signatures = [];
+      body.supervisor_signatures = [];
+      body.return_note = note;
+      body.returned_by_name = auth.fullName || auth.email;
+      body.returned_by_email = auth.email;
+      body.returned_at = now;
+      action = "returned";
+    }
+    const { error } = await supabaseQuery(`preparations?id=eq.${enc5(prep.id)}`, {
+      method: "PATCH",
+      body: withState(prep, body)
+    });
+    if (error) throw new Error(String(error));
+    await logEvent({ id: prep.id, course_id: prep.course_id }, auth, action, {
+      note: decision === "unsign" ? "" : note,
+      meta: { stage, period_label: prep.period_label, target_title: prep.target_title },
+      capability: cap
+    });
+    const fresh = await loadPreparation(id);
+    const message = decision === "sign" ? stage === "director" ? "\u062A\u0645 \u0627\u0639\u062A\u0645\u0627\u062F \u0627\u0644\u062A\u062D\u0636\u064A\u0631 \u2713" : "\u062A\u0645 \u062A\u0648\u0642\u064A\u0639 \u0627\u0644\u0645\u0634\u0631\u0641\u0629 \u0639\u0644\u0649 \u0627\u0644\u062A\u062D\u0636\u064A\u0631 \u2713" : decision === "return" ? "\u0623\u064F\u0639\u064A\u062F \u0627\u0644\u062A\u062D\u0636\u064A\u0631 \u0625\u0644\u0649 \u0627\u0644\u0623\u0633\u062A\u0627\u0630 \u0645\u0639 \u0645\u0644\u0627\u062D\u0638\u062A\u0643" : "\u0633\u064F\u062D\u0628 \u0627\u0644\u062A\u0648\u0642\u064A\u0639";
+    res.json({ success: true, message, unit: fresh ? prepToJson(fresh) : null });
+  } catch (err) {
+    if (sqlGuard(err, res, "sign")) return;
+    logger.error({ err }, "POST /teacher/prep/sign failed");
+    deny(res, 500, "\u062A\u0639\u0630\u0651\u0631 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062A\u0648\u0642\u064A\u0639.");
+  }
+});
+router9.get("/teacher/prep/events", requireAuth, requirePrep(["teacher", "supervisor", "director"]), async (req, res) => {
+  try {
+    const courseId = String(req.query.courseId || "").trim();
+    const preparationId = String(req.query.preparationId || "").trim();
+    if (!isUuid(courseId) && !isUuid(preparationId)) {
+      deny(res, 400, "\u062D\u062F\u062F \u0648\u062D\u062F\u0629 \u0623\u0648 \u062A\u062D\u0636\u064A\u0631\u0627\u064B.");
+      return;
+    }
+    const filter = isUuid(preparationId) ? `preparation_id=eq.${enc5(preparationId)}` : `course_id=eq.${enc5(courseId)}`;
+    const { data, error } = await supabaseQuery(
+      `preparation_events?select=action,actor_name,actor_email,actor_role,note,meta,created_at&${filter}&order=created_at.desc&limit=100`
+    );
+    if (error) throw new Error(String(error));
+    res.json({
+      events: (data || []).map((e) => ({
+        action: e.action,
+        actorName: e.actor_name || "",
+        actorEmail: e.actor_email || "",
+        actorRole: e.actor_role || "",
+        note: e.note || "",
+        meta: e.meta || {},
+        at: e.created_at
+      }))
+    });
+  } catch (err) {
+    if (sqlGuard(err, res, "events")) return;
+    logger.error({ err }, "GET /teacher/prep/events failed");
+    deny(res, 500, "\u062A\u0639\u0630\u0651\u0631 \u062C\u0644\u0628 \u0627\u0644\u0633\u062C\u0644.");
+  }
+});
+var PREP_ROLE_LABEL = {
+  teacher: "\u0623\u0633\u062A\u0627\u0630 \u2014 \u064A\u0631\u0641\u0639 \u0627\u0644\u062A\u062D\u0636\u064A\u0631",
+  supervisor: "\u0645\u0634\u0631\u0641\u0629 \u2014 \u062A\u0648\u0642\u0651\u0639 \u0627\u0644\u062A\u062D\u0636\u064A\u0631",
+  director: "\u0645\u062F\u064A\u0631\u0629 \u2014 \u0627\u0639\u062A\u0645\u0627\u062F \u0646\u0647\u0627\u0626\u064A"
+};
+router9.get("/teacher/prep/cell", requireAuth, requirePrep(["teacher"]), async (_req, res) => {
+  const map = (p) => ({
+    email: p.email || "",
+    name: p.full_name || p.email || "",
+    role: p.role || "",
+    prepRole: p.prep_role || "",
+    capability: prepCapability(p) || "none",
+    avatarUrl: p.avatar_url || ""
+  });
+  try {
+    const { data, error } = await supabaseQuery(
+      `profiles?select=email,full_name,role,prep_role,avatar_url&or=(role.eq.admin,role.eq.observer)&order=role.asc,created_at.asc&limit=100`
+    );
+    if (error) throw new Error(String(error));
+    res.json({ roles: PREP_ROLE_LABEL, members: (data || []).map(map) });
+  } catch (err) {
+    if (!/prep_role/.test(String(err?.message))) {
+      if (sqlGuard(err, res, "cell")) return;
+      logger.error({ err }, "GET /teacher/prep/cell failed");
+      deny(res, 500, "\u062A\u0639\u0630\u0651\u0631 \u062C\u0644\u0628 \u062E\u0644\u064A\u0629 \u0627\u0644\u062A\u062D\u0636\u064A\u0631.");
+      return;
+    }
+    const { data, error } = await supabaseQuery(
+      `profiles?select=email,full_name,role,avatar_url&or=(role.eq.admin,role.eq.observer)&order=role.asc,created_at.asc&limit=100`
+    );
+    if (error) {
+      logger.error({ error }, "GET /teacher/prep/cell fallback failed");
+      deny(res, 500, "\u062A\u0639\u0630\u0651\u0631 \u062C\u0644\u0628 \u062E\u0644\u064A\u0629 \u0627\u0644\u062A\u062D\u0636\u064A\u0631.");
+      return;
+    }
+    res.json({ roles: PREP_ROLE_LABEL, needsSql: true, members: (data || []).map(map) });
+  }
+});
+router9.patch("/teacher/prep/cell", requireAuth, requirePrep(["teacher"]), async (req, res) => {
+  try {
+    const auth = req.auth;
+    const b = req.body || {};
+    const email = String(b.email || "").trim().toLowerCase();
+    const next = ["teacher", "supervisor", "director", ""].includes(String(b.prepRole)) ? String(b.prepRole) : null;
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || next === null) {
+      deny(res, 400, "\u0628\u064A\u0627\u0646\u0627\u062A \u063A\u064A\u0631 \u0635\u0627\u0644\u062D\u0629.");
+      return;
+    }
+    if (sameEmail(email, auth.email)) {
+      deny(res, 400, "\u0644\u0627 \u062A\u064F\u0639\u062F\u0651\u0644 \u062F\u0648\u0631 \u062D\u0633\u0627\u0628\u0643 \u2014 \u062D\u0645\u0627\u064A\u0629\u064B \u0645\u0646 \u0623\u0646 \u062A\u064F\u063A\u0644\u0642 \u0627\u0644\u0642\u0633\u0645 \u0639\u0644\u0649 \u0646\u0641\u0633\u0643.");
+      return;
+    }
+    const { data: rows, error: findError } = await supabaseQuery(
+      `profiles?select=id,email,full_name,role&email=eq.${enc5(email)}&or=(role.eq.admin,role.eq.observer)&limit=1`
+    );
+    if (findError) throw new Error(String(findError));
+    const target = rows?.[0];
+    if (!target) {
+      deny(res, 404, "\u0647\u0630\u0627 \u0627\u0644\u062D\u0633\u0627\u0628 \u0644\u064A\u0633 \u0636\u0645\u0646 \u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0645\u0648\u0642\u0639 \u0623\u0648 \u0627\u0644\u0625\u0634\u0631\u0627\u0641.");
+      return;
+    }
+    const { error } = await supabaseQuery(`profiles?id=eq.${enc5(target.id)}`, {
+      method: "PATCH",
+      body: { prep_role: next || null }
+    });
+    if (error) throw new Error(String(error));
+    await logEvent({}, auth, "role_changed", {
+      note: `${target.full_name || target.email}: ${next || "\u062A\u0644\u0642\u0627\u0626\u064A"}`,
+      capability: "teacher"
+    });
+    res.json({ success: true, message: `\u062A\u0645 \u062A\u062D\u062F\u064A\u062B \u062F\u0648\u0631 ${target.full_name || target.email}` });
+  } catch (err) {
+    if (/prep_role/.test(String(err?.message))) {
+      deny(res, 503, `\u0627\u0644\u0623\u062F\u0648\u0627\u0631 \u062A\u064F\u0636\u0628\u0637 \u0628\u0639\u062F \u062A\u0646\u0641\u064A\u0630 ${SQL_HINT}.`, { needsSql: true });
+      return;
+    }
+    if (sqlGuard(err, res, "cell")) return;
+    logger.error({ err }, "PATCH /teacher/prep/cell failed");
+    deny(res, 500, "\u062A\u0639\u0630\u0651\u0631 \u062A\u062D\u062F\u064A\u062B \u0627\u0644\u062F\u0648\u0631.");
+  }
+});
+var preparation_default = router9;
+
+// src/routes/report.ts
+var import_express10 = __toESM(require_express2(), 1);
+init_supabase();
+init_auth();
+init_logger();
+init_curriculum();
+var router10 = (0, import_express10.Router)();
+var enc6 = (v) => encodeURIComponent(Array.isArray(v) ? v[0] ?? "" : v ?? "");
 function num(v, fallback = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
@@ -39651,7 +40354,7 @@ function cohortCompare(rows) {
     overall: avg((r) => r.overall)
   };
 }
-router9.get("/teacher/report/overview", requireAdmin, async (req, res) => {
+router10.get("/teacher/report/overview", requireAdmin, async (req, res) => {
   try {
     const q = req.query || {};
     const schoolFilter = (q.school || "").trim();
@@ -39686,7 +40389,7 @@ router9.get("/teacher/report/overview", requireAdmin, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062C\u0647\u064A\u0632 \u0643\u0634\u0641 \u0627\u0644\u0639\u0644\u0627\u0645\u0627\u062A" });
   }
 });
-router9.get("/teacher/report/student/:id", requireAdmin, async (req, res) => {
+router10.get("/teacher/report/student/:id", requireAdmin, async (req, res) => {
   try {
     const studentId = String(req.params.id || "").trim();
     if (!studentId) {
@@ -39694,7 +40397,7 @@ router9.get("/teacher/report/student/:id", requireAdmin, async (req, res) => {
       return;
     }
     const { data: profRows } = await supabaseQuery(
-      `profiles?id=eq.${enc5(studentId)}&select=id,email,full_name,role,grade,school,section,gender,phone,avatar_url,status,student_number,created_at&limit=1`
+      `profiles?id=eq.${enc6(studentId)}&select=id,email,full_name,role,grade,school,section,gender,phone,avatar_url,status,student_number,created_at&limit=1`
     );
     const profile = profRows?.[0];
     if (!profile || profile.role !== "student") {
@@ -39720,15 +40423,15 @@ router9.get("/teacher/report/student/:id", requireAdmin, async (req, res) => {
       splitMap
     ] = await Promise.all([
       supabaseQuery("assessments?order=available_date.asc&limit=500"),
-      supabaseQuery(`assessment_attempts?user_id=eq.${enc5(studentId)}&select=assessment_id,score,status,completed_at&order=completed_at.desc&limit=1000`),
+      supabaseQuery(`assessment_attempts?user_id=eq.${enc6(studentId)}&select=assessment_id,score,status,completed_at&order=completed_at.desc&limit=1000`),
       supabaseQuery("assignments?order=due_date.asc&limit=500"),
-      supabaseQuery(`assignment_submissions?user_id=eq.${enc5(studentId)}&select=assignment_id,answer,score,feedback,status,submitted_at,reviewed_at&limit=1000`),
+      supabaseQuery(`assignment_submissions?user_id=eq.${enc6(studentId)}&select=assignment_id,answer,score,feedback,status,submitted_at,reviewed_at&limit=1000`),
       supabaseQuery("notebook_tasks?order=due_date.asc&limit=500"),
-      supabaseQuery(`notebook_submissions?user_id=eq.${enc5(studentId)}&select=task_id,photos,note,score,feedback,status,submitted_at,reviewed_at&limit=1000`),
+      supabaseQuery(`notebook_submissions?user_id=eq.${enc6(studentId)}&select=task_id,photos,note,score,feedback,status,submitted_at,reviewed_at&limit=1000`),
       supabaseQuery("foundation_sections?is_visible=eq.true&order=sort_order.asc&limit=200"),
       supabaseQuery("foundation_lessons?is_visible=eq.true&select=id,section_id,title&limit=3000"),
-      supabaseQuery(`foundation_members?user_id=eq.${enc5(studentId)}&select=section_id&limit=200`),
-      supabaseQuery(`foundation_progress?user_id=eq.${enc5(studentId)}&select=lesson_id&limit=2000`),
+      supabaseQuery(`foundation_members?user_id=eq.${enc6(studentId)}&select=section_id&limit=200`),
+      supabaseQuery(`foundation_progress?user_id=eq.${enc6(studentId)}&select=lesson_id&limit=2000`),
       getSplitMap()
     ]);
     const byExam = {};
@@ -39868,14 +40571,14 @@ router9.get("/teacher/report/student/:id", requireAdmin, async (req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062A\u062C\u0647\u064A\u0632 \u0643\u0634\u0641 \u0627\u0644\u0637\u0627\u0644\u0628" });
   }
 });
-var report_default = router9;
+var report_default = router10;
 
 // src/routes/cloudinary.ts
-var import_express10 = __toESM(require_express2(), 1);
+var import_express11 = __toESM(require_express2(), 1);
 init_auth();
 init_logger();
-var router10 = (0, import_express10.Router)();
-router10.get("/teacher/cloudinary/sign", requireAdmin, async (req, res) => {
+var router11 = (0, import_express11.Router)();
+router11.get("/teacher/cloudinary/sign", requireAdmin, async (req, res) => {
   try {
     const q = req.query || {};
     const auth = await createVideoUploadAuth(q.filename || q.name);
@@ -39885,7 +40588,7 @@ router10.get("/teacher/cloudinary/sign", requireAdmin, async (req, res) => {
     res.status(503).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u062A\u062C\u0647\u064A\u0632 \u0627\u0644\u0631\u0641\u0639 \u2014 \u0631\u0627\u062C\u0639 \u062D\u0633\u0627\u0628\u064A Cloudinary" });
   }
 });
-router10.get("/teacher/cloudinary/status", requireAdmin, async (_req, res) => {
+router11.get("/teacher/cloudinary/status", requireAdmin, async (_req, res) => {
   try {
     const status = await getCloudinaryStatus();
     res.json({ success: true, ...status });
@@ -39894,7 +40597,7 @@ router10.get("/teacher/cloudinary/status", requireAdmin, async (_req, res) => {
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0642\u0631\u0627\u0621\u0629 \u062D\u0627\u0644\u0629 \u0627\u0644\u062A\u062E\u0632\u064A\u0646" });
   }
 });
-router10.post("/teacher/cloudinary/failover", requireAdmin, async (req, res) => {
+router11.post("/teacher/cloudinary/failover", requireAdmin, async (req, res) => {
   try {
     const b = req.body || {};
     const accounts = getCloudinaryAccounts();
@@ -39917,27 +40620,28 @@ router10.post("/teacher/cloudinary/failover", requireAdmin, async (req, res) => 
     res.status(503).json({ error: err?.message || "\u062A\u0639\u0630\u0631 \u0627\u0644\u062A\u0628\u062F\u064A\u0644 \u0644\u0644\u062D\u0633\u0627\u0628 \u0627\u0644\u0622\u062E\u0631" });
   }
 });
-var cloudinary_default = router10;
+var cloudinary_default = router11;
 
 // src/routes/index.ts
-var router11 = (0, import_express11.Router)();
-router11.use(blockObserverWrites);
-router11.use(blockObserverHiddenSections);
-router11.use(health_default);
-router11.use(platform_default);
-router11.use(curriculum_default);
-router11.use(storage_default);
-router11.use(study_default);
-router11.use(auth_default);
-router11.use(foundation_default);
-router11.use(organization_default);
-router11.use(report_default);
-router11.use(cloudinary_default);
-var routes_default = router11;
+var router12 = (0, import_express12.Router)();
+router12.use(blockObserverWrites);
+router12.use(blockObserverHiddenSections);
+router12.use(health_default);
+router12.use(platform_default);
+router12.use(curriculum_default);
+router12.use(storage_default);
+router12.use(study_default);
+router12.use(auth_default);
+router12.use(foundation_default);
+router12.use(organization_default);
+router12.use(preparation_default);
+router12.use(report_default);
+router12.use(cloudinary_default);
+var routes_default = router12;
 
 // src/app.ts
 init_logger();
-var app = (0, import_express12.default)();
+var app = (0, import_express13.default)();
 app.use(
   (0, import_pino_http.default)({
     logger,
@@ -39958,8 +40662,8 @@ app.use(
   })
 );
 app.use((0, import_cors.default)());
-app.use(import_express12.default.json({ limit: "25mb" }));
-app.use(import_express12.default.urlencoded({ extended: true, limit: "25mb" }));
+app.use(import_express13.default.json({ limit: "25mb" }));
+app.use(import_express13.default.urlencoded({ extended: true, limit: "25mb" }));
 app.use((0, import_cookie_parser.default)());
 app.use("/api", routes_default);
 var app_default = app;

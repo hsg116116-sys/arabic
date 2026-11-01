@@ -262,11 +262,11 @@ async function loadUnits(grade: string, term: string) {
 
   const [lessonsRes, prepsRes] = await Promise.all([
     ids
-      ? supabaseQuery<any[]>(`lessons?select=id,course_id,title,position&course_id=in.${ids}&order=course_id.asc,position.asc&limit=1200`)
+      ? supabaseQuery<any[]>(`lessons?select=id,course_id,title,position&course_id=in.(${ids})&order=course_id.asc,position.asc&limit=1200`)
       : Promise.resolve({ data: [] as any[], error: null }),
     ids
       ? supabaseQuery<any[]>(
-          `preparations?select=${PREP_COLUMNS}&course_id=in.${ids}&order=period_start.desc,unit_no.asc&limit=1500`,
+          `preparations?select=${PREP_COLUMNS}&course_id=in.(${ids})&order=period_start.desc,unit_no.asc&limit=1500`,
         )
       : Promise.resolve({ data: [] as any[], error: null }),
   ]);
@@ -364,7 +364,7 @@ router.get("/teacher/prep/ledger", requireAuth, requirePrep(["teacher", "supervi
       .split("|")
       .filter((g) => PREP_GRADES.includes(g));
     const gradeIn = (grades.length ? grades : PREP_GRADES).map((g) => `"${g}"`).join(",");
-    let endpoint = `preparations?select=${PREP_COLUMNS}&grade=in.${gradeIn}&order=period_start.desc,unit_no.asc&limit=800`;
+    let endpoint = `preparations?select=${PREP_COLUMNS}&grade=in.(${gradeIn})&order=period_start.desc,unit_no.asc&limit=800`;
     if (PREP_TERMS.includes(String(req.query.term))) endpoint += `&term=eq.${enc(String(req.query.term))}`;
     if (PERIOD_TYPES.includes(String(req.query.periodType))) endpoint += `&period_type=eq.${enc(String(req.query.periodType))}`;
     if (["unit", "lesson"].includes(String(req.query.targetType))) endpoint += `&target_type=eq.${enc(String(req.query.targetType))}`;
