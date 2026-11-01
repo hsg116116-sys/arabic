@@ -11213,7 +11213,7 @@ function TeacherDashboardNew() {
 
           <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <QuickTile icon={Library} title="المنهاج والوحدات" body="الوحدات والدروس والتحكم بظهورها للطلاب" href="/teacher/content" badge={`${d.stats.units} وحدات`} color="#17413f" />
-            <QuickTile icon={FileSignature} title="قَسَم التحضير" body="تحضير الوحدات والدروس — رفع الأستاذ، توقيع المشرفة، اعتماد المديرة" href="/teacher/prep" badge="للإدارة والمشرفين" color="#1d5c57" />
+            <QuickTile icon={FileSignature} title="قَسَم التحضير" body="تحضير الوحدات — رفع الأستاذ، توقيع المشرفة، اعتماد المديرة" href="/teacher/prep" badge="للإدارة والمشرفين" color="#1d5c57" />
             <QuickTile icon={Target} title="الاختبارات" body="بنك الاختبارات وباني الأسئلة" href="/teacher/exams" badge={`${d.stats.assessments} اختبارات`} color="#0d47a1" />
             <QuickTile icon={ClipboardCheck} title="الواجبات" body="تكليفات الصفوف ومواعيدها" href="/teacher/assignments" badge={`${d.stats.assignments} واجبات`} color="#2f7772" />
             <QuickTile icon={Bell} title="الإعلانات" body="رسائلك وتوجيهاتك للطلاب" href="/teacher/announcements" badge="نشر" color="#b7791f" />
@@ -13273,7 +13273,6 @@ const PREP_STATE_META: Record<string, { label: string; cls: string; dot: string 
 };
 
 const PREP_PERIOD_LABEL: Record<string, string> = {
-  unit: 'تحضير الوحدة',
   daily: 'يومي',
   weekly: 'أسبوعي',
   monthly: 'شهري',
@@ -13422,8 +13421,8 @@ function PrepDetailModal({
 
   return (
     <Modal
-      title={record.targetTitle || 'تحضير'}
-      eyebrow={`${record.targetType === 'lesson' ? 'درس' : 'وحدة'} · ${arNum(record.periodLabel || '')}`}
+      title={record.unitTitle || record.targetTitle || 'تحضير'}
+      eyebrow={`الوحدة ${arNum(record.unitNo)} · ${arNum(record.periodLabel || '')}`}
       onClose={onClose}
       maxWidth="max-w-5xl"
     >
@@ -13431,7 +13430,6 @@ function PrepDetailModal({
         <PrepStatePill state={record.state} />
         <span className="rounded-full bg-secondary px-2.5 py-1 text-[11px] font-bold text-muted-foreground">{record.grade}</span>
         <span className="rounded-full bg-secondary px-2.5 py-1 text-[11px] font-bold text-muted-foreground">{record.term}</span>
-        {record.unitTitle ? <span className="truncate rounded-full bg-accent/20 px-2.5 py-1 text-[11px] font-bold text-accent-foreground">{record.unitTitle}</span> : null}
         <span className="mr-auto flex items-center gap-1.5">
           {(['doc', 'log'] as const).map((t) => (
             <button
@@ -13543,8 +13541,8 @@ function PrepDetailModal({
 
           {capability === 'teacher' ? (
             <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
-              <Button onClick={() => onCompose({ targetType: record.targetType, targetId: record.targetId, courseId: record.courseId, title: record.targetTitle, periodType: record.periodType === 'unit' ? 'weekly' : record.periodType, date: record.periodStart || todayIso() })} variant="soft">
-                <Upload size={15} /> {record.fileUrl ? 'استبدال الملف' : 'رفع ملف لهذا التحضير'}
+              <Button onClick={() => onCompose({ courseId: record.courseId, title: record.unitTitle || record.targetTitle, periodType: record.periodType, date: record.periodStart || todayIso() })} variant="soft">
+                <Upload size={15} /> {record.fileUrl ? 'استبدال ملف التحضير' : 'رفع ملف للوحدة'}
               </Button>
               {record.fileUrl ? (
                 <Button onClick={removeFile} disabled={busy === 'delete'} variant="ghost" className="text-destructive">
@@ -13608,7 +13606,7 @@ const todayIso = () => {
 
 /** نافذة الرفع: الأستاذ يختار الفترة والتاريخ ثم الملف — PDF أو وورد */
 function PrepComposerModal({ target, account, onClose, onSaved }: {
-  target: { targetType: string; targetId: string; courseId: string; title: string; periodType?: string; date?: string; context?: string };
+  target: { courseId: string; title: string; periodType?: string; date?: string; context?: string };
   account: any;
   onClose: () => void;
   onSaved: (msg: string) => void;
@@ -13642,8 +13640,6 @@ function PrepComposerModal({ target, account, onClose, onSaved }: {
       await jsonFetch('/api/teacher/prep/document', {
         method: 'POST',
         body: {
-          targetType: target.targetType,
-          targetId: target.targetId,
           courseId: target.courseId,
           periodType,
           date,
@@ -13664,7 +13660,7 @@ function PrepComposerModal({ target, account, onClose, onSaved }: {
   };
 
   return (
-    <Modal title="تحضير جديد" eyebrow={`${target.targetType === 'lesson' ? 'درس' : 'وحدة'} · ${target.title}`} onClose={onClose} maxWidth="max-w-2xl">
+    <Modal title="تحضير جديد" eyebrow={`وحدة · ${target.title}`} onClose={onClose} maxWidth="max-w-2xl">
       <form onSubmit={submit} className="space-y-4">
         {target.context ? <p className="rounded-xl bg-secondary/40 px-3.5 py-2 text-xs font-bold text-muted-foreground">{target.context}</p> : null}
         <Field2 label="نوع الفترة التحضيرية">
@@ -13842,11 +13838,11 @@ function TeacherPreparationPage() {
       <SectionHero
         eyebrow="الإدارة والمشرفون"
         title="قَسَم التحضير"
-        body="كل وحدة وكل درس في الصفوف الثامن والتاسع والعاشر: يرفع الأستاذ تحضيره ليوم أو أسبوع أو شهر، فتطلّع المشرفة وتوقّع، ثم تعتمِده المديرة — والكل يرى من فعل ومتى."
+        body="تحضير على مستوى الوحدة في الصفوف الثامن والتاسع والعاشر: يرفع الأستاذ ملف الوحدة ليوم أو أسبوع أو شهر، فتطلّع المشرفة وتوقّع، ثم تعتمِده المديرة — والكل يرى من فعل ومتى."
         stats={[
           { value: stats.units != null ? arNum(stats.units) : '—', label: 'الوحدات' },
           { value: stats.preparedUnits != null ? arNum(stats.preparedUnits) : '—', label: 'وحدات محضّرة' },
-          { value: stats.preparedLessons != null ? arNum(stats.preparedLessons) : '—', label: `دروس من ${arNum(stats.lessons ?? 0)}` },
+          { value: stats.awaitingSupervisor != null ? arNum(stats.awaitingSupervisor) : '—', label: 'بانتظار المشرفة' },
           { value: stats.approved != null ? arNum(stats.approved) : '—', label: 'معتمَدة ✓' },
         ]}
         action={
@@ -13977,7 +13973,7 @@ function TeacherPreparationPage() {
   );
 }
 
-/** بطاقة وحدة: تحضيراتها + دروسها — تنبسط لتكشف الدروس */
+/** بطاقة وحدة: تحضيراتها + دروسها مرجعاً — التحضير للوحدة كلها لا لدرس درس */
 function PrepUnitCard({ unit, capability, open, onToggle, onOpenRecord, onCompose }: {
   unit: any;
   capability: string;
@@ -13988,9 +13984,6 @@ function PrepUnitCard({ unit, capability, open, onToggle, onOpenRecord, onCompos
 }) {
   const s = unit.summary || {};
   const newest = (unit.preparations || [])[0];
-  const lessonReady = unit.lessons?.filter((l: any) => l.preparations?.length).length || 0;
-  const add = (targetType: string, targetId: string, title: string, context?: string) =>
-    onCompose({ targetType, targetId, courseId: unit.courseId, title, periodType: 'weekly', date: todayIso(), context });
 
   return (
     <div className={`overflow-hidden rounded-3xl border bg-card shadow-sm transition-all ${open ? 'border-primary/40 ring-2 ring-accent/25' : 'border-border hover:shadow-md'}`} data-testid={`prep-unit-${unit.courseId}`}>
@@ -14022,7 +14015,11 @@ function PrepUnitCard({ unit, capability, open, onToggle, onOpenRecord, onCompos
       {open ? (
         <div className="space-y-4 border-t border-border bg-secondary/20 px-4 py-4 sm:px-5">
           {capability === 'teacher' ? (
-            <Button onClick={() => add('unit', unit.courseId, unit.title, `${unit.grade} · ${unit.term}`)} variant="primary" className="w-full sm:w-auto">
+            <Button
+              onClick={() => onCompose({ courseId: unit.courseId, title: unit.title, periodType: 'weekly', date: todayIso(), context: `${unit.grade} · ${unit.term}` })}
+              variant="primary"
+              className="w-full sm:w-auto"
+            >
               <Plus size={15} /> تحضير جديد للوحدة
             </Button>
           ) : null}
@@ -14035,36 +14032,15 @@ function PrepUnitCard({ unit, capability, open, onToggle, onOpenRecord, onCompos
           ) : null}
 
           <div className="space-y-2">
-            <p className="flex items-center justify-between text-[11px] font-extrabold text-muted-foreground">
-              <span>دروس الوحدة</span>
-              <span>{arNum(lessonReady)} / {arNum(unit.lessonsCount)} محضّرة</span>
-            </p>
+            <p className="text-[11px] font-extrabold text-muted-foreground">دروس الوحدة ({arNum(unit.lessonsCount)})</p>
             {!unit.lessons?.length ? (
               <p className="rounded-2xl border border-dashed border-border px-3.5 py-3 text-xs text-muted-foreground">لا دروس مسجّلة لهذه الوحدة بعد.</p>
             ) : (
-              <div className="space-y-2">
+              <div className="flex flex-wrap gap-1.5">
                 {unit.lessons.map((l: any, i: number) => (
-                  <div key={l.id} className="rounded-2xl border border-border bg-card px-3.5 py-3">
-                    <div className="flex items-center gap-2.5">
-                      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-secondary text-[11px] font-extrabold text-primary">{arNum(l.position || i + 1)}</span>
-                      <p className="min-w-0 flex-1 truncate text-[13px] font-bold text-primary">{l.title}</p>
-                      {capability === 'teacher' ? (
-                        <button
-                          type="button"
-                          onClick={() => add('lesson', l.id, l.title, `${unit.title} · ${unit.grade}`)}
-                          className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1 text-[11px] font-extrabold text-primary hover:bg-primary hover:text-white"
-                          data-testid={`button-prep-add-lesson-${l.id}`}
-                        >
-                          <Plus size={12} /> تحضير
-                        </button>
-                      ) : null}
-                    </div>
-                    {l.preparations?.length ? (
-                      <div className="mt-2.5 space-y-2">
-                        {l.preparations.map((r: any) => <PrepRecordRow key={r.id} record={r} onOpen={onOpenRecord} />)}
-                      </div>
-                    ) : null}
-                  </div>
+                  <span key={l.id} className="rounded-xl border border-border bg-card px-2.5 py-1.5 text-[11px] font-bold text-primary/90">
+                    {arNum(l.position || i + 1)}. {l.title}
+                  </span>
                 ))}
               </div>
             )}
@@ -14111,21 +14087,21 @@ function PrepLedgerModal({ items, capability, onClose, onOpen }: {
   onClose: () => void;
   onOpen: (r: any) => void;
 }) {
-  const [f, setF] = useState({ grade: '', term: '', state: '', type: '' });
+  const [f, setF] = useState({ grade: '', term: '', state: '', period: '' });
   const rows = useMemo(() => items.filter((r: any) => (
     (!f.grade || r.grade === f.grade) &&
     (!f.term || r.term === f.term) &&
     (!f.state || r.state === f.state) &&
-    (!f.type || r.targetType === f.type)
+    (!f.period || r.periodType === f.period)
   )), [items, f]);
 
   return (
-    <Modal title="سجل التحضير" eyebrow="كل التحضيرات — وحدة ودرساً" onClose={onClose} maxWidth="max-w-5xl">
+    <Modal title="سجل التحضير" eyebrow="كل تحضيرات الوحدات — الثامن والتاسع والعاشر" onClose={onClose} maxWidth="max-w-5xl">
       <div className="mb-4 flex flex-wrap gap-2">
         {[
           ['grade', ['', 'الصف الثامن', 'الصف التاسع', 'الصف العاشر']],
           ['term', ['', 'الفصل الأول', 'الفصل الثاني']],
-          ['type', ['', 'unit', 'lesson']],
+          ['period', ['', 'daily', 'weekly', 'monthly']],
           ['state', ['', 'awaiting_supervisor', 'awaiting_director', 'approved', 'returned']],
         ].map(([key, options]: any) => (
           <select
@@ -14138,8 +14114,8 @@ function PrepLedgerModal({ items, capability, onClose, onOpen }: {
             {options.map((o: string) => (
               <option key={o} value={o}>
                 {o === ''
-                  ? key === 'grade' ? 'كل الصفوف' : key === 'term' ? 'الفصلان' : key === 'type' ? 'وحدة ودرس' : 'كل الحالات'
-                  : key === 'type' ? (o === 'unit' ? 'الوحدات' : 'الدروس') : key === 'state' ? (PREP_STATE_META[o]?.label || o) : o}
+                  ? key === 'grade' ? 'كل الصفوف' : key === 'term' ? 'الفصلان' : key === 'period' ? 'كل الفترات' : 'كل الحالات'
+                  : key === 'period' ? (PREP_PERIOD_LABEL[o] || o) : key === 'state' ? (PREP_STATE_META[o]?.label || o) : o}
               </option>
             ))}
           </select>
@@ -14153,10 +14129,8 @@ function PrepLedgerModal({ items, capability, onClose, onOpen }: {
           {rows.map((r: any) => (
             <div key={r.id} className="rounded-2xl border border-border bg-card px-3.5 py-3">
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${r.targetType === 'lesson' ? 'bg-purple-500/15 text-purple-800' : 'bg-primary/10 text-primary'}`}>
-                  {r.targetType === 'lesson' ? 'درس' : 'وحدة'}
-                </span>
-                <p className="min-w-0 flex-1 truncate text-[13px] font-extrabold text-primary">{r.targetTitle}</p>
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-extrabold text-primary">الوحدة {arNum(r.unitNo)}</span>
+                <p className="min-w-0 flex-1 truncate text-[13px] font-extrabold text-primary">{r.unitTitle || r.targetTitle}</p>
                 <PrepStatePill state={r.state} />
               </div>
               <p className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] font-bold text-muted-foreground">

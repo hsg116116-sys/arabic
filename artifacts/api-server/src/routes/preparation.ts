@@ -167,22 +167,19 @@ export function buildPeriod(periodType: string, rawDate: unknown) {
 }
 
 const PREP_COLUMNS =
-  "id,target_id,target_type,target_title,course_id,lesson_id,grade,term,unit_title,unit_no,lesson_no,period_type,period_key,period_label,period_start,period_end,file_url,file_name,file_type,file_size,teacher_note,uploaded_by_name,uploaded_by_email,uploaded_at,supervisor_signatures,director_signatures,return_note,returned_by_name,returned_by_email,returned_at,state,updated_at";
+  "id,target_id,target_title,course_id,grade,term,unit_title,unit_no,period_type,period_key,period_label,period_start,period_end,file_url,file_name,file_type,file_size,teacher_note,uploaded_by_name,uploaded_by_email,uploaded_at,supervisor_signatures,director_signatures,return_note,returned_by_name,returned_by_email,returned_at,state,updated_at";
 
 function prepToJson(p: any) {
   return {
     id: p.id,
     targetId: p.target_id || p.course_id,
-    targetType: p.target_type === "lesson" ? "lesson" : "unit",
     targetTitle: p.target_title || p.unit_title || "",
     courseId: p.course_id,
-    lessonId: p.lesson_id || null,
     grade: p.grade || "",
     term: p.term || "",
     unitTitle: p.unit_title || "",
     unitNo: Number(p.unit_no) || 1,
-    lessonNo: Number(p.lesson_no) || null,
-    periodType: p.period_type || "unit",
+    periodType: p.period_type || "weekly",
     periodKey: p.period_key || "",
     periodLabel: p.period_label || "تحضير الوحدة",
     periodStart: p.period_start || null,
@@ -251,7 +248,7 @@ async function loadPreparation(id: string) {
   return data?.[0] || null;
 }
 
-/** وحدات المنهاج ودروسها + تحضيراتها — العمود الفقري للقسم هو المنهاج نفسه */
+/** وحدات المنهاج ودروسها + تحضيراتها — التحضير على مستوى الوحدة، والدروس مرجع */
 async function loadUnits(grade: string, term: string) {
   const { data: courses, error } = await supabaseQuery<any[]>(
     `courses?select=id,title,grade,term,sort_order,lessons_count&grade=eq.${enc(grade)}&term=eq.${enc(term)}&order=sort_order.asc&limit=100`,
@@ -279,17 +276,16 @@ async function loadUnits(grade: string, term: string) {
     lessonsByUnit.set(key, [...(lessonsByUnit.get(key) || []), { id: l.id, title: l.title || "", position: Number(l.position) || 0 }]);
   });
 
-  const prepsByTarget = new Map<string, any[]>();
+  const prepsByUnit = new Map<string, any[]>();
   const records = ((prepsRes as any).data || []).map(prepToJson);
   records.forEach((r: any) => {
-    const key = String(r.targetId);
-    prepsByTarget.set(key, [...(prepsByTarget.get(key) || []), r]);
+    const key = String(r.courseId);
+    prepsByUnit.set(key, [...(prepsByUnit.get(key) || []), r]);
   });
 
   const units = list.map((c: any) => {
     const lessons = lessonsByUnit.get(String(c.id)) || [];
-    const unitPreps = prepsByTarget.get(String(c.id)) || [];
-    const lessonPreps = lessons.flatMap((l: any) => prepsByTarget.get(String(l.id)) || []);
+    const unitPreps = prepsByUnit.get(String(c.id)) || [];
     return {
       courseId: c.id,
       title: c.title || "",
@@ -297,32 +293,25 @@ async function loadUnits(grade: string, term: string) {
       term: c.term || "",
       unitNo: Number(c.sort_order) || 1,
       lessonsCount: lessons.length || Number(c.lessons_count) || 0,
-      lessons: lessons.map((l: any) => ({ ...l, preparations: prepsByTarget.get(String(l.id)) || [] })),
+      lessons,
       preparations: unitPreps,
       summary: {
         unitPrepared: unitPreps.some((p: any) => p.state !== "none"),
-        lessonsPrepared: lessons.filter((l: any) => (prepsByTarget.get(String(l.id)) || []).length > 0).length,
-        lessonsTotal: lessons.length,
-        awaiting: [...unitPreps, ...lessonPreps].filter((p: any) => p.state === "awaiting_supervisor" || p.state === "returned").length,
-        awaitingDirector: [...unitPreps, ...lessonPreps].filter((p: any) => p.state === "awaiting_director").length,
-        approved: [...unitPreps, ...lessonPreps].filter((p: any) => p.state === "approved").length,
-        total: [...unitPreps, ...lessonPreps].filter((p: any) => p.state !== "none").length,
+        awaiting: unitPreps.filter((p: any) => p.state === "awaiting_supervisor" || p.state === "returned").length,
+        awaitingDirector: unitPreps.filter((p: any) => p.state === "awaiting_director").length,
+        approved: unitPreps.filter((p: any) => p.state === "approved").length,
+        total: unitPreps.filter((p: any) => p.state !== "none").length,
       },
     };
   });
 
   const count = (s: string) => records.filter((p: any) => p.state === s).length;
-  const lessonTotals = units.reduce(
-    (acc: any, u: any) => ({ lessons: acc.lessons + u.lessonsCount, prepared: acc.prepared + u.summary.lessonsPrepared }),
-    { lessons: 0, prepared: 0 },
-  );
   return {
     units,
     stats: {
       units: units.length,
       preparedUnits: units.filter((u: any) => u.summary.unitPrepared).length,
-      lessons: lessonTotals.lessons,
-      preparedLessons: lessonTotals.prepared,
+      lessons: units.reduce((sum: number, u: any) => sum + u.lessonsCount, 0),
       records: records.length,
       awaitingSupervisor: count("awaiting_supervisor") + count("returned"),
       awaitingDirector: count("awaiting_director"),
@@ -367,7 +356,6 @@ router.get("/teacher/prep/ledger", requireAuth, requirePrep(["teacher", "supervi
     let endpoint = `preparations?select=${PREP_COLUMNS}&grade=in.(${gradeIn})&order=period_start.desc,unit_no.asc&limit=800`;
     if (PREP_TERMS.includes(String(req.query.term))) endpoint += `&term=eq.${enc(String(req.query.term))}`;
     if (PERIOD_TYPES.includes(String(req.query.periodType))) endpoint += `&period_type=eq.${enc(String(req.query.periodType))}`;
-    if (["unit", "lesson"].includes(String(req.query.targetType))) endpoint += `&target_type=eq.${enc(String(req.query.targetType))}`;
     const { data, error } = await supabaseQuery<any[]>(endpoint);
     if (error) throw new Error(String(error));
     const items = (data || []).map(prepToJson);
@@ -385,11 +373,10 @@ router.post("/teacher/prep/document", requireAuth, requirePrep(["teacher"]), asy
   try {
     const auth = (req as any).auth as AuthInfo;
     const b = req.body || {};
-    const targetId = String(b.targetId || b.courseId || "").trim();
-    const targetType = b.targetType === "lesson" ? "lesson" : "unit";
+    const courseId = String(b.courseId || b.targetId || "").trim();
     const period = buildPeriod(String(b.periodType || ""), b.date);
-    if (!isUuid(targetId) || !period) {
-      deny(res, 400, "حدد الوحدة أو الدرس، والتاريخ الصحيح للفترة (يوم أو أسبوع أو شهر).");
+    if (!isUuid(courseId) || !period) {
+      deny(res, 400, "حدد الوحدة، والتاريخ الصحيح للفترة (يوم أو أسبوع أو شهر).");
       return;
     }
     const fileUrl = safeFileUrl(b.fileUrl);
@@ -404,40 +391,19 @@ router.post("/teacher/prep/document", requireAuth, requirePrep(["teacher"]), asy
       return;
     }
 
-    // الغرض المحضَّر لازم يكون من صفوف التحضير — وإلا يُرفض الحفظ
-    let unit: any = null;
-    let lesson: any = null;
-    if (targetType === "unit") {
-      const { data, error } = await supabaseQuery<any[]>(
-        `courses?select=id,title,grade,term,sort_order&id=eq.${enc(targetId)}&limit=1`,
-      );
-      if (error) throw new Error(String(error));
-      unit = data?.[0] || null;
-    } else {
-      const { data, error } = await supabaseQuery<any[]>(
-        `lessons?select=id,title,position,course_id&id=eq.${enc(targetId)}&limit=1`,
-      );
-      if (error) throw new Error(String(error));
-      lesson = data?.[0] || null;
-      if (lesson) {
-        const { data: c, error: cErr } = await supabaseQuery<any[]>(
-          `courses?select=id,title,grade,term,sort_order&id=eq.${enc(lesson.course_id)}&limit=1`,
-        );
-        if (cErr) throw new Error(String(cErr));
-        unit = c?.[0] || null;
-      }
-    }
+    // الوحدة المحضَّرة لازم تكون من صفوف التحضير — وإلا يُرفض الحفظ
+    const { data: courseRows, error: courseError } = await supabaseQuery<any[]>(
+      `courses?select=id,title,grade,term,sort_order&id=eq.${enc(courseId)}&limit=1`,
+    );
+    if (courseError) throw new Error(String(courseError));
+    const unit = courseRows?.[0] || null;
     if (!unit || !PREP_GRADES.includes(unit.grade)) {
-      deny(res, 400, "هذا الغرض ليس ضمن صفوف التحضير (الثامن والتاسع والعاشر).");
-      return;
-    }
-    if (targetType === "lesson" && lesson && String(lesson.course_id) !== String(unit.id)) {
-      deny(res, 400, "الدرس لا يطابق وحدته — أعد فتح الصفحة.");
+      deny(res, 400, "هذه الوحدة ليست ضمن صفوف التحضير (الثامن والتاسع والعاشر).");
       return;
     }
 
     const now = new Date().toISOString();
-    const targetTitle = String((targetType === "lesson" ? lesson?.title : unit?.title) || unit?.title || "").slice(0, 220);
+    const unitTitle = String(unit.title || "").slice(0, 220);
     const fields = {
       file_url: fileUrl,
       file_name: String(b.fileName || "").slice(0, 220),
@@ -457,7 +423,7 @@ router.post("/teacher/prep/document", requireAuth, requirePrep(["teacher"]), asy
       updated_at: now,
     };
     const { data: existing } = await supabaseQuery<any[]>(
-      `preparations?target_id=eq.${enc(targetId)}&period_key=eq.${enc(period.period_key)}&select=id,file_url&limit=1`,
+      `preparations?target_id=eq.${enc(courseId)}&period_key=eq.${enc(period.period_key)}&select=id,file_url&limit=1`,
     );
     const prev = existing?.[0] || null;
     let recordId = prev?.id || "";
@@ -473,16 +439,16 @@ router.post("/teacher/prep/document", requireAuth, requirePrep(["teacher"]), asy
       if (error) throw new Error(String(error));
     } else {
       const row = {
-        target_id: targetId,
-        target_type: targetType,
-        target_title: targetTitle,
+        target_id: unit.id,
+        target_type: "unit",
+        target_title: unitTitle,
         course_id: unit.id,
-        lesson_id: targetType === "lesson" ? lesson?.id || null : null,
+        lesson_id: null,
         grade: unit.grade || "",
         term: unit.term || "",
         unit_title: unit.title || "",
         unit_no: Number(unit.sort_order) || 1,
-        lesson_no: targetType === "lesson" ? Number(lesson?.position) || null : null,
+        lesson_no: null,
         ...period,
         ...fields,
         state: "awaiting_supervisor",
@@ -493,8 +459,8 @@ router.post("/teacher/prep/document", requireAuth, requirePrep(["teacher"]), asy
     }
     if (recordId) {
       await logEvent({ id: recordId, course_id: unit.id }, auth, action, {
-        note: `${fields.file_name} — ${targetType === "lesson" ? "درس" : "وحدة"}: ${targetTitle} · ${period.period_label}`,
-        meta: { file_url: fileUrl, file_type: ext, file_size: size, period, target_type: targetType },
+        note: `${fields.file_name} — وحدة: ${unitTitle} · ${period.period_label}`,
+        meta: { file_url: fileUrl, file_type: ext, file_size: size, period },
         capability: "teacher",
       });
     }
